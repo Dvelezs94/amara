@@ -21,16 +21,36 @@ import {
 import { useState, useRef, useEffect } from "react";
 import type { SessionUser } from "@/lib/auth";
 
-const mainNav = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/ask", label: "Asistente", icon: Bot },
-  { href: "/work-orders", label: "Órdenes de trabajo", icon: ClipboardList },
-  { href: "/assets", label: "Activos", icon: Package },
-  { href: "/knowledge-base", label: "Base de conocimiento", icon: BookOpen },
-  { href: "/checklists", label: "Checklist", icon: ListChecks },
-  { href: "/requests", label: "Solicitudes", icon: MessageSquarePlus },
-  { href: "/analytics", label: "Analíticas", icon: BarChart2 },
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
+
+const navSections: { type: string; items: NavItem[] }[] = [
+  {
+    type: "Principal",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/ask", label: "Asistente", icon: Bot },
+    ],
+  },
+  {
+    type: "Operaciones",
+    items: [
+      { href: "/work-orders", label: "Órdenes de trabajo", icon: ClipboardList },
+      { href: "/assets", label: "Activos", icon: Package },
+      { href: "/checklists", label: "Checklist", icon: ListChecks },
+      { href: "/requests", label: "Solicitudes", icon: MessageSquarePlus },
+    ],
+  },
+  {
+    type: "Contenido",
+    items: [{ href: "/knowledge-base", label: "Base de conocimiento", icon: BookOpen }],
+  },
+  {
+    type: "Reportes",
+    items: [{ href: "/analytics", label: "Analíticas", icon: BarChart2 }],
+  },
 ];
+
+const mainNav = navSections.flatMap((s) => s.items);
 
 function ProfileSubmenu({
   onClose,
@@ -100,20 +120,29 @@ export function AppShell({
             AmiMaint
           </Link>
         </div>
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-          {mainNav.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium tap-target ${
-                pathname.startsWith(href)
-                  ? "bg-primary-50 text-primary-700"
-                  : "text-zinc-600 hover:bg-zinc-100"
-              }`}
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-              {label}
-            </Link>
+        <nav className="flex-1 p-3 overflow-y-auto space-y-6">
+          {navSections.map((section) => (
+            <div key={section.type}>
+              <p className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                {section.type}
+              </p>
+              <div className="space-y-0.5">
+                {section.items.map(({ href, label, icon: Icon }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium tap-target ${
+                      pathname.startsWith(href)
+                        ? "bg-primary-50 text-primary-700"
+                        : "text-zinc-600 hover:bg-zinc-100"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="p-3 border-t border-zinc-200" ref={profileDesktopRef}>
@@ -166,21 +195,30 @@ export function AppShell({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-          {mainNav.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              onClick={() => setSidebarOpen(false)}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium tap-target ${
-                pathname.startsWith(href)
-                  ? "bg-primary-50 text-primary-700"
-                  : "text-zinc-600 hover:bg-zinc-100"
-              }`}
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-              {label}
-            </Link>
+        <nav className="flex-1 p-3 overflow-y-auto space-y-6">
+          {navSections.map((section) => (
+            <div key={section.type}>
+              <p className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                {section.type}
+              </p>
+              <div className="space-y-0.5">
+                {section.items.map(({ href, label, icon: Icon }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium tap-target ${
+                      pathname.startsWith(href)
+                        ? "bg-primary-50 text-primary-700"
+                        : "text-zinc-600 hover:bg-zinc-100"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="p-3 border-t border-zinc-200">

@@ -14,7 +14,12 @@ const FIELD_TYPES = [
   { value: "photo", label: "Foto" },
 ] as const;
 
+function makeItemId() {
+  return `item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 type Item = {
+  id: string;
   type: "step" | "custom_field";
   label: string;
   fieldType?: string;
@@ -38,20 +43,66 @@ export function ChecklistTemplateForm({
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [items, setItems] = useState<Item[]>(
-    (initial?.items ?? []).map((i) => ({
+    (initial?.items ?? []).map((i, idx) => ({
+      id: makeItemId(),
       type: i.type as "step" | "custom_field",
       label: i.label,
       fieldType: i.fieldType ?? "text",
       options: Array.isArray(i.options) ? (i.options as string[]).map((o) => String(o)) : [],
     }))
   );
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   function addStep() {
-    setItems((prev) => [...prev, { type: "step", label: "Nuevo paso" }]);
+    setItems((prev) => [...prev, { id: makeItemId(), type: "step", label: "Nuevo paso" }]);
   }
 
   function addCustomField() {
-    setItems((prev) => [...prev, { type: "custom_field", label: "Nuevo campo", fieldType: "text" }]);
+    setItems((prev) => [...prev, { id: makeItemId(), type: "custom_field", label: "Nuevo campo", fieldType: "text" }]);
+  }
+
+  function moveItem(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
+    setItems((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(fromIndex, 1);
+      const insertIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
+      next.splice(insertIndex, 0, removed);
+      return next;
+    });
+  }
+
+  function handleDragStart(e: React.DragEvent, index: number) {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
+    const li = (e.target as HTMLElement).closest("li");
+    if (li) {
+      e.dataTransfer.setDragImage(li, 0, 0);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropIndex(index);
+  }
+
+  function handleDrop(e: React.DragEvent, toIndex: number) {
+    e.preventDefault();
+    setDropIndex(null);
+    const fromIndex = draggedIndex;
+    setDraggedIndex(null);
+    if (fromIndex == null || fromIndex === toIndex) return;
+    const raw = e.dataTransfer.getData("text/plain");
+    if (String(fromIndex) !== raw) return;
+    moveItem(fromIndex, toIndex);
+  }
+
+  function handleDragEnd() {
+    setDraggedIndex(null);
+    setDropIndex(null);
   }
 
   function updateItem(index: number, updates: Partial<Item>) {
@@ -225,10 +276,26 @@ export function ChecklistTemplateForm({
         <ul className="space-y-3">
           {items.map((item, index) => (
             <li
-              key={index}
-              className="flex gap-2 items-start rounded-lg border border-zinc-200 bg-white p-3"
+              key={item.id}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDrop={(e) => handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
+              className={`flex gap-2 items-start rounded-lg border-2 bg-white p-3 transition-colors ${
+                draggedIndex === index
+                  ? "opacity-50 border-primary-300 cursor-grabbing"
+                  : dropIndex === index && draggedIndex !== index
+                    ? "border-primary-400 bg-primary-50/50"
+                    : "border-zinc-200"
+              }`}
             >
-              <GripVertical className="h-5 w-5 text-zinc-400 shrink-0 mt-1" aria-hidden />
+              <div
+                draggable
+                onDragStart={(e) => handleDragStart(e, index)}
+                className="shrink-0 mt-1 cursor-grab active:cursor-grabbing touch-none p-0.5 -m-0.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100"
+                aria-label="Arrastrar para reordenar"
+              >
+                <GripVertical className="h-5 w-5" aria-hidden />
+              </div>
               <div className="flex-1 min-w-0 space-y-2">
                 <input
                   type="text"
