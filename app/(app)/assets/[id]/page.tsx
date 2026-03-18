@@ -1,0 +1,82 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { db } from "@/lib/db";
+import { assets } from "@/lib/db/schema";
+import { workOrders } from "@/lib/db/schema";
+import { assetFiles } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { AssetFilesSection } from "./AssetFilesSection";
+
+async function getAsset(id: string) {
+  const asset = await db.query.assets.findFirst({
+    where: eq(assets.id, id),
+  });
+  if (!asset) return null;
+  const [workOrdersList, files] = await Promise.all([
+    db
+      .select({
+        id: workOrders.id,
+        title: workOrders.title,
+        status: workOrders.status,
+        dueDate: workOrders.dueDate,
+      })
+      .from(workOrders)
+      .where(eq(workOrders.assetId, id)),
+    db.query.assetFiles.findMany({
+      where: eq(assetFiles.assetId, id),
+      orderBy: (f, { desc }) => [desc(f.createdAt)],
+    }),
+  ]);
+  return { ...asset, workOrders: workOrdersList, files };
+}
+
+export default async function AssetDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const asset = await getAsset(id);
+  if (!asset) notFound();
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold text-zinc-900">{asset.name}</h1>
+        <p className="text-zinc-500">{asset.assetId}</p>
+      </div>
+      <AssetFilesSection assetId={id} initialFiles={asset.files} />
+
+      {asset.workOrders.length > 0 && (
+        <section>
+          <h2 className="text-sm font-medium text-zinc-500 mb-2">
+            Órdenes de trabajo
+          </h2>
+          <ul className="space-y-2">
+            {asset.workOrders.map((wo) => (
+              <li key={wo.id}>
+                <Link
+                  href={`/work-orders/${wo.id}`}
+                  className="block rounded-lg border border-zinc-200 bg-white p-3 hover:border-primary-200"
+                >
+                  <p className="font-medium text-zinc-900">{wo.title}</p>
+                  <p className="text-xs text-zinc-500">
+                    {wo.status === "open" ? "Abierta" : wo.status === "in_progress" ? "En curso" : wo.status === "completed" ? "Completada" : wo.status} · Vence{" "}
+                    {wo.dueDate
+                      ? new Date(wo.dueDate).toLocaleDateString("es")
+                      : "—"}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <Link
+        href="/assets"
+        className="inline-block text-sm text-primary-600 font-medium"
+      >
+        Volver a activos
+      </Link>
+    </div>
+  );
+}

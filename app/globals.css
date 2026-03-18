@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: 37 99 235;
+  --color-surface: 250 250 250;
+  --color-surface-card: 255 255 255;
+}
+
+body {
+  @apply bg-surface text-zinc-900 antialiased;
+  min-height: 100dvh;
+}
+
+/* Touch-friendly tap targets */
+@media (pointer: coarse) {
+  .tap-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

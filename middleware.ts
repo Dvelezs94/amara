@@ -1,0 +1,25 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+const publicPaths = ["/", "/login", "/signup"];
+const apiPublicPrefix = "/api/auth/";
+
+export function middleware(req: NextRequest) {
+  const path = req.nextUrl.pathname;
+  if (path === "/" || path === "/login" || path === "/signup")
+    return NextResponse.next();
+  if (path.startsWith(apiPublicPrefix)) return NextResponse.next();
+  const session = req.cookies.get("session")?.value;
+  if (!session) {
+    const login = new URL("/login", req.url);
+    login.searchParams.set("from", path);
+    return NextResponse.redirect(login);
+  }
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|manifest.json|icons|api).*)",
+  ],
+};

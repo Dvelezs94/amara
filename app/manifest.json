@@ -1,0 +1,10 @@
+{
+  "name": "AmiMaint",
+  "short_name": "AmiMaint",
+  "description": "Gestión de mantenimiento, prioridad móvil",
+  "start_url": "/work-orders",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary"
+}
