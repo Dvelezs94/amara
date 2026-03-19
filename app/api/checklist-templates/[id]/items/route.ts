@@ -5,6 +5,7 @@ import { checklistTemplates } from "@/lib/db/schema";
 import { checklistTemplateItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function GET(
   _req: Request,
@@ -56,5 +57,12 @@ export async function PUT(
       options,
     });
   }
+  await recordAuditLog({
+    entityType: "checklist_template",
+    entityId: templateId,
+    action: "items_updated",
+    userId: session.id,
+    metadata: { itemsCount: items.length },
+  });
   return NextResponse.json({ ok: true });
 }

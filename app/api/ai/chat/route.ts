@@ -5,7 +5,7 @@ import { AI_TOOLS, runAiTool } from "@/lib/ai/tools";
 
 const systemPrompt = `Eres un asistente de mantenimiento para AmiMaint. Respondes en español.
 Tienes acceso a herramientas para consultar:
-- Activos (equipos/sitios): list_assets, get_asset
+- Maquinas (equipos/sitios): list_assets, get_asset
 - Órdenes de trabajo: list_work_orders, get_work_order
 - Plantillas de checklist: list_checklist_templates, get_checklist_template
 - Documentos/base de conocimiento (manuales, especificaciones): list_documents

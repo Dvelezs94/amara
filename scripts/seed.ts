@@ -22,12 +22,13 @@ async function seed() {
   const passwordHash = await bcrypt.hash("demo1234", 10);
   await db.insert(schema.users).values({
     id,
+    username: "demo",
     email: "demo@amimaint.local",
     name: "Demo User",
     passwordHash,
     role: "technician",
   });
-  console.log("Created demo user: demo@amimaint.local / demo1234");
+  console.log("Created demo user: demo / demo1234");
 }
 
 seed().catch(console.error).finally(() => sqlite.close());

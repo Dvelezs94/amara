@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ClipboardList,
   Package,
-  MessageSquarePlus,
   ListChecks,
   BarChart2,
+  CalendarDays,
   LayoutDashboard,
   BookOpen,
   Bot,
@@ -17,13 +17,15 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  Wrench,
+  ArrowLeft,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import type { SessionUser } from "@/lib/auth";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
 
-const navSections: { type: string; items: NavItem[] }[] = [
+const baseNavSections: { type: string; items: NavItem[] }[] = [
   {
     type: "Principal",
     items: [
@@ -35,9 +37,9 @@ const navSections: { type: string; items: NavItem[] }[] = [
     type: "Operaciones",
     items: [
       { href: "/work-orders", label: "Órdenes de trabajo", icon: ClipboardList },
-      { href: "/assets", label: "Activos", icon: Package },
+      { href: "/assets", label: "Maquinas", icon: Wrench },
       { href: "/checklists", label: "Checklist", icon: ListChecks },
-      { href: "/requests", label: "Solicitudes", icon: MessageSquarePlus },
+      { href: "/calendario", label: "Calendario", icon: CalendarDays },
     ],
   },
   {
@@ -50,7 +52,12 @@ const navSections: { type: string; items: NavItem[] }[] = [
   },
 ];
 
-const mainNav = navSections.flatMap((s) => s.items);
+function roleLabel(role: string) {
+  if (role === "admin") return "Administrador";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "technician") return "Tecnico";
+  return role;
+}
 
 function ProfileSubmenu({
   onClose,
@@ -94,8 +101,38 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const userRole = roleLabel(user.role);
+  const navSections = [
+    ...baseNavSections,
+    ...(user.role === "admin"
+      ? [
+          {
+            type: "Plataforma",
+            items: [
+              {
+                href: "/logs",
+                label: "Logs de plataforma",
+                icon: BarChart2,
+              } satisfies NavItem,
+              {
+                href: "/users",
+                label: "Usuarios",
+                icon: User,
+              } satisfies NavItem,
+            ],
+          },
+        ]
+      : []),
+  ];
+  const mainNav = navSections.flatMap((s) => s.items);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const showBackButton =
+    pathname.startsWith("/work-orders") ||
+    pathname.startsWith("/checklists") ||
+    pathname.startsWith("/assets");
+
   const profileDesktopRef = useRef<HTMLDivElement>(null);
   const profileMobileRef = useRef<HTMLDivElement>(null);
 
@@ -157,7 +194,12 @@ export function AppShell({
           >
             <span className="flex items-center gap-3">
               <User className="h-5 w-5 shrink-0" />
-              Perfil
+              <span className="flex min-w-0 flex-col text-left leading-tight">
+                <span className="truncate">Perfil</span>
+                <span className="truncate text-xs font-normal text-zinc-500">
+                  {user.name} - {userRole}
+                </span>
+              </span>
             </span>
             <ChevronDown
               className={`h-4 w-4 shrink-0 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`}
@@ -233,7 +275,12 @@ export function AppShell({
           >
             <span className="flex items-center gap-3">
               <User className="h-5 w-5 shrink-0" />
-              Perfil
+              <span className="flex min-w-0 flex-col text-left leading-tight">
+                <span className="truncate">Perfil</span>
+                <span className="truncate text-xs font-normal text-zinc-500">
+                  {user.name} - {userRole}
+                </span>
+              </span>
             </span>
             <ChevronDown
               className={`h-4 w-4 shrink-0 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`}
@@ -263,6 +310,16 @@ export function AppShell({
           >
             <Menu className="h-5 w-5 text-zinc-600" />
           </button>
+          {showBackButton && (
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="p-2 rounded-lg hover:bg-zinc-100 tap-target"
+              aria-label="Volver"
+            >
+              <ArrowLeft className="h-5 w-5 text-zinc-600" />
+            </button>
+          )}
           <Link href="/work-orders" className="md:hidden font-semibold text-zinc-900">
             AmiMaint
           </Link>

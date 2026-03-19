@@ -5,7 +5,6 @@ import { requests } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
 import { assets } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { createId } from "@/lib/id";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -38,26 +37,9 @@ export async function GET(req: Request) {
   return NextResponse.json(list);
 }
 
-export async function POST(req: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const body = await req.json().catch(() => ({}));
-  const description = (body.description ?? "").trim();
-  if (!description) {
-    return NextResponse.json(
-      { error: "Description required" },
-      { status: 400 }
-    );
-  }
-  const id = createId();
-  await db.insert(requests).values({
-    id,
-    description,
-    assetId: body.assetId || null,
-    requesterId: session.id,
-    status: "pending",
-  });
-  return NextResponse.json({ id });
+export async function POST() {
+  return NextResponse.json(
+    { error: "Las solicitudes nuevas solo se crean desde /solicitud" },
+    { status: 403 }
+  );
 }

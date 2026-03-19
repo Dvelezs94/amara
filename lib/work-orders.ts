@@ -4,7 +4,8 @@ import { workOrderChecklist } from "@/lib/db/schema";
 import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
 import { notes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { attachments } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
 
 export async function getWorkOrderById(id: string) {
   const wo = await db.query.workOrders.findFirst({
@@ -35,6 +36,10 @@ export async function getWorkOrderById(id: string) {
   const noteList = await db.query.notes.findMany({
     where: eq(notes.workOrderId, id),
   });
+  const attachmentList = await db.query.attachments.findMany({
+    where: eq(attachments.workOrderId, id),
+    orderBy: [desc(attachments.createdAt)],
+  });
   return {
     ...wo,
     asset: asset
@@ -44,5 +49,6 @@ export async function getWorkOrderById(id: string) {
     requester: requester ?? null,
     checklist,
     notes: noteList,
+    attachments: attachmentList,
   };
 }

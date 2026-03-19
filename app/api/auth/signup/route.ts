@@ -6,12 +6,14 @@ import { eq } from "drizzle-orm";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const email = (body.email ?? "").trim().toLowerCase();
+  const username = (body.username ?? "").trim().toLowerCase();
+  const emailRaw = (body.email ?? "").trim().toLowerCase();
+  const email = emailRaw || null;
   const name = (body.name ?? "").trim();
   const password = body.password ?? "";
-  if (!email || !name || !password) {
+  if (!username || !name || !password) {
     return NextResponse.json(
-      { error: "Name, email and password required" },
+      { error: "Name, username and password required" },
       { status: 400 }
     );
   }
@@ -21,16 +23,27 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  const existing = await db.query.users.findFirst({
-    where: eq(users.email, email),
+  const existingByUsername = await db.query.users.findFirst({
+    where: eq(users.username, username),
   });
-  if (existing) {
+  if (existingByUsername) {
     return NextResponse.json(
-      { error: "An account with this email already exists" },
+      { error: "This username is already in use" },
       { status: 409 }
     );
   }
-  const user = await createUser({ email, name, password });
+  if (email) {
+    const existingByEmail = await db.query.users.findFirst({
+      where: eq(users.email, email),
+    });
+    if (existingByEmail) {
+      return NextResponse.json(
+        { error: "An account with this email already exists" },
+        { status: 409 }
+      );
+    }
+  }
+  const user = await createUser({ username, email, name, password });
   await createSession(user.id);
   return NextResponse.json({ ok: true });
 }

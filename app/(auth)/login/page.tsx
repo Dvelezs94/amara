@@ -16,6 +16,12 @@ export default async function LoginPage() {
           Registrarse
         </Link>
       </p>
+      <Link
+        href="/solicitud"
+        className="mt-3 text-sm font-medium text-primary-600"
+      >
+        Crear una solicitud sin iniciar sesión
+      </Link>
     </div>
   );
 }

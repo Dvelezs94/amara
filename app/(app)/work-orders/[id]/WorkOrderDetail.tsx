@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
-import { Check, Square } from "lucide-react";
+import { Check, Square, ImagePlus } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   open: "bg-amber-100 text-amber-800",
@@ -45,10 +45,89 @@ export function WorkOrderDetail({
     requester: { id: string; name: string } | null;
     checklist: ChecklistItem[];
     notes: { id: string; body: string; createdAt: string | Date }[];
+    attachments: {
+      id: string;
+      fileUrl: string;
+      filename: string;
+      createdAt: string | Date;
+    }[];
   };
 }) {
   const [checklist, setChecklist] = useState(initial.checklist);
+  const [attachments, setAttachments] = useState(initial.attachments);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const woPhotoInputRef = useRef<HTMLInputElement>(null);
   const isCompleted = initial.status === "completed";
+
+  async function uploadWorkOrderPhoto(file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`/api/work-orders/${initial.id}/attachments`, {
+      method: "POST",
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error ?? "Error al subir la foto");
+    }
+    return data as {
+      id: string;
+      fileUrl: string;
+      filename: string;
+      createdAt: string;
+    };
+  }
+
+  async function onWorkOrderPhotosSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files?.length) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const newItems: typeof attachments = [];
+      for (let i = 0; i < files.length; i += 1) {
+        const row = await uploadWorkOrderPhoto(files[i]);
+        newItems.push({
+          id: row.id,
+          fileUrl: row.fileUrl,
+          filename: row.filename,
+          createdAt: row.createdAt,
+        });
+      }
+      setAttachments((prev) => [...newItems, ...prev]);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Error al subir");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function onChecklistPhotoSelected(itemId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const row = await uploadWorkOrderPhoto(file);
+      setChecklist((prev) =>
+        prev.map((i) =>
+          i.id === itemId ? { ...i, value: row.fileUrl } : i
+        )
+      );
+      await fetch(`/api/work-orders/${initial.id}/checklist`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId, value: row.fileUrl }),
+      });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Error al subir");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
 
   async function toggleStep(itemId: string, completed: boolean) {
     setChecklist((prev) =>
@@ -103,6 +182,63 @@ export function WorkOrderDetail({
           <p className="text-zinc-900 whitespace-pre-wrap">{initial.description}</p>
         </section>
       )}
+
+      <section>
+        <h2 className="text-sm font-medium text-zinc-500 mb-2">Fotos de la orden</h2>
+        {uploadError && (
+          <p className="mb-2 text-sm text-red-600">{uploadError}</p>
+        )}
+        {!isCompleted && (
+          <div className="mb-3">
+            <input
+              ref={woPhotoInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={onWorkOrderPhotosSelected}
+            />
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => woPhotoInputRef.current?.click()}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 tap-target disabled:opacity-50"
+            >
+              <ImagePlus className="h-4 w-4" />
+              {uploading ? "Subiendo…" : "Subir fotos"}
+            </button>
+            <p className="mt-1 text-xs text-zinc-500">
+              Imagenes JPEG, PNG, WebP, etc.
+            </p>
+          </div>
+        )}
+        {attachments.length === 0 ? (
+          <p className="text-sm text-zinc-500">Aún no hay fotos adjuntas.</p>
+        ) : (
+          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {attachments.map((a) => (
+              <li key={a.id} className="overflow-hidden rounded-lg border border-zinc-200">
+                <a
+                  href={a.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block aspect-square bg-zinc-100"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={a.fileUrl}
+                    alt={a.filename}
+                    className="h-full w-full object-cover"
+                  />
+                </a>
+                <p title={a.filename} className="truncate px-1 py-1 text-xs text-zinc-500">
+                  {a.filename}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="grid grid-cols-2 gap-3 text-sm">
         {initial.asset && (
@@ -207,15 +343,33 @@ export function WorkOrderDetail({
                     {item.label}
                   </label>
                   {isCompleted ? (
-                    <p className="text-zinc-900">
+                    <div className="text-zinc-900">
                       {item.fieldType === "checkbox"
                         ? item.value === true
                           ? "Sí"
                           : "No"
-                        : item.value != null
-                          ? String(item.value)
-                          : "—"}
-                    </p>
+                        : item.fieldType === "photo" &&
+                          typeof item.value === "string" &&
+                          item.value.startsWith("/") ? (
+                          <a
+                            href={item.value}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block max-w-xs"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={item.value}
+                              alt="Evidencia"
+                              className="max-h-48 rounded-lg border border-zinc-200"
+                            />
+                          </a>
+                        ) : item.value != null ? (
+                          String(item.value)
+                        ) : (
+                          "—"
+                        )}
+                    </div>
                   ) : (
                     <>
                       {item.fieldType === "checkbox" && (
@@ -266,9 +420,31 @@ export function WorkOrderDetail({
                         </select>
                       )}
                       {item.fieldType === "photo" && (
-                        <p className="text-zinc-500 text-sm">
-                          {item.value != null ? "Foto adjunta" : "Subir foto (próximamente)"}
-                        </p>
+                        <div className="space-y-2">
+                          {typeof item.value === "string" &&
+                            item.value.startsWith("/") && (
+                              <a
+                                href={item.value}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block max-w-xs"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={item.value}
+                                  alt="Previsualización"
+                                  className="max-h-40 rounded-lg border border-zinc-200"
+                                />
+                              </a>
+                            )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            disabled={uploading}
+                            onChange={(e) => onChecklistPhotoSelected(item.id, e)}
+                            className="text-sm text-zinc-600 file:mr-2 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-700"
+                          />
+                        </div>
                       )}
                       {item.fieldType !== "checkbox" && item.fieldType !== "text" && item.fieldType !== "number" && item.fieldType !== "date" && item.fieldType !== "dropdown" && item.fieldType !== "photo" && (
                         <p className="text-zinc-900">

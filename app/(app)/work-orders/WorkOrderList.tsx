@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { GripVertical } from "lucide-react";
 
 type WorkOrderRow = {
   id: string;
@@ -15,6 +15,14 @@ type WorkOrderRow = {
   assigneeName: string | null;
   createdAt: string;
 };
+
+type BoardStatus = "open" | "in_progress" | "completed";
+
+const boardColumns: { key: BoardStatus; title: string }[] = [
+  { key: "open", title: "Abiertas" },
+  { key: "in_progress", title: "En progreso" },
+  { key: "completed", title: "Terminadas" },
+];
 
 const statusColors: Record<string, string> = {
   open: "bg-amber-100 text-amber-800",
@@ -43,13 +51,14 @@ function formatDate(s: string | null) {
 export function WorkOrderList() {
   const [items, setItems] = useState<WorkOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("");
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<BoardStatus | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const params = new URLSearchParams();
-    if (filter) params.set("status", filter);
-    fetch(`/api/work-orders?${params}`)
+    fetch("/api/work-orders")
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled) setItems(Array.isArray(data) ? data : []);
@@ -63,7 +72,35 @@ export function WorkOrderList() {
     return () => {
       cancelled = true;
     };
-  }, [filter]);
+  }, []);
+
+  async function moveWorkOrder(workOrderId: string, to: BoardStatus) {
+    const current = items.find((item) => item.id === workOrderId);
+    if (!current || current.status === to) return;
+    const previousItems = items;
+    setError(null);
+    setSavingId(workOrderId);
+    setItems((list) =>
+      list.map((wo) => (wo.id === workOrderId ? { ...wo, status: to } : wo))
+    );
+    try {
+      const res = await fetch(`/api/work-orders/${workOrderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: to }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setItems(previousItems);
+        setError(data.error ?? "No se pudo actualizar el estado.");
+      }
+    } catch {
+      setItems(previousItems);
+      setError("No se pudo actualizar el estado.");
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -95,65 +132,116 @@ export function WorkOrderList() {
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1">
-        {["", "open", "in_progress", "completed"].map((s) => (
-          <button
-            key={s || "all"}
-            type="button"
-            onClick={() => setFilter(s)}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium tap-target ${
-              filter === s
-                ? "bg-primary-600 text-white"
-                : "bg-zinc-100 text-zinc-600"
-            }`}
-          >
-            {s === "" ? "Todas" : s === "open" ? "Abiertas" : s === "in_progress" ? "En curso" : s === "completed" ? "Completadas" : s.replace("_", " ")}
-          </button>
-        ))}
-      </div>
-      <ul className="space-y-2">
-        {items.map((wo) => (
-          <li key={wo.id}>
-            <Link
-              href={`/work-orders/${wo.id}`}
-              className="block rounded-xl border border-zinc-200 bg-white p-4 hover:border-primary-200 hover:bg-primary-50/50 transition tap-target"
+      {error && (
+        <p className="rounded-lg bg-red-50 p-2 text-sm text-red-600">{error}</p>
+      )}
+      <div className="grid gap-3 md:grid-cols-3">
+        {boardColumns.map((column) => {
+          const columnItems = items.filter((wo) => wo.status === column.key);
+          const isDropActive = dropTarget === column.key;
+          return (
+            <section
+              key={column.key}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDropTarget(column.key);
+              }}
+              onDragLeave={() => {
+                setDropTarget((current) => (current === column.key ? null : current));
+              }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                setDropTarget(null);
+                const id = e.dataTransfer.getData("text/plain");
+                if (!id) return;
+                await moveWorkOrder(id, column.key);
+              }}
+              className={`rounded-xl border bg-white p-3 min-h-[18rem] ${
+                isDropActive ? "border-primary-400 ring-2 ring-primary-100" : "border-zinc-200"
+              }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-zinc-900 truncate">{wo.title}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        statusColors[wo.status] ?? "bg-zinc-100 text-zinc-600"
-                      }`}
-                    >
-                      {wo.status === "open" ? "Abierta" : wo.status === "in_progress" ? "En curso" : wo.status === "completed" ? "Completada" : wo.status === "cancelled" ? "Cancelada" : wo.status.replace("_", " ")}
-                    </span>
-                    <span className={priorityColors[wo.priority] ?? ""}>
-                      {wo.priority === "low" ? "Baja" : wo.priority === "medium" ? "Media" : wo.priority === "high" ? "Alta" : wo.priority === "urgent" ? "Urgente" : wo.priority}
-                    </span>
-                    {wo.assetName && (
-                      <span className="text-zinc-500 truncate">
-                        {wo.assetName}
-                        {wo.assetAssetId ? ` (${wo.assetAssetId})` : ""}
+              <header className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-zinc-800">{column.title}</h3>
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+                  {columnItems.length}
+                </span>
+              </header>
+              <div className="space-y-2">
+                {columnItems.map((wo) => (
+                  <article
+                    key={wo.id}
+                    draggable={savingId !== wo.id}
+                    onDragStart={(e) => {
+                      setDraggingId(wo.id);
+                      e.dataTransfer.setData("text/plain", wo.id);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId(null);
+                      setDropTarget(null);
+                    }}
+                    className={`rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition ${
+                      draggingId === wo.id ? "opacity-60" : ""
+                    } ${savingId === wo.id ? "pointer-events-none opacity-60" : ""}`}
+                  >
+                    <div className="mb-1 flex items-start justify-between gap-2">
+                      <Link
+                        href={`/work-orders/${wo.id}`}
+                        className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900 hover:text-primary-700"
+                      >
+                        {wo.title}
+                      </Link>
+                      <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-medium ${
+                          statusColors[wo.status] ?? "bg-zinc-100 text-zinc-600"
+                        }`}
+                      >
+                        {wo.status === "open"
+                          ? "Abierta"
+                          : wo.status === "in_progress"
+                            ? "En curso"
+                            : wo.status === "completed"
+                              ? "Completada"
+                              : wo.status === "cancelled"
+                                ? "Cancelada"
+                                : wo.status.replace("_", " ")}
                       </span>
-                    )}
-                    <span className="text-zinc-400">
-                      Vence {formatDate(wo.dueDate)}
-                    </span>
-                  </div>
-                  {wo.assigneeName && (
+                      <span className={priorityColors[wo.priority] ?? ""}>
+                        {wo.priority === "low"
+                          ? "Baja"
+                          : wo.priority === "medium"
+                            ? "Media"
+                            : wo.priority === "high"
+                              ? "Alta"
+                              : wo.priority === "urgent"
+                                ? "Urgente"
+                                : wo.priority}
+                      </span>
+                    </div>
                     <p className="mt-1 text-xs text-zinc-500">
-                      {wo.assigneeName}
+                      {wo.assetName
+                        ? `${wo.assetName}${wo.assetAssetId ? ` (${wo.assetAssetId})` : ""}`
+                        : "Sin activo"}
                     </p>
-                  )}
-                </div>
-                <ChevronRight className="h-5 w-5 text-zinc-400 shrink-0" />
+                    <p className="text-xs text-zinc-400">Vence {formatDate(wo.dueDate)}</p>
+                    {wo.assigneeName && (
+                      <p className="mt-1 text-xs text-zinc-500">{wo.assigneeName}</p>
+                    )}
+                  </article>
+                ))}
+                {columnItems.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-center text-xs text-zinc-400">
+                    Arrastra ordenes aqui
+                  </div>
+                )}
               </div>
-            </Link>
-          </li>
-        ))}
-      </ul>
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -3,18 +3,18 @@ import { verifyPassword, createSession } from "@/lib/auth";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const email = body.email ?? "";
+  const username = (body.username ?? "").trim().toLowerCase();
   const password = body.password ?? "";
-  if (!email || !password) {
+  if (!username || !password) {
     return NextResponse.json(
-      { error: "Email and password required" },
+      { error: "Username and password required" },
       { status: 400 }
     );
   }
-  const user = await verifyPassword(email, password);
+  const user = await verifyPassword(username, password);
   if (!user) {
     return NextResponse.json(
-      { error: "Invalid email or password" },
+      { error: "Invalid username or password" },
       { status: 401 }
     );
   }

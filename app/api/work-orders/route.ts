@@ -8,6 +8,7 @@ import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -94,5 +95,20 @@ export async function POST(req: Request) {
       });
     }
   }
+  await recordAuditLog({
+    entityType: "work_order",
+    entityId: id,
+    action: "created",
+    userId: session.id,
+    metadata: {
+      title,
+      status: "open",
+      priority: body.priority ?? "medium",
+      assetId: body.assetId || null,
+      assigneeId: body.assigneeId || null,
+      checklistTemplateId,
+      dueDate: body.dueDate ?? null,
+    },
+  });
   return NextResponse.json({ id });
 }

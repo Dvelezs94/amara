@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { checklistTemplates } from "@/lib/db/schema";
 import { checklistTemplateItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function GET(
   _req: Request,
@@ -48,6 +49,19 @@ export async function PATCH(
   if (body.description !== undefined) updates.description = body.description?.trim() ?? null;
   if (Object.keys(updates).length > 0) {
     await db.update(checklistTemplates).set(updates).where(eq(checklistTemplates.id, id));
+    await recordAuditLog({
+      entityType: "checklist_template",
+      entityId: id,
+      action: "updated",
+      userId: session.id,
+      metadata: {
+        before: {
+          name: template.name,
+          description: template.description,
+        },
+        after: updates,
+      },
+    });
   }
   return NextResponse.json({ ok: true });
 }
@@ -61,6 +75,21 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
+  const template = await db.query.checklistTemplates.findFirst({
+    where: eq(checklistTemplates.id, id),
+  });
   await db.delete(checklistTemplates).where(eq(checklistTemplates.id, id));
+  if (template) {
+    await recordAuditLog({
+      entityType: "checklist_template",
+      entityId: id,
+      action: "deleted",
+      userId: session.id,
+      metadata: {
+        name: template.name,
+        description: template.description,
+      },
+    });
+  }
   return NextResponse.json({ ok: true });
 }

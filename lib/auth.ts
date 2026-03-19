@@ -3,17 +3,21 @@ import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { createId } from "@/lib/id";
 
 const SESSION_COOKIE = "session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
+export const AVAILABLE_USER_ROLES = ["technician", "supervisor", "admin"] as const;
+export type UserRole = (typeof AVAILABLE_USER_ROLES)[number];
+
 export type SessionUser = {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   name: string;
-  role: string;
+  role: UserRole;
 };
 
 export async function getSession(): Promise<SessionUser | null> {
@@ -27,7 +31,7 @@ export async function getSession(): Promise<SessionUser | null> {
     if (payload.exp && payload.exp * 1000 < Date.now()) return null;
     const user = await db.query.users.findFirst({
       where: eq(users.id, payload.sub),
-      columns: { id: true, email: true, name: true, role: true },
+      columns: { id: true, username: true, email: true, name: true, role: true },
     });
     return user ?? null;
   } catch {
@@ -64,16 +68,18 @@ export async function destroySession(): Promise<void> {
 }
 
 export async function verifyPassword(
-  email: string,
+  username: string,
   password: string
 ): Promise<SessionUser | null> {
   const user = await db.query.users.findFirst({
-    where: eq(users.email, email),
+    // Backward compatibility: allow old email-based logins.
+    where: or(eq(users.username, username), eq(users.email, username)),
   });
   if (!user || !(await bcrypt.compare(password, user.passwordHash)))
     return null;
   return {
     id: user.id,
+    username: user.username,
     email: user.email,
     name: user.name,
     role: user.role,
@@ -81,23 +87,26 @@ export async function verifyPassword(
 }
 
 export async function createUser(params: {
-  email: string;
+  username: string;
+  email?: string | null;
   name: string;
   password: string;
-  role?: "technician" | "supervisor" | "admin";
+  role?: UserRole;
 }): Promise<SessionUser> {
   const id = createId();
   const passwordHash = await bcrypt.hash(params.password, 10);
   await db.insert(users).values({
     id,
-    email: params.email,
+    username: params.username,
+    email: params.email ?? null,
     name: params.name,
     passwordHash,
     role: params.role ?? "technician",
   });
   return {
     id,
-    email: params.email,
+    username: params.username,
+    email: params.email ?? null,
     name: params.name,
     role: params.role ?? "technician",
   };

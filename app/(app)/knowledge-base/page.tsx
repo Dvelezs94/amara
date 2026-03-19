@@ -109,7 +109,7 @@ export default function KnowledgeBasePage() {
             Sube un archivo arriba o añade desde la ficha de cada activo.
           </p>
           <Link href="/assets" className="inline-block mt-4 text-primary-600 font-medium hover:underline">
-            Ver activos
+            Ver maquinas
           </Link>
         </div>
       ) : (

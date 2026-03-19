@@ -5,6 +5,7 @@ import { workOrders } from "@/lib/db/schema";
 import { workOrderChecklist } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function POST(
   req: Request,
@@ -38,6 +39,19 @@ export async function POST(
     completed: false,
     fieldType: body.fieldType ?? null,
     options: body.options ?? null,
+  });
+  await recordAuditLog({
+    entityType: "work_order_checklist",
+    entityId: itemId,
+    action: "created",
+    userId: session.id,
+    metadata: {
+      workOrderId,
+      type: body.type ?? "step",
+      label: (body.label ?? "").trim() || "Step",
+      sortOrder:
+        typeof body.sortOrder === "number" ? body.sortOrder : 0,
+    },
   });
   return NextResponse.json({ id: itemId });
 }
@@ -74,9 +88,38 @@ export async function PATCH(
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No updates" }, { status: 400 });
   }
+  const before = await db.query.workOrderChecklist.findFirst({
+    where: eq(workOrderChecklist.id, itemId),
+  });
+
   await db
     .update(workOrderChecklist)
     .set(updates as Record<string, unknown>)
     .where(eq(workOrderChecklist.id, itemId));
+
+  await recordAuditLog({
+    entityType: "work_order_checklist",
+    entityId: itemId,
+    action: "updated",
+    userId: session.id,
+    metadata: {
+      workOrderId,
+      before: before
+        ? {
+            completed: before.completed,
+            value: before.value,
+          }
+        : null,
+      after: {
+        completed:
+          body.completed !== undefined
+            ? body.completed
+            : before?.completed,
+        value:
+          body.value !== undefined ? body.value : before?.value,
+      },
+    },
+  });
+
   return NextResponse.json({ ok: true });
 }

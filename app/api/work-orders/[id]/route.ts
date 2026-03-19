@@ -6,7 +6,9 @@ import { workOrderChecklist } from "@/lib/db/schema";
 import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
 import { notes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { attachments } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function GET(
   _req: Request,
@@ -47,6 +49,10 @@ export async function GET(
   const noteList = await db.query.notes.findMany({
     where: eq(notes.workOrderId, id),
   });
+  const attachmentList = await db.query.attachments.findMany({
+    where: eq(attachments.workOrderId, id),
+    orderBy: [desc(attachments.createdAt)],
+  });
   return NextResponse.json({
     ...wo,
     asset: asset
@@ -56,6 +62,7 @@ export async function GET(
     requester: requester ?? null,
     checklist,
     notes: noteList,
+    attachments: attachmentList,
   });
 }
 
@@ -91,9 +98,34 @@ export async function PATCH(
   if (body.assetId !== undefined) updates.assetId = body.assetId || null;
   if (body.assigneeId !== undefined) updates.assigneeId = body.assigneeId || null;
   if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
+  const isCompleting =
+    body.status === "completed" && wo.status !== "completed";
   if (body.status === "completed") updates.completedAt = new Date();
 
   await db.update(workOrders).set(updates).where(eq(workOrders.id, id));
+
+  await recordAuditLog({
+    entityType: "work_order",
+    entityId: id,
+    action: isCompleting ? "completed" : "updated",
+    userId: session.id,
+    metadata: {
+      before: {
+        status: wo.status,
+        priority: wo.priority,
+        assigneeId: wo.assigneeId,
+        dueDate: wo.dueDate,
+      },
+      after: {
+        status: body.status ?? wo.status,
+        priority: body.priority ?? wo.priority,
+        assigneeId: body.assigneeId ?? wo.assigneeId,
+        dueDate:
+          body.dueDate !== undefined ? body.dueDate : wo.dueDate,
+      },
+    },
+  });
+
   return NextResponse.json({ ok: true });
 }
 

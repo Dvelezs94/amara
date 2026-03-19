@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { checklistTemplates } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function GET() {
   const session = await getSession();
@@ -32,6 +33,13 @@ export async function POST(req: Request) {
     id,
     name,
     description: body.description?.trim() || null,
+  });
+  await recordAuditLog({
+    entityType: "checklist_template",
+    entityId: id,
+    action: "created",
+    userId: session.id,
+    metadata: { name, description: body.description ?? null },
   });
   return NextResponse.json({ id });
 }

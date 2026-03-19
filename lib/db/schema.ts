@@ -7,7 +7,8 @@ import {
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
-  email: text("email").notNull().unique(),
+  username: text("username").notNull().unique(),
+  email: text("email").unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["technician", "supervisor", "admin"] })
@@ -160,6 +161,18 @@ export const dashboardWidgets = sqliteTable("dashboard_widgets", {
   dateFrom: text("date_from"), // YYYY-MM-DD or null
   dateTo: text("date_to"),
   sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const auditLogs = sqliteTable("audit_logs", {
+  id: text("id").primaryKey(),
+  entityType: text("entity_type").notNull(), // e.g. work_order, checklist_template, work_order_checklist
+  entityId: text("entity_id").notNull(),
+  action: text("action").notNull(), // e.g. created, updated, completed
+  userId: text("user_id").notNull().references(() => users.id),
+  metadata: text("metadata", { mode: "json" }),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

@@ -40,7 +40,7 @@ export function AssetList() {
     <div className="space-y-3">
       <input
         type="search"
-        placeholder="Buscar activos…"
+        placeholder="Buscar maquinas…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder:text-zinc-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
@@ -57,7 +57,7 @@ export function AssetList() {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center">
-          <p className="text-zinc-500">Aún no hay activos.</p>
+          <p className="text-zinc-500">Aún no hay maquinas.</p>
           <Link
             href="/assets/new"
             className="mt-3 inline-block text-primary-600 font-medium"

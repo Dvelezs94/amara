@@ -75,7 +75,7 @@ export default async function AssetDetailPage({
         href="/assets"
         className="inline-block text-sm text-primary-600 font-medium"
       >
-        Volver a activos
+        Volver a maquinas
       </Link>
     </div>
   );

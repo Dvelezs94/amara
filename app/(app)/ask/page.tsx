@@ -64,7 +64,7 @@ export default function AskPage() {
       <div className="flex-shrink-0 mb-4">
         <h1 className="text-xl font-semibold text-zinc-900">Asistente de mantenimiento</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Pregunta sobre activos, órdenes de trabajo, checklists, documentación y solicitudes. El asistente consulta los datos por ti.
+          Pregunta sobre maquinas, órdenes de trabajo, checklists, documentación y solicitudes. El asistente consulta los datos por ti.
         </p>
       </div>
 
@@ -75,7 +75,7 @@ export default function AskPage() {
               <p className="font-medium text-zinc-700">Ejemplos de preguntas</p>
               <ul className="mt-3 space-y-2 text-sm text-left max-w-sm mx-auto">
                 <li>• ¿Cuántas órdenes de trabajo abiertas hay?</li>
-                <li>• Lista los activos</li>
+                <li>• Lista las maquinas</li>
                 <li>• ¿Qué plantillas de checklist existen?</li>
                 <li>• ¿Hay documentación o manuales en la base de conocimiento?</li>
                 <li>• Dame los detalles del activo [nombre]</li>
