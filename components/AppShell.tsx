@@ -10,7 +10,6 @@ import {
   CalendarDays,
   LayoutDashboard,
   BookOpen,
-  Bot,
   User,
   Menu,
   X,
@@ -31,7 +30,6 @@ const baseNavSections: { type: string; items: NavItem[] }[] = [
     type: "Principal",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/ask", label: "Asistente", icon: Bot },
     ],
   },
   {
