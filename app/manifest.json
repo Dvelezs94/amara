@@ -4,7 +4,7 @@
   "description": "Gestión de mantenimiento, prioridad móvil",
   "start_url": "/work-orders",
   "display": "standalone",
-  "background_color": "#fafafa",
-  "theme_color": "#2563eb",
+  "background_color": "#F5F5F5",
+  "theme_color": "#1F3C88",
   "orientation": "portrait-primary"
 }

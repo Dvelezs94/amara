@@ -15,8 +15,27 @@ type Widget = {
   sortOrder: number;
 };
 
+type PendingOrder = {
+  id: string;
+  title: string;
+  status: "open" | "in_progress" | "completed" | "cancelled";
+  dueDate: string | null;
+  priority: "low" | "medium" | "high" | "urgent";
+  assetName: string | null;
+};
+
+type UpcomingEvent = {
+  id: string;
+  name: string;
+  nextRunAt: string | null;
+  assetName: string | null;
+  assigneeName: string | null;
+};
+
 export default function DashboardPage() {
   const [widgets, setWidgets] = useState<Widget[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
@@ -30,9 +49,39 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }
 
+  function loadOverview() {
+    fetch("/api/dashboard/overview")
+      .then((r) => r.json())
+      .then((data) => {
+        setPendingOrders(Array.isArray(data?.pendingOrders) ? data.pendingOrders : []);
+        setUpcomingEvents(Array.isArray(data?.upcomingEvents) ? data.upcomingEvents : []);
+      })
+      .catch(() => {
+        setPendingOrders([]);
+        setUpcomingEvents([]);
+      });
+  }
+
   useEffect(() => {
     loadWidgets();
+    loadOverview();
   }, []);
+
+  function formatDate(value: string | null) {
+    if (!value) return "Sin fecha";
+    return new Date(value).toLocaleDateString("es-MX", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  function statusLabel(status: PendingOrder["status"]) {
+    if (status === "open") return "Abierta";
+    if (status === "in_progress") return "En progreso";
+    if (status === "completed") return "Completada";
+    return "Cancelada";
+  }
 
   async function removeWidget(id: string) {
     await fetch(`/api/dashboard/widgets/${id}`, { method: "DELETE" });
@@ -106,6 +155,70 @@ export default function DashboardPage() {
       <p className="text-sm text-zinc-500">
         Arrastra las tarjetas para reordenar. Los gráficos se guardan aquí desde la página de analíticas.
       </p>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-900">Órdenes pendientes</h2>
+            <Link href="/work-orders" className="text-sm font-medium text-primary-600 hover:underline">
+              Ver todas
+            </Link>
+          </div>
+          {pendingOrders.length === 0 ? (
+            <p className="text-sm text-zinc-500">No hay órdenes pendientes.</p>
+          ) : (
+            <ul className="space-y-2">
+              {pendingOrders.map((order) => (
+                <li key={order.id} className="rounded-lg border border-zinc-100 bg-surface p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <Link href={`/work-orders/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
+                      {order.title}
+                    </Link>
+                    <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
+                      {statusLabel(order.status)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Prioridad: {order.priority} · Vence: {formatDate(order.dueDate)}
+                  </p>
+                  {order.assetName && (
+                    <p className="mt-1 text-xs text-zinc-500">Activo: {order.assetName}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-900">Próximos eventos</h2>
+            <Link href="/calendario" className="text-sm font-medium text-primary-600 hover:underline">
+              Ver calendario
+            </Link>
+          </div>
+          {upcomingEvents.length === 0 ? (
+            <p className="text-sm text-zinc-500">No hay eventos próximos.</p>
+          ) : (
+            <ul className="space-y-2">
+              {upcomingEvents.map((event) => (
+                <li key={event.id} className="rounded-lg border border-zinc-100 bg-surface p-3">
+                  <p className="font-medium text-zinc-900">{event.name}</p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Fecha: {formatDate(event.nextRunAt)}
+                  </p>
+                  {event.assetName && (
+                    <p className="mt-1 text-xs text-zinc-500">Activo: {event.assetName}</p>
+                  )}
+                  {event.assigneeName && (
+                    <p className="mt-1 text-xs text-zinc-500">Asignado: {event.assigneeName}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
 
       {widgets.length === 0 ? (
         <div className="rounded-xl border border-zinc-200 border-dashed bg-zinc-50 p-12 text-center">

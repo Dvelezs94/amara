@@ -3,13 +3,18 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: 37 99 235;
-  --color-surface: 250 250 250;
+  --color-primary: 31 60 136;
+  --color-surface: 245 245 245;
   --color-surface-card: 255 255 255;
+  --color-accent: 243 108 33;
+  --color-text: 74 74 74;
+  --color-text-strong: 34 34 34;
+  --color-support-green: 111 175 111;
 }
 
 body {
-  @apply bg-surface text-zinc-900 antialiased;
+  @apply bg-surface antialiased;
+  color: rgb(var(--color-text));
   min-height: 100dvh;
 }
 

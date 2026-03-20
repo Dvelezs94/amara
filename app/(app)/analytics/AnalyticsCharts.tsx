@@ -39,7 +39,7 @@ type ApiResponse = {
   fields: string[];
 };
 
-const COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
+const COLORS = ["#1F3C88", "#F36C21", "#6FAF6F", "#4A4A4A", "#557DDA", "#1A3272"];
 
 export function AnalyticsCharts() {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -267,7 +267,7 @@ export function AnalyticsCharts() {
                 <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} />
                 <Tooltip />
-                <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} name={fieldLabel} />
+                <Line type="monotone" dataKey="value" stroke="#1F3C88" strokeWidth={2} name={fieldLabel} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -286,7 +286,7 @@ export function AnalyticsCharts() {
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} />
                 <Tooltip />
-                <Bar dataKey="value" fill="#2563eb" name="Cantidad" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="value" fill="#F36C21" name="Cantidad" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

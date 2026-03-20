@@ -22,32 +22,76 @@ function formatDate(value: Date | null) {
   });
 }
 
+function isMissingAssigneeColumnError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes("no such column: maintenance_schedules.assignee_id");
+}
+
 export default async function CalendarioPage() {
   const userList = await db
     .select({ id: users.id, name: users.name })
     .from(users)
     .orderBy(users.name);
 
-  const schedules = await db
-    .select({
-      id: maintenanceSchedules.id,
-      name: maintenanceSchedules.name,
-      recurrence: maintenanceSchedules.recurrence,
-      nextRunAt: maintenanceSchedules.nextRunAt,
-      assigneeId: maintenanceSchedules.assigneeId,
-      assigneeName: users.name,
-      assetName: assets.name,
-      assetCode: assets.assetId,
-      checklistName: checklistTemplates.name,
-    })
-    .from(maintenanceSchedules)
-    .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id))
-    .leftJoin(users, eq(maintenanceSchedules.assigneeId, users.id))
-    .leftJoin(
-      checklistTemplates,
-      eq(maintenanceSchedules.checklistTemplateId, checklistTemplates.id)
-    )
-    .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
+  let hasAssigneeColumn = true;
+  let schedules: Array<{
+    id: string;
+    name: string;
+    recurrence: string;
+    nextRunAt: Date | null;
+    assigneeId: string | null;
+    assigneeName: string | null;
+    assetName: string | null;
+    assetCode: string | null;
+    checklistName: string | null;
+  }> = [];
+  try {
+    schedules = await db
+      .select({
+        id: maintenanceSchedules.id,
+        name: maintenanceSchedules.name,
+        recurrence: maintenanceSchedules.recurrence,
+        nextRunAt: maintenanceSchedules.nextRunAt,
+        assigneeId: maintenanceSchedules.assigneeId,
+        assigneeName: users.name,
+        assetName: assets.name,
+        assetCode: assets.assetId,
+        checklistName: checklistTemplates.name,
+      })
+      .from(maintenanceSchedules)
+      .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id))
+      .leftJoin(users, eq(maintenanceSchedules.assigneeId, users.id))
+      .leftJoin(
+        checklistTemplates,
+        eq(maintenanceSchedules.checklistTemplateId, checklistTemplates.id)
+      )
+      .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
+  } catch (error) {
+    if (!isMissingAssigneeColumnError(error)) throw error;
+    hasAssigneeColumn = false;
+    const fallbackSchedules = await db
+      .select({
+        id: maintenanceSchedules.id,
+        name: maintenanceSchedules.name,
+        recurrence: maintenanceSchedules.recurrence,
+        nextRunAt: maintenanceSchedules.nextRunAt,
+        assetName: assets.name,
+        assetCode: assets.assetId,
+        checklistName: checklistTemplates.name,
+      })
+      .from(maintenanceSchedules)
+      .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id))
+      .leftJoin(
+        checklistTemplates,
+        eq(maintenanceSchedules.checklistTemplateId, checklistTemplates.id)
+      )
+      .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
+    schedules = fallbackSchedules.map((item) => ({
+      ...item,
+      assigneeId: null,
+      assigneeName: null,
+    }));
+  }
 
   const assetOptions = await db
     .select({
@@ -141,11 +185,18 @@ export default async function CalendarioPage() {
                     </span>
                   </p>
                 )}
-                <MaintenanceAssigneeSelect
-                  scheduleId={task.id}
-                  users={userList}
-                  assigneeId={task.assigneeId}
-                />
+                {hasAssigneeColumn ? (
+                  <MaintenanceAssigneeSelect
+                    scheduleId={task.id}
+                    users={userList}
+                    assigneeId={task.assigneeId}
+                  />
+                ) : (
+                  <p className="text-xs text-zinc-500">
+                    Asignaciones deshabilitadas temporalmente: falta la columna
+                    `assignee_id` en la base de datos.
+                  </p>
+                )}
               </div>
             </li>
           ))}

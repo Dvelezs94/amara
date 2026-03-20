@@ -2,6 +2,21 @@
 
 Mobile-first maintenance management (CMMS-style) with web support. UI inspired by Nimble: clear, efficient, consistent.
 
+## Color palette
+
+The UI follows a corporate-modern palette with deep blue as the main brand color and orange as the CTA accent.
+
+- **Primary**
+  - Deep Blue: `#1F3C88` (headers, sections, primary buttons)
+  - White / Off-white: `#FFFFFF`, `#F5F5F5` (backgrounds and content areas)
+- **Secondary**
+  - Orange: `#F36C21` (highlights, stats, CTA actions)
+  - Light Gray: `#E6E6E6` (section backgrounds, separators)
+  - Dark Gray: `#4A4A4A` (body text, subtle UI elements)
+- **Supporting**
+  - Muted Green: `#6FAF6F` (subtle highlights)
+  - Near Black: `#222222` (strong text, footer emphasis)
+
 ## Stack
 
 - **Next.js 14** (App Router) — frontend + API
