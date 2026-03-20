@@ -22,15 +22,15 @@ export default async function ProfilePage() {
           initialAvatarUrl={session.avatarUrl}
         />
       </div>
-      <div className="rounded-xl border border-primary-200 bg-primary-50 p-3">
-        <p className="text-xs uppercase tracking-wide text-primary-700">
+      <div className="rounded-xl border border-primary-200 bg-primary-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+        <p className="text-xs uppercase tracking-wide text-primary-700 dark:text-primary-300">
           Resumen de perfil
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
-          <span className="inline-flex rounded-full bg-white px-3 py-1 text-sm font-semibold text-zinc-900">
+          <span className="inline-flex rounded-full bg-white px-3 py-1 text-sm font-semibold text-zinc-900 dark:bg-slate-700 dark:text-slate-100">
             {session.name}
           </span>
-          <span className="inline-flex rounded-full bg-white px-3 py-1 text-sm font-semibold text-primary-700">
+          <span className="inline-flex rounded-full bg-white px-3 py-1 text-sm font-semibold text-primary-700 dark:bg-slate-700 dark:text-primary-300">
             {role}
           </span>
         </div>

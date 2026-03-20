@@ -66,7 +66,7 @@ export function ProfilePhotoUpload({
         type="button"
         disabled={uploading}
         onClick={() => inputRef.current?.click()}
-        className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 tap-target disabled:opacity-50"
+        className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 tap-target disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
       >
         {uploading ? "Subiendo…" : "Cambiar foto de perfil"}
       </button>

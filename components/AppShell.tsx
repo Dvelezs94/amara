@@ -18,6 +18,8 @@ import {
   ChevronDown,
   Wrench,
   ArrowLeft,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import type { SessionUser } from "@/lib/auth-shared";
@@ -127,6 +129,7 @@ export function AppShell({
   const mainNav = navSections.flatMap((s) => s.items);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const showBackButton =
     pathname.startsWith("/work-orders") ||
     pathname.startsWith("/checklists") ||
@@ -134,6 +137,11 @@ export function AppShell({
 
   const profileDesktopRef = useRef<HTMLDivElement>(null);
   const profileMobileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const isDark = document.documentElement.classList.contains("dark");
+    setTheme(isDark ? "dark" : "light");
+  }, []);
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -146,6 +154,13 @@ export function AppShell({
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
   }, [profileMenuOpen]);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.classList.toggle("dark", next === "dark");
+    localStorage.setItem("theme", next);
+    setTheme(next);
+  }
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
@@ -332,6 +347,18 @@ export function AppShell({
           <Link href="/work-orders" className="md:hidden font-semibold text-zinc-900">
             AmiMaint
           </Link>
+          <div className="ml-auto">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              aria-label="Cambiar tema"
+              title={theme === "dark" ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {theme === "dark" ? "Claro" : "Oscuro"}
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 p-4 pb-24 md:pb-4 md:max-w-app md:w-full md:mx-auto">
