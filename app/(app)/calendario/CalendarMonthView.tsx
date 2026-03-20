@@ -150,6 +150,11 @@ export function CalendarMonthView({
     });
   }
 
+  function goToToday() {
+    const now = new Date();
+    setCursor({ year: now.getFullYear(), month: now.getMonth() });
+  }
+
   const title = monthStart.toLocaleDateString("es-MX", {
     month: "long",
     year: "numeric",
@@ -162,6 +167,14 @@ export function CalendarMonthView({
           {title}
         </h2>
         <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={goToToday}
+            className="rounded-lg border border-primary-300 bg-primary-50 px-2 py-1 text-xs font-medium text-primary-800 hover:bg-primary-100"
+            title="Ir al día actual"
+          >
+            Hoy
+          </button>
           <button
             type="button"
             onClick={prevMonth}
@@ -192,15 +205,21 @@ export function CalendarMonthView({
             className={[
               "min-h-[72px] rounded-lg border p-1 text-left text-xs",
               cell.inMonth
-                ? "border-zinc-100 bg-white"
-                : "border-transparent bg-zinc-50/50 text-zinc-400",
-              cell.isToday ? "ring-1 ring-primary-400" : "",
+                ? "border-[#d4d4d8] bg-[#ffffff] dark:border-primary-700 dark:bg-[#334155]"
+                : "border-[#d4d4d8] bg-[#f8fafc] text-zinc-400 dark:border-orange-900 dark:bg-[#3f3f46] dark:text-slate-300",
+              cell.isToday
+                ? "border-2 !border-primary-500 bg-primary-100/70 shadow-[0_0_0_2px_rgba(31,60,136,0.25)] dark:!border-accent-400 dark:bg-primary-900/55 dark:shadow-[0_0_0_2px_rgba(243,108,33,0.4)]"
+                : "",
             ].join(" ")}
           >
             <div
               className={[
                 "mb-0.5 text-[11px] font-medium",
-                cell.inMonth ? "text-zinc-800" : "text-zinc-400",
+                cell.isToday
+                  ? "text-primary-800 dark:text-primary-200"
+                  : cell.inMonth
+                    ? "text-zinc-800 dark:text-slate-100"
+                    : "text-zinc-400 dark:text-slate-500",
               ].join(" ")}
             >
               {cell.date.getDate()}

@@ -1,7 +1,7 @@
 {
   "name": "AmiMaint",
   "short_name": "AmiMaint",
-  "description": "Gestión de mantenimiento, prioridad móvil",
+  "description": "Gestión de mantenimiento AMISSA",
   "start_url": "/work-orders",
   "display": "standalone",
   "background_color": "#F5F5F5",

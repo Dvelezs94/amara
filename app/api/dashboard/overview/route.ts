@@ -25,6 +25,8 @@ export async function GET() {
   }
 
   const now = new Date();
+  const periodStart = new Date(now);
+  periodStart.setDate(periodStart.getDate() - 30);
 
   const pendingOrdersPromise = db
     .select({
@@ -89,6 +91,59 @@ export async function GET() {
     }),
   ]);
 
+  const [recentWorkOrders, totalAssets] = await Promise.all([
+    db
+      .select({
+        id: workOrders.id,
+        status: workOrders.status,
+        requesterId: workOrders.requesterId,
+        createdAt: workOrders.createdAt,
+        completedAt: workOrders.completedAt,
+        description: workOrders.description,
+      })
+      .from(workOrders)
+      .where(gte(workOrders.createdAt, periodStart)),
+    db.select({ count: sql<number>`count(*)` }).from(assets),
+  ]);
+
+  const completedWithTimes = recentWorkOrders.filter(
+    (wo) => wo.status === "completed" && wo.completedAt && wo.createdAt
+  );
+  const mttrHours =
+    completedWithTimes.length > 0
+      ? completedWithTimes.reduce((acc, wo) => {
+          const diff = wo.completedAt!.getTime() - wo.createdAt.getTime();
+          return acc + Math.max(0, diff / 3_600_000);
+        }, 0) / completedWithTimes.length
+      : 0;
+  const downtimeHours = completedWithTimes.reduce((acc, wo) => {
+    const diff = wo.completedAt!.getTime() - wo.createdAt.getTime();
+    return acc + Math.max(0, diff / 3_600_000);
+  }, 0);
+
+  const unplannedCount = recentWorkOrders.filter(
+    (wo) =>
+      wo.requesterId != null ||
+      (wo.description ?? "").includes("Solicitud externa desde /solicitud")
+  ).length;
+  const plannedCount = Math.max(0, recentWorkOrders.length - unplannedCount);
+  const plannedVsUnplannedTotal = plannedCount + unplannedCount;
+  const plannedPct =
+    plannedVsUnplannedTotal > 0
+      ? (plannedCount / plannedVsUnplannedTotal) * 100
+      : 0;
+
+  const assetCount = Number(totalAssets[0]?.count ?? 0);
+  const periodHours = 30 * 24;
+  const availability =
+    assetCount > 0
+      ? Math.max(
+          0,
+          Math.min(1, 1 - downtimeHours / Math.max(1, assetCount * periodHours))
+        )
+      : 0;
+  const oee = availability * 100;
+
   return NextResponse.json({
     pendingOrders: pendingOrders.map((item) => ({
       ...item,
@@ -98,5 +153,14 @@ export async function GET() {
       ...item,
       nextRunAt: item.nextRunAt ? item.nextRunAt.toISOString() : null,
     })),
+    kpis: {
+      mttrHours: Number(mttrHours.toFixed(1)),
+      downtimeHours: Number(downtimeHours.toFixed(1)),
+      plannedCount,
+      unplannedCount,
+      plannedPct: Number(plannedPct.toFixed(1)),
+      oee: Number(oee.toFixed(1)),
+      windowDays: 30,
+    },
   });
 }

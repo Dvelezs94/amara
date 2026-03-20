@@ -8,6 +8,7 @@ import { assets } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
+import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
 
 export async function GET(
   _req: Request,
@@ -67,13 +68,15 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   if (body.action === "convert") {
     const woId = createId();
+    const folio = await getNextWorkOrderFolio();
     const now = new Date();
     await db.insert(workOrders).values({
       id: woId,
+      folio,
       title: r.description.slice(0, 200),
       description: r.description,
       status: "open",
-      priority: "medium",
+      priority: r.priority ?? "medium",
       assetId: r.assetId,
       requesterId: r.requesterId,
       createdAt: now,
@@ -101,7 +104,7 @@ export async function POST(
       userId: session.id,
       metadata: { workOrderId: woId },
     });
-    return NextResponse.json({ workOrderId: woId });
+    return NextResponse.json({ workOrderId: woId, folio });
   }
   if (body.action === "cancel") {
     await db

@@ -37,10 +37,10 @@ const baseNavSections: { type: string; items: NavItem[] }[] = [
   {
     type: "Operaciones",
     items: [
-      { href: "/work-orders", label: "Órdenes de trabajo", icon: ClipboardList },
-      { href: "/assets", label: "Maquinas", icon: Wrench },
-      { href: "/checklists", label: "Checklist", icon: ListChecks },
       { href: "/calendario", label: "Calendario", icon: CalendarDays },
+      { href: "/work-orders", label: "Órdenes de trabajo", icon: ClipboardList },
+      { href: "/checklists", label: "Checklist", icon: ListChecks },
+      { href: "/assets", label: "Maquinas", icon: Wrench },
     ],
   },
   {

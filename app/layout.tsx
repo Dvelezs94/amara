@@ -11,7 +11,7 @@ const roboto = Roboto({
 
 export const metadata: Metadata = {
   title: "AmiMaint — Mantenimiento",
-  description: "Gestión de mantenimiento, prioridad móvil",
+  description: "Gestión de mantenimiento AMISSA",
   manifest: "/manifest.json",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "AmiMaint" },
 };

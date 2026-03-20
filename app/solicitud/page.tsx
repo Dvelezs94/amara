@@ -16,6 +16,7 @@ export default function SolicitudPage() {
     const form = e.currentTarget;
     const titulo = (form.elements.namedItem("titulo") as HTMLInputElement).value.trim();
     const descripcion = (form.elements.namedItem("descripcion") as HTMLTextAreaElement).value.trim();
+    const prioridad = (form.elements.namedItem("prioridad") as HTMLSelectElement).value;
     const nombreContacto = (form.elements.namedItem("nombreContacto") as HTMLInputElement).value.trim();
     const emailContacto = (form.elements.namedItem("emailContacto") as HTMLInputElement).value.trim();
 
@@ -23,7 +24,13 @@ export default function SolicitudPage() {
       const res = await fetch("/api/solicitud", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titulo, descripcion, nombreContacto, emailContacto }),
+        body: JSON.stringify({
+          titulo,
+          descripcion,
+          prioridad,
+          nombreContacto,
+          emailContacto,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -32,7 +39,9 @@ export default function SolicitudPage() {
         return;
       }
       setSuccess(
-        `Solicitud enviada correctamente. Folio de orden: ${data.workOrderId}`
+        `Solicitud enviada correctamente. Folio de orden: ${
+          data.folio != null ? data.folio : data.workOrderId
+        }`
       );
       form.reset();
     } catch {
@@ -91,6 +100,22 @@ export default function SolicitudPage() {
               placeholder="Describe el problema, sintomas y area del equipo."
               className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             />
+          </div>
+          <div>
+            <label htmlFor="prioridad" className="mb-1 block text-sm font-medium text-zinc-700">
+              Prioridad *
+            </label>
+            <select
+              id="prioridad"
+              name="prioridad"
+              defaultValue="medium"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            >
+              <option value="low">Baja</option>
+              <option value="medium">Media</option>
+              <option value="high">Alta</option>
+              <option value="urgent">Urgente</option>
+            </select>
           </div>
           <div>
             <label

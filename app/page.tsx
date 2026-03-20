@@ -11,7 +11,7 @@ export default async function HomePage() {
         AmiMaint
       </h1>
       <p className="mb-8 text-center text-[rgb(var(--color-text))]">
-        Gestión de mantenimiento, prioridad móvil
+        Gestión de mantenimiento AMISSA
       </p>
       <div className="flex flex-col gap-3 w-full max-w-xs">
         <Link

@@ -7,6 +7,7 @@ import { ChevronRight } from "lucide-react";
 type RequestRow = {
   id: string;
   description: string;
+  priority: "low" | "medium" | "high" | "urgent";
   status: string;
   workOrderId: string | null;
   createdAt: string;
@@ -18,6 +19,13 @@ const statusColors: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800",
   converted: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-zinc-100 text-zinc-600",
+};
+
+const priorityColors: Record<string, string> = {
+  low: "text-zinc-500",
+  medium: "text-zinc-700",
+  high: "text-amber-600",
+  urgent: "text-red-600",
 };
 
 export function RequestList() {
@@ -107,6 +115,17 @@ export function RequestList() {
                     }`}
                   >
                     {r.status === "pending" ? "Pendiente" : r.status === "converted" ? "Convertida" : r.status === "cancelled" ? "Cancelada" : r.status}
+                  </span>
+                  <span className={`text-xs font-medium ${priorityColors[r.priority] ?? "text-zinc-500"}`}>
+                    {r.priority === "low"
+                      ? "Baja"
+                      : r.priority === "medium"
+                        ? "Media"
+                        : r.priority === "high"
+                          ? "Alta"
+                          : r.priority === "urgent"
+                            ? "Urgente"
+                            : r.priority}
                   </span>
                   {r.requesterName && (
                     <span className="text-xs text-zinc-500">{r.requesterName}</span>

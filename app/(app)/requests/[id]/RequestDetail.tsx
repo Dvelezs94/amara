@@ -17,12 +17,20 @@ const statusColors: Record<string, string> = {
 type RequestData = {
   id: string;
   description: string;
+  priority: "low" | "medium" | "high" | "urgent";
   status: string;
   workOrderId: string | null;
   createdAt: string | Date;
   requester: { id: string; name: string } | null;
   asset: { id: string; name: string; assetId: string } | null;
 };
+
+function priorityLabel(priority: RequestData["priority"]) {
+  if (priority === "low") return "Baja";
+  if (priority === "medium") return "Media";
+  if (priority === "high") return "Alta";
+  return "Urgente";
+}
 
 export function RequestDetail({ request }: { request: RequestData }) {
   const router = useRouter();
@@ -71,6 +79,9 @@ export function RequestDetail({ request }: { request: RequestData }) {
         >
           {request.status === "pending" ? "Pendiente" : request.status === "converted" ? "Convertida" : request.status === "cancelled" ? "Cancelada" : request.status}
         </span>
+        <p className="mt-2 text-sm text-zinc-600">
+          Prioridad: <span className="font-medium text-zinc-900">{priorityLabel(request.priority)}</span>
+        </p>
       </div>
       <p className="text-zinc-900 whitespace-pre-wrap">{request.description}</p>
       <div className="grid grid-cols-2 gap-3 text-sm">

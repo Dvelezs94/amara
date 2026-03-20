@@ -18,6 +18,7 @@ export async function GET(req: Request) {
     .select({
       id: requests.id,
       description: requests.description,
+      priority: requests.priority,
       status: requests.status,
       workOrderId: requests.workOrderId,
       createdAt: requests.createdAt,

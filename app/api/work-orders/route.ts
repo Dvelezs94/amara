@@ -9,6 +9,7 @@ import { users } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
+import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -26,6 +27,7 @@ export async function GET(req: Request) {
   const base = db
     .select({
       id: workOrders.id,
+      folio: workOrders.folio,
       title: workOrders.title,
       status: workOrders.status,
       priority: workOrders.priority,
@@ -61,10 +63,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
   const id = createId();
+  const folio = await getNextWorkOrderFolio();
   const now = new Date();
   const checklistTemplateId = body.checklistTemplateId || null;
   await db.insert(workOrders).values({
     id,
+    folio,
     title,
     description: body.description?.trim() || null,
     status: "open",

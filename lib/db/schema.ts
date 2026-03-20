@@ -49,6 +49,7 @@ export const assetFiles = sqliteTable("asset_files", {
 
 export const workOrders = sqliteTable("work_orders", {
   id: text("id").primaryKey(),
+  folio: integer("folio"),
   title: text("title").notNull(),
   description: text("description"),
   status: text("status", {
@@ -138,6 +139,9 @@ export const attachments = sqliteTable("attachments", {
 export const requests = sqliteTable("requests", {
   id: text("id").primaryKey(),
   description: text("description").notNull(),
+  priority: text("priority", { enum: ["low", "medium", "high", "urgent"] })
+    .notNull()
+    .default("medium"),
   assetId: text("asset_id"),
   requesterId: text("requester_id").notNull().references(() => users.id),
   status: text("status", { enum: ["pending", "converted", "cancelled"] })

@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import {
   AVAILABLE_USER_ROLES,
   getSession,
@@ -31,6 +32,7 @@ export async function PATCH(
     name: string;
     email: string | null;
     role: UserRole;
+    passwordHash: string;
   }> = {};
 
   if (body.name !== undefined) {
@@ -63,6 +65,16 @@ export async function PATCH(
     }
     updates.role = role;
   }
+  if (body.password !== undefined) {
+    const password = String(body.password ?? "");
+    if (password.length < 8) {
+      return NextResponse.json(
+        { error: "Contrasena debe tener al menos 8 caracteres" },
+        { status: 400 }
+      );
+    }
+    updates.passwordHash = await bcrypt.hash(password, 10);
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
@@ -83,6 +95,7 @@ export async function PATCH(
         role: target.role,
       },
       after: updates,
+      passwordUpdated: Boolean(body.password !== undefined),
     },
   });
 

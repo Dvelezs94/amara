@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { GripVertical, Trash2, BarChart2 } from "lucide-react";
+import { GripVertical, Trash2, BarChart2, CircleHelp } from "lucide-react";
 import { AnalyticsChartCard } from "@/components/AnalyticsChartCard";
 
 type Widget = {
@@ -32,10 +32,21 @@ type UpcomingEvent = {
   assigneeName: string | null;
 };
 
+type DashboardKpis = {
+  mttrHours: number | null;
+  downtimeHours: number | null;
+  plannedCount: number;
+  unplannedCount: number;
+  plannedPct: number | null;
+  oee: number | null;
+  windowDays: number;
+};
+
 export default function DashboardPage() {
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
+  const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
@@ -57,10 +68,12 @@ export default function DashboardPage() {
       .then((data) => {
         setPendingOrders(Array.isArray(data?.pendingOrders) ? data.pendingOrders : []);
         setUpcomingEvents(Array.isArray(data?.upcomingEvents) ? data.upcomingEvents : []);
+        setKpis(data?.kpis ?? null);
       })
       .catch(() => {
         setPendingOrders([]);
         setUpcomingEvents([]);
+        setKpis(null);
       });
   }
 
@@ -100,6 +113,14 @@ export default function DashboardPage() {
     if (status === "in_progress") return "En progreso";
     if (status === "completed") return "Completada";
     return "Cancelada";
+  }
+
+  function formatKpiValue(
+    value: number | null | undefined,
+    suffix = ""
+  ) {
+    if (value == null || Number.isNaN(value)) return "—";
+    return `${value}${suffix}`;
   }
 
   async function removeWidget(id: string) {
@@ -174,6 +195,59 @@ export default function DashboardPage() {
       <p className="text-sm text-zinc-500">
         Arrastra las tarjetas para reordenar. Los gráficos se guardan aquí desde la página de analíticas.
       </p>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            MTTR
+            <span title="Tiempo medio de reparación: promedio de horas desde creación hasta finalización de órdenes completadas.">
+              <CircleHelp className="h-3.5 w-3.5" />
+            </span>
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-zinc-900">
+            {formatKpiValue(kpis?.mttrHours, " h")}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">Tiempo medio de reparación ({kpis?.windowDays ?? 30} días)</p>
+        </section>
+        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Inactividad
+            <span title="Horas de inactividad: suma de horas de órdenes completadas en la ventana de tiempo.">
+              <CircleHelp className="h-3.5 w-3.5" />
+            </span>
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-zinc-900">
+            {formatKpiValue(kpis?.downtimeHours, " h")}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">Horas de parada acumuladas ({kpis?.windowDays ?? 30} días)</p>
+        </section>
+        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Planificado vs no planificado
+            <span title="Porcentaje de trabajo planificado respecto al total de órdenes en la ventana.">
+              <CircleHelp className="h-3.5 w-3.5" />
+            </span>
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-zinc-900">
+            {formatKpiValue(kpis?.plannedPct, "%")}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Planificado {kpis?.plannedCount ?? 0} · No planificado {kpis?.unplannedCount ?? 0}
+          </p>
+        </section>
+        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            OEE
+            <span title="Eficiencia global del equipo estimada con base en disponibilidad (1 - inactividad / horas disponibles).">
+              <CircleHelp className="h-3.5 w-3.5" />
+            </span>
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-zinc-900">
+            {formatKpiValue(kpis?.oee, "%")}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">Estimado por disponibilidad en ventana de {kpis?.windowDays ?? 30} días</p>
+        </section>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section className="rounded-xl border border-zinc-200 bg-white p-4">
@@ -268,7 +342,7 @@ export default function DashboardPage() {
                     : "border-zinc-200"
               } ${
                 (widgetSizes[w.id] ?? "md") === "lg"
-                  ? "md:col-span-2 xl:col-span-2"
+                  ? "md:col-span-2 xl:col-span-4"
                   : (widgetSizes[w.id] ?? "md") === "sm"
                     ? "md:col-span-1 xl:col-span-1"
                     : "md:col-span-1 xl:col-span-2"

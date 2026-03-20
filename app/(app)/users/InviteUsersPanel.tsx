@@ -35,6 +35,7 @@ export function InviteUsersPanel() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [password, setPassword] = useState(() => generatePassword());
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
 
   async function loadUsers() {
     setRefreshing(true);
@@ -104,6 +105,36 @@ export function InviteUsersPanel() {
       setError("No se pudo enviar la invitacion");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function resetPasswordForUser(user: AdminUser) {
+    const tempPassword = generatePassword();
+    const confirmed = window.confirm(
+      `Restablecer la contrasena de ${user.name}?\n\nContrasena temporal sugerida: ${tempPassword}`
+    );
+    if (!confirmed) return;
+    setError(null);
+    setSuccess(null);
+    setResettingUserId(user.id);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: tempPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo resetear la contrasena");
+        return;
+      }
+      setSuccess(
+        `Contrasena de ${user.name} restablecida. Temporal: ${tempPassword}`
+      );
+    } catch {
+      setError("No se pudo resetear la contrasena");
+    } finally {
+      setResettingUserId(null);
     }
   }
 
@@ -234,6 +265,18 @@ export function InviteUsersPanel() {
                 Rol: {roleLabel[user.role]} - Alta:{" "}
                 {new Date(user.createdAt).toLocaleDateString()}
               </p>
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => resetPasswordForUser(user)}
+                  disabled={resettingUserId === user.id}
+                  className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                >
+                  {resettingUserId === user.id
+                    ? "Reseteando..."
+                    : "Resetear contrasena"}
+                </button>
+              </div>
             </li>
           ))}
           {users.length === 0 && (
