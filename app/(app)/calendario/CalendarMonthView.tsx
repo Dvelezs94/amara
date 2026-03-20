@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   expandOccurrencesInRange,
+  formatRecurrenceLabel,
   parseRecurrence,
   toYmdLocal,
 } from "@/lib/maintenance-recurrence";
@@ -11,6 +13,7 @@ export type CalendarSchedulePayload = {
   id: string;
   name: string;
   recurrence: string;
+  color?: string | null;
   /** Para registros antiguos sin JSON en recurrence */
   nextRunAt: string | null;
 };
@@ -36,6 +39,7 @@ export function CalendarMonthView({
 }: {
   schedules: CalendarSchedulePayload[];
 }) {
+  const router = useRouter();
   const [cursor, setCursor] = useState(() => {
     const n = new Date();
     return { year: n.getFullYear(), month: n.getMonth() };
@@ -43,6 +47,15 @@ export function CalendarMonthView({
 
   const { year, month } = cursor;
   const monthStart = startOfCalendarMonth(year, month);
+  const [selectedEvent, setSelectedEvent] = useState<{
+    id: string;
+    name: string;
+    recurrence: string;
+    color?: string | null;
+    dateLabel: string;
+    dateYmd: string;
+    deleting?: boolean;
+  } | null>(null);
 
   const dayEvents = useMemo(() => {
     const mStart = startOfCalendarMonth(year, month);
@@ -56,7 +69,7 @@ export function CalendarMonthView({
 
     const map = new Map<
       string,
-      { id: string; name: string; recurrence: string }[]
+      { id: string; name: string; recurrence: string; color?: string | null }[]
     >();
 
     for (const s of schedules) {
@@ -77,7 +90,12 @@ export function CalendarMonthView({
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const list = map.get(key) ?? [];
         if (!list.some((x) => x.id === s.id)) {
-          list.push({ id: s.id, name: s.name, recurrence: s.recurrence });
+          list.push({
+            id: s.id,
+            name: s.name,
+            recurrence: s.recurrence,
+            color: s.color ?? "#1F3C88",
+          });
         }
         map.set(key, list);
       }
@@ -87,7 +105,7 @@ export function CalendarMonthView({
       date: Date;
       inMonth: boolean;
       isToday: boolean;
-      events: { id: string; name: string; recurrence: string }[];
+      events: { id: string; name: string; recurrence: string; color?: string | null }[];
     }[] = [];
 
     const today = new Date();
@@ -188,24 +206,120 @@ export function CalendarMonthView({
               {cell.date.getDate()}
             </div>
             <div className="flex flex-col gap-0.5">
-              {cell.events.slice(0, 2).map((ev) => (
-                <span
+              {cell.events.map((ev) => (
+                <button
                   key={`${ev.id}-${i}`}
                   title={ev.name}
-                  className="truncate rounded bg-primary-100 px-1 py-0.5 text-[10px] font-medium text-primary-900"
+                  type="button"
+                  onClick={() =>
+                    setSelectedEvent({
+                      id: ev.id,
+                      name: ev.name,
+                      recurrence: ev.recurrence,
+                      color: ev.color,
+                      dateLabel: cell.date.toLocaleDateString("es-MX", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      }),
+                      dateYmd: `${cell.date.getFullYear()}-${String(cell.date.getMonth() + 1).padStart(2, "0")}-${String(cell.date.getDate()).padStart(2, "0")}`,
+                    })
+                  }
+                  className="truncate rounded px-1 py-0.5 text-left text-[10px] font-medium text-white"
+                  style={{ backgroundColor: ev.color ?? "#1F3C88" }}
                 >
                   {ev.name}
-                </span>
+                </button>
               ))}
-              {cell.events.length > 2 && (
-                <span className="text-[9px] text-zinc-500">
-                  +{cell.events.length - 2} más
-                </span>
-              )}
             </div>
           </div>
         ))}
       </div>
+      {selectedEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-zinc-900">
+                  {selectedEvent.name}
+                </h3>
+                <p className="text-xs text-zinc-500">{selectedEvent.dateLabel}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEvent(null)}
+                className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
+              >
+                Cerrar
+              </button>
+            </div>
+            <div className="space-y-2 text-sm text-zinc-700">
+              <p>
+                <span className="font-medium text-zinc-900">Frecuencia:</span>{" "}
+                {formatRecurrenceLabel(selectedEvent.recurrence)}
+              </p>
+              <p className="flex items-center gap-2">
+                <span className="font-medium text-zinc-900">Color:</span>
+                <span
+                  className="inline-block h-3 w-3 rounded-full"
+                  style={{ backgroundColor: selectedEvent.color ?? "#1F3C88" }}
+                />
+                <span className="text-xs text-zinc-500">
+                  {(selectedEvent.color ?? "#1F3C88").toUpperCase()}
+                </span>
+              </p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!selectedEvent) return;
+                  const ok = window.confirm(
+                    `Eliminar solo la ocurrencia del ${selectedEvent.dateLabel}?`
+                  );
+                  if (!ok) return;
+                  setSelectedEvent((prev) => (prev ? { ...prev, deleting: true } : prev));
+                  const res = await fetch(
+                    `/api/maintenance-schedules/${selectedEvent.id}?scope=single&date=${encodeURIComponent(
+                      selectedEvent.dateYmd
+                    )}`,
+                    { method: "DELETE" }
+                  );
+                  setSelectedEvent(null);
+                  if (res.ok) router.refresh();
+                }}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                Eliminar solo este evento
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!selectedEvent) return;
+                  const firstConfirm = window.confirm(
+                    "Eliminar toda la serie de este evento? Esta acción no se puede deshacer."
+                  );
+                  if (!firstConfirm) return;
+                  const secondConfirm = window.confirm(
+                    "Confirmación final: se eliminará toda la serie completa. ¿Deseas continuar?"
+                  );
+                  if (!secondConfirm) return;
+                  setSelectedEvent((prev) => (prev ? { ...prev, deleting: true } : prev));
+                  const res = await fetch(
+                    `/api/maintenance-schedules/${selectedEvent.id}?scope=all`,
+                    { method: "DELETE" }
+                  );
+                  setSelectedEvent(null);
+                  if (res.ok) router.refresh();
+                }}
+                className="rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700"
+              >
+                Eliminar toda la serie
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

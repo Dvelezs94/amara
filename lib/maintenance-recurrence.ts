@@ -23,6 +23,8 @@ export type MaintenanceRecurrenceRule = {
   weekdays?: number[];
   /** YYYY-MM-DD — fin de la serie (opcional) */
   until?: string | null;
+  /** YYYY-MM-DD — fechas omitidas de una serie */
+  excludedDates?: string[];
   /** YYYY-MM-DD — primera fecha elegida por el usuario */
   anchorDate: string;
 };
@@ -42,6 +44,9 @@ export function parseRecurrence(raw: string): MaintenanceRecurrenceRule | null {
           ? o.weekdays.map((n) => Number(n)).filter((n) => n >= 0 && n <= 6)
           : undefined,
         until: o.until ?? null,
+        excludedDates: Array.isArray(o.excludedDates)
+          ? o.excludedDates.filter((v): v is string => typeof v === "string")
+          : undefined,
         anchorDate: o.anchorDate,
       };
     }
@@ -156,9 +161,13 @@ export function expandOccurrencesInRange(
     until && !Number.isNaN(until.getTime()) && until < end ? until : end;
   const interval = Math.max(1, Math.floor(rule.interval || 1));
   const out: Date[] = [];
+  const excluded = new Set(rule.excludedDates ?? []);
 
   const pushInRange = (d: Date) => {
-    if (d >= start && d <= capEnd && d >= anchor) out.push(new Date(d));
+    if (d >= start && d <= capEnd && d >= anchor) {
+      if (excluded.has(toYmdLocal(d))) return;
+      out.push(new Date(d));
+    }
   };
 
   switch (rule.frequency) {
@@ -169,7 +178,9 @@ export function expandOccurrencesInRange(
       let d = new Date(Math.max(anchor.getTime(), start.getTime()));
       while (d <= capEnd) {
         const daysSince = Math.round((d.getTime() - anchor.getTime()) / MS_DAY);
-        if (daysSince >= 0 && daysSince % interval === 0) out.push(new Date(d));
+        if (daysSince >= 0 && daysSince % interval === 0 && !excluded.has(toYmdLocal(d))) {
+          out.push(new Date(d));
+        }
         d = new Date(d.getTime() + MS_DAY);
       }
       break;
@@ -179,7 +190,7 @@ export function expandOccurrencesInRange(
       if (interval === 1) {
         let d = new Date(Math.max(anchor.getTime(), start.getTime()));
         while (d <= capEnd) {
-          if (d >= anchor && weekdays.includes(d.getDay()))
+          if (d >= anchor && weekdays.includes(d.getDay()) && !excluded.has(toYmdLocal(d)))
             out.push(new Date(d));
           d = new Date(d.getTime() + MS_DAY);
         }
@@ -282,6 +293,9 @@ export function buildRecurrenceJson(rule: MaintenanceRecurrenceRule): string {
     normalized.weekdays = Array.from(new Set(rule.weekdays)).sort(
       (a, b) => a - b
     );
+  }
+  if (rule.excludedDates && rule.excludedDates.length > 0) {
+    normalized.excludedDates = Array.from(new Set(rule.excludedDates)).sort();
   }
   return JSON.stringify(normalized);
 }

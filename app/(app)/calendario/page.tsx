@@ -24,7 +24,20 @@ function formatDate(value: Date | null) {
 
 function isMissingAssigneeColumnError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  return error.message.includes("no such column: maintenance_schedules.assignee_id");
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("maintenance_schedules.assignee_id") &&
+    (message.includes("no such column") || message.includes("has no column named"))
+  );
+}
+
+function isMissingColorColumnError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("maintenance_schedules.color") &&
+    (message.includes("no such column") || message.includes("has no column named"))
+  );
 }
 
 export default async function CalendarioPage() {
@@ -38,6 +51,7 @@ export default async function CalendarioPage() {
     id: string;
     name: string;
     recurrence: string;
+    color: string | null;
     nextRunAt: Date | null;
     assigneeId: string | null;
     assigneeName: string | null;
@@ -51,6 +65,7 @@ export default async function CalendarioPage() {
         id: maintenanceSchedules.id,
         name: maintenanceSchedules.name,
         recurrence: maintenanceSchedules.recurrence,
+        color: maintenanceSchedules.color,
         nextRunAt: maintenanceSchedules.nextRunAt,
         assigneeId: maintenanceSchedules.assigneeId,
         assigneeName: users.name,
@@ -67,8 +82,8 @@ export default async function CalendarioPage() {
       )
       .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
   } catch (error) {
-    if (!isMissingAssigneeColumnError(error)) throw error;
-    hasAssigneeColumn = false;
+    if (!isMissingAssigneeColumnError(error) && !isMissingColorColumnError(error)) throw error;
+    if (isMissingAssigneeColumnError(error)) hasAssigneeColumn = false;
     const fallbackSchedules = await db
       .select({
         id: maintenanceSchedules.id,
@@ -88,6 +103,7 @@ export default async function CalendarioPage() {
       .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
     schedules = fallbackSchedules.map((item) => ({
       ...item,
+      color: null,
       assigneeId: null,
       assigneeName: null,
     }));
@@ -111,6 +127,7 @@ export default async function CalendarioPage() {
     id: s.id,
     name: s.name,
     recurrence: s.recurrence,
+    color: s.color,
     nextRunAt: s.nextRunAt ? s.nextRunAt.toISOString() : null,
   }));
 
@@ -163,6 +180,14 @@ export default async function CalendarioPage() {
                 </div>
                 <span className="rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700">
                   {formatDate(task.nextRunAt)}
+                </span>
+              </div>
+              <div className="mt-2">
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
+                  style={{ backgroundColor: task.color ?? "#1F3C88" }}
+                >
+                  Color
                 </span>
               </div>
               <div className="mt-3 grid gap-3 text-sm text-zinc-600 md:grid-cols-2">

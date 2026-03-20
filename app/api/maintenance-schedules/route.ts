@@ -17,6 +17,24 @@ import {
   type MaintenanceRecurrenceRule,
 } from "@/lib/maintenance-recurrence";
 
+function isMissingAssigneeColumnError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("maintenance_schedules.assignee_id") &&
+    (message.includes("no such column") || message.includes("has no column named"))
+  );
+}
+
+function isMissingColorColumnError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("maintenance_schedules.color") &&
+    (message.includes("no such column") || message.includes("has no column named"))
+  );
+}
+
 const FREQUENCIES: MaintenanceFrequency[] = [
   "none",
   "daily",
@@ -130,6 +148,9 @@ export async function POST(req: Request) {
     }
   }
 
+  const colorRaw = typeof body.color === "string" ? body.color.trim().toUpperCase() : "";
+  const color = /^#[0-9A-F]{6}$/.test(colorRaw) ? colorRaw : "#1F3C88";
+
   let checklistTemplateId: string | null =
     body.checklistTemplateId != null && body.checklistTemplateId !== ""
       ? String(body.checklistTemplateId)
@@ -167,15 +188,42 @@ export async function POST(req: Request) {
   const nextRunAt = computeFirstOccurrence(rule);
 
   const id = createId();
-  await db.insert(maintenanceSchedules).values({
-    id,
-    name,
-    assetId,
-    assigneeId,
-    checklistTemplateId,
-    recurrence,
-    nextRunAt,
-  });
+  try {
+    await db.insert(maintenanceSchedules).values({
+      id,
+      name,
+      assetId,
+      assigneeId,
+      color,
+      checklistTemplateId,
+      recurrence,
+      nextRunAt,
+    });
+  } catch (error) {
+    if (!isMissingAssigneeColumnError(error) && !isMissingColorColumnError(error)) {
+      throw error;
+    }
+    const values: {
+      id: string;
+      name: string;
+      assetId: string | null;
+      checklistTemplateId: string | null;
+      recurrence: string;
+      nextRunAt: Date;
+      assigneeId?: string | null;
+      color?: string;
+    } = {
+      id,
+      name,
+      assetId,
+      checklistTemplateId,
+      recurrence,
+      nextRunAt,
+    };
+    if (!isMissingAssigneeColumnError(error)) values.assigneeId = assigneeId;
+    if (!isMissingColorColumnError(error)) values.color = color;
+    await db.insert(maintenanceSchedules).values(values);
+  }
 
   await recordAuditLog({
     entityType: "maintenance_schedule",

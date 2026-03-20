@@ -11,7 +11,11 @@ import {
 
 function isMissingAssigneeColumnError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  return error.message.includes("no such column: maintenance_schedules.assignee_id");
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("maintenance_schedules.assignee_id") &&
+    (message.includes("no such column") || message.includes("has no column named"))
+  );
 }
 
 export async function GET() {

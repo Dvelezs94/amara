@@ -23,6 +23,15 @@ const WEEKDAYS: { value: number; label: string }[] = [
   { value: 0, label: "Dom" },
 ];
 
+const EVENT_COLORS = [
+  "#1F3C88",
+  "#F36C21",
+  "#6FAF6F",
+  "#4A4A4A",
+  "#557DDA",
+  "#973C0B",
+];
+
 export function CreateMaintenanceEventForm({
   assets,
   users,
@@ -47,6 +56,7 @@ export function CreateMaintenanceEventForm({
   const [assetId, setAssetId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [checklistTemplateId, setChecklistTemplateId] = useState("");
+  const [color, setColor] = useState("#1F3C88");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,6 +94,7 @@ export function CreateMaintenanceEventForm({
           assetId: assetId || null,
           assigneeId: assigneeId || null,
           checklistTemplateId: checklistTemplateId || null,
+          color,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -94,6 +105,7 @@ export function CreateMaintenanceEventForm({
       setName("");
       setUntil("");
       setChecklistTemplateId("");
+      setColor("#1F3C88");
       router.refresh();
     } finally {
       setSaving(false);
@@ -259,6 +271,31 @@ export function CreateMaintenanceEventForm({
               </option>
             ))}
           </select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-zinc-600">Color del evento</label>
+        <div className="flex flex-wrap items-center gap-2">
+          {EVENT_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setColor(c)}
+              className={`h-7 w-7 rounded-full border-2 transition ${
+                color === c ? "border-zinc-900 ring-1 ring-zinc-300" : "border-white"
+              }`}
+              style={{ backgroundColor: c }}
+              aria-label={`Seleccionar color ${c}`}
+            />
+          ))}
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => setColor(e.target.value.toUpperCase())}
+            className="h-8 w-10 cursor-pointer rounded border border-zinc-300 bg-white p-1"
+            aria-label="Selector de color personalizado"
+          />
         </div>
       </div>
 

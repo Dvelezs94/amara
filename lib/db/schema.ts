@@ -185,6 +185,7 @@ export const maintenanceSchedules = sqliteTable("maintenance_schedules", {
   name: text("name").notNull(),
   assetId: text("asset_id"),
   assigneeId: text("assignee_id").references(() => users.id),
+  color: text("color"),
   recurrence: text("recurrence").notNull(), // cron or interval description
   checklistTemplateId: text("checklist_template_id"),
   nextRunAt: integer("next_run_at", { mode: "timestamp" }),
