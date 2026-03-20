@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   expandOccurrencesInRange,
@@ -47,6 +47,7 @@ export function CalendarMonthView({
 
   const { year, month } = cursor;
   const monthStart = startOfCalendarMonth(year, month);
+  const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<{
     id: string;
     name: string;
@@ -160,6 +161,15 @@ export function CalendarMonthView({
     year: "numeric",
   });
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setIsDarkTheme(root.classList.contains("dark"));
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -202,24 +212,53 @@ export function CalendarMonthView({
         {dayEvents.map((cell, i) => (
           <div
             key={i}
+            style={{
+              backgroundColor: cell.isToday
+                ? isDarkTheme
+                  ? "#172554"
+                  : "#DBEAFE"
+                : cell.inMonth
+                  ? isDarkTheme
+                    ? "#334155"
+                    : "#FFFFFF"
+                  : isDarkTheme
+                    ? "#3F3F46"
+                    : "#F8FAFC",
+              borderColor: cell.isToday
+                ? isDarkTheme
+                  ? "#F36C21"
+                  : "#1F3C88"
+                : cell.inMonth
+                  ? isDarkTheme
+                    ? "#1D4ED8"
+                    : "#D4D4D8"
+                  : isDarkTheme
+                    ? "#9A3412"
+                    : "#D4D4D8",
+            }}
             className={[
               "min-h-[72px] rounded-lg border p-1 text-left text-xs",
-              cell.inMonth
-                ? "border-[#d4d4d8] bg-[#ffffff] dark:border-primary-700 dark:bg-[#334155]"
-                : "border-[#d4d4d8] bg-[#f8fafc] text-zinc-400 dark:border-orange-900 dark:bg-[#3f3f46] dark:text-slate-300",
               cell.isToday
                 ? "border-2 !border-primary-500 bg-primary-100/70 shadow-[0_0_0_2px_rgba(31,60,136,0.25)] dark:!border-accent-400 dark:bg-primary-900/55 dark:shadow-[0_0_0_2px_rgba(243,108,33,0.4)]"
                 : "",
             ].join(" ")}
           >
             <div
+              style={{
+                color: cell.isToday
+                  ? isDarkTheme
+                    ? "#bfdbfe"
+                    : "#1e3a8a"
+                  : cell.inMonth
+                    ? isDarkTheme
+                      ? "#f8fafc"
+                      : "#1f2937"
+                    : isDarkTheme
+                      ? "#cbd5e1"
+                      : "#94a3b8",
+              }}
               className={[
                 "mb-0.5 text-[11px] font-medium",
-                cell.isToday
-                  ? "text-primary-800 dark:text-primary-200"
-                  : cell.inMonth
-                    ? "text-zinc-800 dark:text-slate-100"
-                    : "text-zinc-400 dark:text-slate-500",
               ].join(" ")}
             >
               {cell.date.getDate()}
