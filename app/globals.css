@@ -12,10 +12,71 @@
   --color-support-green: 111 175 111;
 }
 
+.dark {
+  --color-surface: 15 23 42;
+  --color-surface-card: 30 41 59;
+  --color-text: 226 232 240;
+  --color-text-strong: 248 250 252;
+}
+
 body {
-  @apply bg-surface antialiased;
+  @apply antialiased;
+  background-color: rgb(var(--color-surface));
   color: rgb(var(--color-text));
   min-height: 100dvh;
+}
+
+/* Global dark theme overrides for existing utility-based UI */
+.dark .bg-surface {
+  background-color: #0f172a !important;
+}
+.dark .bg-white {
+  background-color: #1e293b !important;
+}
+.dark .bg-white\/95 {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+}
+.dark .bg-zinc-50,
+.dark .bg-zinc-50\/80,
+.dark .bg-zinc-50\/50 {
+  background-color: #0f172a !important;
+}
+.dark .text-zinc-900 {
+  color: #f8fafc !important;
+}
+.dark .text-zinc-800,
+.dark .text-zinc-700 {
+  color: #e2e8f0 !important;
+}
+.dark .text-zinc-600,
+.dark .text-zinc-500,
+.dark .text-zinc-400 {
+  color: #94a3b8 !important;
+}
+.dark .border-zinc-200,
+.dark .border-zinc-100,
+.dark .border-zinc-300 {
+  border-color: #334155 !important;
+}
+.dark .hover\:bg-zinc-100:hover {
+  background-color: #1f2937 !important;
+}
+.dark .hover\:bg-zinc-50:hover {
+  background-color: #111827 !important;
+}
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+.dark .bg-black\/50 {
+  background-color: rgba(2, 6, 23, 0.7) !important;
 }
 
 /* Touch-friendly tap targets */
