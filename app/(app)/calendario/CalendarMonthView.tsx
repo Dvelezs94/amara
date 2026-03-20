@@ -230,10 +230,10 @@ export function CalendarMonthView({
                   : "#1F3C88"
                 : cell.inMonth
                   ? isDarkTheme
-                    ? "#1D4ED8"
+                    ? "#64748B"
                     : "#D4D4D8"
                   : isDarkTheme
-                    ? "#9A3412"
+                    ? "#64748B"
                     : "#D4D4D8",
             }}
             className={[
