@@ -59,6 +59,7 @@ export function WorkOrderDetail({
   const [uploading, setUploading] = useState(false);
   const woPhotoInputRef = useRef<HTMLInputElement>(null);
   const isCompleted = initial.status === "completed";
+  const checklistUnlocked = initial.status === "in_progress";
 
   async function uploadWorkOrderPhoto(file: File) {
     const fd = new FormData();
@@ -105,6 +106,7 @@ export function WorkOrderDetail({
   }
 
   async function onChecklistPhotoSelected(itemId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    if (!checklistUnlocked) return;
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError(null);
@@ -130,6 +132,7 @@ export function WorkOrderDetail({
   }
 
   async function toggleStep(itemId: string, completed: boolean) {
+    if (!checklistUnlocked) return;
     setChecklist((prev) =>
       prev.map((i) => (i.id === itemId ? { ...i, completed } : i))
     );
@@ -141,6 +144,7 @@ export function WorkOrderDetail({
   }
 
   async function updateFieldValue(itemId: string, value: unknown) {
+    if (!checklistUnlocked) return;
     setChecklist((prev) =>
       prev.map((i) => (i.id === itemId ? { ...i, value } : i))
     );
@@ -301,11 +305,16 @@ export function WorkOrderDetail({
       {checklist.length > 0 && (
         <section>
           <h2 className="text-sm font-medium text-zinc-500 mb-2">Checklist</h2>
+          {!checklistUnlocked && initial.status === "open" && (
+            <p className="mb-2 text-xs text-amber-700">
+              Haz clic en <strong>Iniciar</strong> para comenzar y editar el checklist.
+            </p>
+          )}
           <ul className="space-y-2">
             {checklist.map((item) =>
               item.type === "step" ? (
                 <li key={item.id} className="flex items-center gap-2">
-                  {isCompleted ? (
+                  {!checklistUnlocked ? (
                     <span className="text-zinc-600">
                       {item.completed ? (
                         <Check className="h-5 w-5 text-emerald-600" />
@@ -342,7 +351,7 @@ export function WorkOrderDetail({
                   <label className="text-sm font-medium text-zinc-700">
                     {item.label}
                   </label>
-                  {isCompleted ? (
+                  {!checklistUnlocked ? (
                     <div className="text-zinc-900">
                       {item.fieldType === "checkbox"
                         ? item.value === true

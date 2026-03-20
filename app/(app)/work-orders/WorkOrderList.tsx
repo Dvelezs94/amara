@@ -108,7 +108,7 @@ export function WorkOrderList() {
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-24 rounded-xl bg-zinc-100 animate-pulse"
+            className="h-24 rounded-xl border border-zinc-200 bg-zinc-100/70 dark:border-slate-700 dark:bg-slate-800/70 animate-pulse"
             aria-hidden
           />
         ))}
@@ -154,6 +154,8 @@ export function WorkOrderList() {
                 setDropTarget(null);
                 const id = e.dataTransfer.getData("text/plain");
                 if (!id) return;
+                // Ensure drag visual state is always cleared, even if dragend doesn't fire.
+                setDraggingId(null);
                 await moveWorkOrder(id, column.key);
               }}
               className={`rounded-xl border bg-white p-3 min-h-[18rem] ${

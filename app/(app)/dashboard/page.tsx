@@ -39,6 +39,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [widgetSizes, setWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
+  const WIDGET_SIZE_KEY = "dashboard-widget-sizes-v1";
 
   function loadWidgets() {
     setLoading(true);
@@ -65,7 +67,24 @@ export default function DashboardPage() {
   useEffect(() => {
     loadWidgets();
     loadOverview();
+    try {
+      const raw = localStorage.getItem(WIDGET_SIZE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, "sm" | "md" | "lg">;
+        setWidgetSizes(parsed ?? {});
+      }
+    } catch {
+      setWidgetSizes({});
+    }
   }, []);
+
+  function setWidgetSize(id: string, size: "sm" | "md" | "lg") {
+    setWidgetSizes((prev) => {
+      const next = { ...prev, [id]: size };
+      localStorage.setItem(WIDGET_SIZE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
 
   function formatDate(value: string | null) {
     if (!value) return "Sin fecha";
@@ -231,7 +250,7 @@ export default function DashboardPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 auto-rows-max">
           {widgets.map((w, index) => (
             <div
               key={w.id}
@@ -247,20 +266,44 @@ export default function DashboardPage() {
                   : dropIndex === index && draggedId !== w.id
                     ? "border-primary-400 bg-primary-50/50"
                     : "border-zinc-200"
+              } ${
+                (widgetSizes[w.id] ?? "md") === "lg"
+                  ? "md:col-span-2 xl:col-span-2"
+                  : (widgetSizes[w.id] ?? "md") === "sm"
+                    ? "md:col-span-1 xl:col-span-1"
+                    : "md:col-span-1 xl:col-span-2"
               }`}
             >
               <div className="flex items-center justify-between gap-2 p-2 border-b border-zinc-100 bg-zinc-50/80 rounded-t-xl cursor-grab active:cursor-grabbing">
-                <span className="flex items-center gap-1.5 text-zinc-500" title="Arrastrar para reordenar">
+                <div className="flex items-center gap-1.5 text-zinc-500" title="Arrastrar para reordenar">
                   <GripVertical className="h-4 w-4" />
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeWidget(w.id)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50"
-                  aria-label="Quitar del dashboard"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                </div>
+                <div className="flex items-center gap-1">
+                  {(["sm", "md", "lg"] as const).map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => setWidgetSize(w.id, size)}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                        (widgetSizes[w.id] ?? "md") === size
+                          ? "bg-primary-600 text-white"
+                          : "text-zinc-600 hover:bg-zinc-100"
+                      }`}
+                      aria-label={`Tamaño ${size.toUpperCase()}`}
+                      title={`Tamaño ${size.toUpperCase()}`}
+                    >
+                      {size.toUpperCase()}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => removeWidget(w.id)}
+                    className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50"
+                    aria-label="Quitar del dashboard"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               <div className="p-3">
                 <AnalyticsChartCard
@@ -269,6 +312,7 @@ export default function DashboardPage() {
                   fieldLabel={w.fieldLabel}
                   dateFrom={w.dateFrom}
                   dateTo={w.dateTo}
+                  size={widgetSizes[w.id] ?? "md"}
                 />
               </div>
             </div>

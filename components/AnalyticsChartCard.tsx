@@ -44,6 +44,7 @@ export function AnalyticsChartCard({
   dateFrom,
   dateTo,
   title,
+  size = "md",
 }: {
   templateId: string;
   templateName: string;
@@ -51,9 +52,13 @@ export function AnalyticsChartCard({
   dateFrom?: string | null;
   dateTo?: string | null;
   title?: string;
+  size?: "sm" | "md" | "lg";
 }) {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const chartHeightClass =
+    size === "lg" ? "h-80 md:h-96" : size === "sm" ? "h-44 md:h-52" : "h-56 md:h-64";
+  const emptyHeightClass = size === "lg" ? "h-[26rem]" : size === "sm" ? "h-60" : "h-80";
 
   useEffect(() => {
     setLoading(true);
@@ -125,21 +130,21 @@ export function AnalyticsChartCard({
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-zinc-200 bg-white p-4 h-80 flex items-center justify-center text-zinc-500">
+      <div className={`rounded-xl border border-zinc-200 bg-white p-4 ${emptyHeightClass} flex items-center justify-center text-zinc-500`}>
         Cargando…
       </div>
     );
   }
   if (!data?.workOrders?.length) {
     return (
-      <div className="rounded-xl border border-zinc-200 bg-white p-4 h-80 flex items-center justify-center text-zinc-500 text-sm">
+      <div className={`rounded-xl border border-zinc-200 bg-white p-4 ${emptyHeightClass} flex items-center justify-center text-zinc-500 text-sm`}>
         Sin datos en el rango seleccionado
       </div>
     );
   }
   if (!fieldType) {
     return (
-      <div className="rounded-xl border border-zinc-200 bg-white p-4 h-80 flex items-center justify-center text-zinc-500 text-sm">
+      <div className={`rounded-xl border border-zinc-200 bg-white p-4 ${emptyHeightClass} flex items-center justify-center text-zinc-500 text-sm`}>
         Campo no encontrado
       </div>
     );
@@ -152,7 +157,7 @@ export function AnalyticsChartCard({
           {fieldLabel} en el tiempo (promedio por día)
         </h2>
         <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
-        <div className="h-56 md:h-64">
+        <div className={chartHeightClass}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={lineData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
@@ -172,7 +177,7 @@ export function AnalyticsChartCard({
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <h2 className="text-sm font-medium text-zinc-700 mb-2">{fieldLabel} — distribución</h2>
         <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
-        <div className="h-56 md:h-64">
+        <div className={chartHeightClass}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
@@ -192,7 +197,7 @@ export function AnalyticsChartCard({
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <h2 className="text-sm font-medium text-zinc-700 mb-2">{fieldLabel} — sí / no</h2>
         <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
-        <div className="h-56 md:h-64">
+        <div className={chartHeightClass}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -236,7 +241,7 @@ export function AnalyticsChartCard({
   }
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 h-80 flex items-center justify-center text-zinc-500 text-sm">
+    <div className={`rounded-xl border border-zinc-200 bg-white p-4 ${emptyHeightClass} flex items-center justify-center text-zinc-500 text-sm`}>
       Sin datos para este campo
     </div>
   );

@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className={roboto.variable} suppressHydrationWarning>
+    <html lang="es" className={`${roboto.variable} hmi`} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
