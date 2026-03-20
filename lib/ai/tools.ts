@@ -156,8 +156,21 @@ export async function runAiTool(
         );
       }
       case "list_work_orders": {
-        const status = args.status as string | undefined;
+        const statusRaw = args.status as string | undefined;
         const limit = Math.min(Number(args.limit) || 20, 50);
+        const validStatuses = new Set([
+          "open",
+          "in_progress",
+          "completed",
+          "cancelled",
+        ]);
+        const statusFilter =
+          statusRaw && validStatuses.has(statusRaw)
+            ? eq(
+                workOrders.status,
+                statusRaw as "open" | "in_progress" | "completed" | "cancelled"
+              )
+            : undefined;
         const list = await db
           .select({
             id: workOrders.id,
@@ -168,10 +181,12 @@ export async function runAiTool(
             assetId: workOrders.assetId,
           })
           .from(workOrders)
-          .where(status ? eq(workOrders.status, status) : undefined)
+          .where(statusFilter)
           .orderBy(desc(workOrders.updatedAt))
           .limit(limit);
-        const assetIds = [...new Set(list.map((r) => r.assetId).filter(Boolean))] as string[];
+        const assetIds = Array.from(
+          new Set(list.map((r) => r.assetId).filter(Boolean) as string[])
+        );
         let assetMap = new Map<string, { name: string; assetId: string }>();
         if (assetIds.length > 0) {
           const assetList = await db
@@ -240,7 +255,9 @@ export async function runAiTool(
           orderBy: [desc(assetFiles.createdAt)],
           limit,
         });
-        const aIds = [...new Set(all.map((f) => f.assetId).filter(Boolean))] as string[];
+        const aIds = Array.from(
+          new Set(all.map((f) => f.assetId).filter(Boolean) as string[])
+        );
         let assetMap = new Map<string, { name: string; assetId: string }>();
         if (aIds.length > 0) {
           const al = await db.select({ id: assets.id, name: assets.name, assetId: assets.assetId }).from(assets).where(inArray(assets.id, aIds));
@@ -253,8 +270,16 @@ export async function runAiTool(
         return JSON.stringify(result, null, 2);
       }
       case "list_requests": {
-        const status = args.status as string | undefined;
+        const statusRaw = args.status as string | undefined;
         const limit = Math.min(Number(args.limit) || 20, 50);
+        const requestStatuses = new Set(["pending", "converted", "cancelled"]);
+        const requestStatusFilter =
+          statusRaw && requestStatuses.has(statusRaw)
+            ? eq(
+                requests.status,
+                statusRaw as "pending" | "converted" | "cancelled"
+              )
+            : undefined;
         const list = await db
           .select({
             id: requests.id,
@@ -263,7 +288,7 @@ export async function runAiTool(
             workOrderId: requests.workOrderId,
           })
           .from(requests)
-          .where(status ? eq(requests.status, status) : undefined)
+          .where(requestStatusFilter)
           .orderBy(desc(requests.createdAt))
           .limit(limit);
         return JSON.stringify(list, null, 2);

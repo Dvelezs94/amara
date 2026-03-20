@@ -20,7 +20,9 @@ export async function GET(req: Request) {
   if (files.length === 0) {
     return NextResponse.json([]);
   }
-  const assetIds = [...new Set(files.map((f) => f.assetId).filter(Boolean))] as string[];
+  const assetIds = Array.from(
+    new Set(files.map((f) => f.assetId).filter(Boolean) as string[])
+  );
   const assetMap = new Map<string, { id: string; name: string; assetId: string }>();
   if (assetIds.length > 0) {
     const assetList = await db

@@ -3,6 +3,7 @@ import { createUser, createSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -45,5 +46,12 @@ export async function POST(req: Request) {
   }
   const user = await createUser({ username, email, name, password });
   await createSession(user.id);
+  await recordAuditLog({
+    entityType: "user",
+    entityId: user.id,
+    action: "registered",
+    userId: user.id,
+    metadata: { username, email, role: user.role },
+  });
   return NextResponse.json({ ok: true });
 }

@@ -5,6 +5,7 @@ import { workOrders } from "@/lib/db/schema";
 import { attachments } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import { recordAuditLog } from "@/lib/audit";
 import { join } from "path";
 import { writeFile, mkdir } from "fs/promises";
 
@@ -102,6 +103,18 @@ export async function POST(
     userId: session.id,
     fileUrl,
     filename: displayName,
+  });
+
+  await recordAuditLog({
+    entityType: "work_order_attachment",
+    entityId: id,
+    action: "photo_uploaded",
+    userId: session.id,
+    metadata: {
+      workOrderId,
+      filename: displayName,
+      fileUrl,
+    },
   });
 
   return NextResponse.json({

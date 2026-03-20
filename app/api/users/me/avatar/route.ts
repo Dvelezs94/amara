@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { assetFiles } from "@/lib/db/schema";
+import { users } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { join } from "path";
 import { writeFile, mkdir } from "fs/promises";
 import { recordAuditLog } from "@/lib/audit";
 
-const UPLOAD_DIR = "public/uploads/asset-files";
+const UPLOAD_DIR = "public/uploads/avatars";
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
@@ -26,14 +27,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }
   const file = formData.get("file") as File | null;
-  const category = (formData.get("category") as string)?.trim() || null;
   if (!file || file.size === 0) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
 
-  const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
-  const baseName = sanitizeFilename(file.name.slice(0, file.name.length - ext.length));
-  const uniqueName = `${createId()}${ext || ""}`;
+  const mime = file.type || "";
+  if (!mime.startsWith("image/")) {
+    return NextResponse.json(
+      { error: "Solo se permiten imagenes" },
+      { status: 400 }
+    );
+  }
+
+  const ext = file.name.includes(".")
+    ? file.name.slice(file.name.lastIndexOf("."))
+    : ".jpg";
+  const baseName = sanitizeFilename(
+    file.name.slice(0, file.name.length - ext.length)
+  );
+  const uniqueName = `${createId()}${ext}`;
   const dir = join(process.cwd(), UPLOAD_DIR);
   await mkdir(dir, { recursive: true });
   const filePath = join(dir, uniqueName);
@@ -41,33 +53,32 @@ export async function POST(req: Request) {
   await writeFile(filePath, Buffer.from(bytes));
 
   const fileUrl = `/${UPLOAD_DIR}/${uniqueName}`;
-  const id = createId();
-  await db.insert(assetFiles).values({
-    id,
-    assetId: null,
-    filename: baseName + ext || file.name,
-    fileUrl,
-    category,
+  const displayName = baseName + ext || file.name;
+
+  const before = await db.query.users.findFirst({
+    where: eq(users.id, session.id),
+    columns: { avatarUrl: true },
   });
 
+  await db
+    .update(users)
+    .set({ avatarUrl: fileUrl })
+    .where(eq(users.id, session.id));
+
   await recordAuditLog({
-    entityType: "knowledge_base_file",
-    entityId: id,
-    action: "file_uploaded",
+    entityType: "user",
+    entityId: session.id,
+    action: "avatar_updated",
     userId: session.id,
     metadata: {
-      filename: baseName + ext || file.name,
-      fileUrl,
-      category,
+      before: before?.avatarUrl ?? null,
+      after: fileUrl,
     },
   });
 
   return NextResponse.json({
-    id,
-    assetId: null,
-    filename: baseName + ext || file.name,
-    fileUrl,
-    category,
-    createdAt: new Date().toISOString(),
+    ok: true,
+    avatarUrl: fileUrl,
+    filename: displayName,
   });
 }

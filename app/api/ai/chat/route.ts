@@ -72,10 +72,12 @@ export async function POST(req: Request) {
     }
 
     for (const tc of choice.message.tool_calls) {
-      const name = tc.function?.name ?? "";
+      if (tc.type !== "function" || !("function" in tc)) continue;
+      const fn = tc.function;
+      const name = fn?.name ?? "";
       let args: Record<string, unknown> = {};
       try {
-        if (tc.function?.arguments) args = JSON.parse(tc.function.arguments);
+        if (fn?.arguments) args = JSON.parse(fn.arguments);
       } catch {}
       const result = await runAiTool(name, args);
       fullMessages.push({

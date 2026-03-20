@@ -7,6 +7,7 @@ import { eq, desc } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { join } from "path";
 import { writeFile, mkdir } from "fs/promises";
+import { recordAuditLog } from "@/lib/audit";
 
 const UPLOAD_DIR = "public/uploads/asset-files";
 
@@ -81,6 +82,20 @@ export async function POST(
     filename: baseName + ext || file.name,
     fileUrl,
     category,
+  });
+
+  await recordAuditLog({
+    entityType: "asset_file",
+    entityId: id,
+    action: "file_uploaded",
+    userId: session.id,
+    metadata: {
+      assetId,
+      assetHumanId: asset.assetId,
+      filename: baseName + ext || file.name,
+      fileUrl,
+      category,
+    },
   });
 
   return NextResponse.json({

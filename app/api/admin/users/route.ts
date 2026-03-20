@@ -5,13 +5,9 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { recordAuditLog } from "@/lib/audit";
 
-function requireAdmin(session: Awaited<ReturnType<typeof getSession>>) {
-  return Boolean(session && session.role === "admin");
-}
-
 export async function GET() {
   const session = await getSession();
-  if (!requireAdmin(session)) {
+  if (!session || session.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -32,7 +28,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const session = await getSession();
-  if (!requireAdmin(session)) {
+  if (!session || session.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -85,9 +81,9 @@ export async function POST(req: Request) {
   await recordAuditLog({
     entityType: "user",
     entityId: user.id,
-    action: "invited",
+    action: "created_by_admin",
     userId: session.id,
-    metadata: { username, email, role },
+    metadata: { username, email, role, name },
   });
 
   return NextResponse.json({ ok: true, id: user.id });

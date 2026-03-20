@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { workOrders } from "@/lib/db/schema";
 import { createId } from "@/lib/id";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -39,6 +40,18 @@ export async function POST(req: Request) {
     requesterId: null,
     createdAt: now,
     updatedAt: now,
+  });
+
+  await recordAuditLog({
+    entityType: "work_order",
+    entityId: id,
+    action: "created_from_public_form",
+    userId: null,
+    metadata: {
+      source: "/solicitud",
+      title: titulo,
+      hasContact: Boolean(nombreContacto || emailContacto),
+    },
   });
 
   return NextResponse.json({ ok: true, workOrderId: id });

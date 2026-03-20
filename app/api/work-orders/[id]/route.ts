@@ -98,8 +98,7 @@ export async function PATCH(
   if (body.assetId !== undefined) updates.assetId = body.assetId || null;
   if (body.assigneeId !== undefined) updates.assigneeId = body.assigneeId || null;
   if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
-  const isCompleting =
-    body.status === "completed" && wo.status !== "completed";
+  const isCompleting = body.status === "completed";
   if (body.status === "completed") updates.completedAt = new Date();
 
   await db.update(workOrders).set(updates).where(eq(workOrders.id, id));
@@ -138,6 +137,22 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
+  const wo = await db.query.workOrders.findFirst({
+    where: eq(workOrders.id, id),
+  });
   await db.delete(workOrders).where(eq(workOrders.id, id));
+  if (wo) {
+    await recordAuditLog({
+      entityType: "work_order",
+      entityId: id,
+      action: "deleted",
+      userId: session.id,
+      metadata: {
+        title: wo.title,
+        status: wo.status,
+        assetId: wo.assetId,
+      },
+    });
+  }
   return NextResponse.json({ ok: true });
 }

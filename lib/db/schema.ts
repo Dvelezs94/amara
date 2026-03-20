@@ -171,7 +171,8 @@ export const auditLogs = sqliteTable("audit_logs", {
   entityType: text("entity_type").notNull(), // e.g. work_order, checklist_template, work_order_checklist
   entityId: text("entity_id").notNull(),
   action: text("action").notNull(), // e.g. created, updated, completed
-  userId: text("user_id").notNull().references(() => users.id),
+  /** null = accion del sistema o publica (ej. solicitud sin sesion) */
+  userId: text("user_id").references(() => users.id),
   metadata: text("metadata", { mode: "json" }),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
@@ -183,6 +184,7 @@ export const maintenanceSchedules = sqliteTable("maintenance_schedules", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   assetId: text("asset_id"),
+  assigneeId: text("assignee_id").references(() => users.id),
   recurrence: text("recurrence").notNull(), // cron or interval description
   checklistTemplateId: text("checklist_template_id"),
   nextRunAt: integer("next_run_at", { mode: "timestamp" }),

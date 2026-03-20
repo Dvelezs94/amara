@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AVAILABLE_USER_ROLES, type UserRole } from "@/lib/auth";
+import { AVAILABLE_USER_ROLES, type UserRole } from "@/lib/auth-shared";
 
 type AdminUser = {
   id: string;

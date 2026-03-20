@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 import { ilike, desc } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -43,6 +44,13 @@ export async function POST(req: Request) {
     metadata: body.metadata ?? null,
     createdAt: now,
     updatedAt: now,
+  });
+  await recordAuditLog({
+    entityType: "asset",
+    entityId: id,
+    action: "created",
+    userId: session.id,
+    metadata: { name, assetId },
   });
   return NextResponse.json({ id });
 }

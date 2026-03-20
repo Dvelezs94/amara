@@ -6,7 +6,8 @@ type AuditParams = {
   entityType: string;
   entityId: string;
   action: string;
-  userId: string;
+  /** Actor; omitir o null para eventos sin usuario autenticado */
+  userId?: string | null;
   metadata?: unknown;
 };
 
@@ -22,7 +23,7 @@ export async function recordAuditLog({
     entityType,
     entityId,
     action,
-    userId,
+    userId: userId ?? null,
     metadata: metadata ?? null,
   });
 }

@@ -1,4 +1,5 @@
 import { getSession } from "@/lib/auth";
+import { ProfilePhotoUpload } from "./ProfilePhotoUpload";
 
 function roleLabel(role: string) {
   if (role === "technician") return "Técnico";
@@ -14,6 +15,13 @@ export default async function ProfilePage() {
   return (
     <div className="max-w-lg mx-auto space-y-6">
       <h1 className="text-xl font-semibold text-zinc-900">Perfil</h1>
+      <div className="rounded-xl border border-zinc-200 bg-white p-4">
+        <ProfilePhotoUpload
+          userId={session.id}
+          name={session.name}
+          initialAvatarUrl={session.avatarUrl}
+        />
+      </div>
       <div className="rounded-xl border border-primary-200 bg-primary-50 p-3">
         <p className="text-xs uppercase tracking-wide text-primary-700">
           Resumen de perfil

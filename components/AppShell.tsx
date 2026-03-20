@@ -21,7 +21,8 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import type { SessionUser } from "@/lib/auth";
+import type { SessionUser } from "@/lib/auth-shared";
+import { UserAvatar } from "@/components/UserAvatar";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
 
@@ -192,12 +193,17 @@ export function AppShell({
                 : "text-zinc-600 hover:bg-zinc-100"
             }`}
           >
-            <span className="flex items-center gap-3">
-              <User className="h-5 w-5 shrink-0" />
+            <span className="flex min-w-0 flex-1 items-center gap-3">
+              <UserAvatar
+                userId={user.id}
+                name={user.name}
+                avatarUrl={user.avatarUrl}
+                size="sm"
+              />
               <span className="flex min-w-0 flex-col text-left leading-tight">
                 <span className="truncate">Perfil</span>
                 <span className="truncate text-xs font-normal text-zinc-500">
-                  {user.name} - {userRole}
+                  {user.name} · {userRole}
                 </span>
               </span>
             </span>
@@ -273,12 +279,17 @@ export function AppShell({
                 : "text-zinc-600 hover:bg-zinc-100"
             }`}
           >
-            <span className="flex items-center gap-3">
-              <User className="h-5 w-5 shrink-0" />
+            <span className="flex min-w-0 flex-1 items-center gap-3">
+              <UserAvatar
+                userId={user.id}
+                name={user.name}
+                avatarUrl={user.avatarUrl}
+                size="sm"
+              />
               <span className="flex min-w-0 flex-col text-left leading-tight">
                 <span className="truncate">Perfil</span>
                 <span className="truncate text-xs font-normal text-zinc-500">
-                  {user.name} - {userRole}
+                  {user.name} · {userRole}
                 </span>
               </span>
             </span>
@@ -355,7 +366,12 @@ export function AppShell({
                   : "text-zinc-500"
               }`}
             >
-              <User className="h-6 w-6 shrink-0" />
+              <UserAvatar
+                userId={user.id}
+                name={user.name}
+                avatarUrl={user.avatarUrl}
+                size="sm"
+              />
               Perfil
             </button>
             {profileMenuOpen && (

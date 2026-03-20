@@ -5,20 +5,13 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq, or } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import type { SessionUser, UserRole } from "./auth-shared";
+
+export type { SessionUser, UserRole } from "./auth-shared";
+export { AVAILABLE_USER_ROLES } from "./auth-shared";
 
 const SESSION_COOKIE = "session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
-
-export const AVAILABLE_USER_ROLES = ["technician", "supervisor", "admin"] as const;
-export type UserRole = (typeof AVAILABLE_USER_ROLES)[number];
-
-export type SessionUser = {
-  id: string;
-  username: string;
-  email: string | null;
-  name: string;
-  role: UserRole;
-};
 
 export async function getSession(): Promise<SessionUser | null> {
   const store = await cookies();
@@ -31,9 +24,24 @@ export async function getSession(): Promise<SessionUser | null> {
     if (payload.exp && payload.exp * 1000 < Date.now()) return null;
     const user = await db.query.users.findFirst({
       where: eq(users.id, payload.sub),
-      columns: { id: true, username: true, email: true, name: true, role: true },
+      columns: {
+        id: true,
+        username: true,
+        email: true,
+        name: true,
+        role: true,
+        avatarUrl: true,
+      },
     });
-    return user ?? null;
+    if (!user) return null;
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email ?? null,
+      name: user.name,
+      role: user.role,
+      avatarUrl: user.avatarUrl ?? null,
+    };
   } catch {
     return null;
   }
@@ -83,6 +91,7 @@ export async function verifyPassword(
     email: user.email,
     name: user.name,
     role: user.role,
+    avatarUrl: user.avatarUrl ?? null,
   };
 }
 
@@ -109,5 +118,6 @@ export async function createUser(params: {
     email: params.email ?? null,
     name: params.name,
     role: params.role ?? "technician",
+    avatarUrl: null,
   };
 }

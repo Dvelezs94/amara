@@ -41,7 +41,8 @@ export default async function LogsPage() {
             Logs de plataforma
           </h1>
           <p className="text-sm text-zinc-500">
-            Últimos cambios registrados en plantillas, checklists y órdenes de trabajo.
+            Usuarios, órdenes, activos, checklist, calendario de mantenimiento y
+            más.
           </p>
         </div>
       </header>
@@ -66,7 +67,10 @@ export default async function LogsPage() {
                   {new Date(log.createdAt).toLocaleString()}
                 </div>
                 <div className="col-span-2 text-zinc-700">
-                  {log.userName ?? "Desconocido"}
+                  {log.userName ??
+                    (log.action === "created_from_public_form"
+                      ? "Público (/solicitud)"
+                      : "Sistema")}
                 </div>
                 <div className="col-span-2 text-zinc-700">
                   {log.entityType}

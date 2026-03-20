@@ -5,11 +5,11 @@ import { FileText, Upload, Trash2, ExternalLink } from "lucide-react";
 
 type AssetFile = {
   id: string;
-  assetId: string;
+  assetId: string | null;
   filename: string;
   fileUrl: string;
   category: string | null;
-  createdAt: string;
+  createdAt: string | Date;
 };
 
 export function AssetFilesSection({

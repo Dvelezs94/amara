@@ -7,6 +7,7 @@ import { users } from "@/lib/db/schema";
 import { assets } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function GET(
   _req: Request,
@@ -82,6 +83,24 @@ export async function POST(
       .update(requests)
       .set({ status: "converted", workOrderId: woId })
       .where(eq(requests.id, id));
+    await recordAuditLog({
+      entityType: "work_order",
+      entityId: woId,
+      action: "created_from_request",
+      userId: session.id,
+      metadata: {
+        requestId: id,
+        requesterId: r.requesterId,
+        assetId: r.assetId,
+      },
+    });
+    await recordAuditLog({
+      entityType: "request",
+      entityId: id,
+      action: "converted_to_work_order",
+      userId: session.id,
+      metadata: { workOrderId: woId },
+    });
     return NextResponse.json({ workOrderId: woId });
   }
   if (body.action === "cancel") {
@@ -89,6 +108,13 @@ export async function POST(
       .update(requests)
       .set({ status: "cancelled" })
       .where(eq(requests.id, id));
+    await recordAuditLog({
+      entityType: "request",
+      entityId: id,
+      action: "cancelled",
+      userId: session.id,
+      metadata: { requesterId: r.requesterId },
+    });
     return NextResponse.json({ ok: true });
   }
   return NextResponse.json({ error: "Invalid action" }, { status: 400 });
