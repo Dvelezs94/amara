@@ -2,12 +2,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getWorkOrderById } from "@/lib/work-orders";
 import { WorkOrderDetail } from "./WorkOrderDetail";
+import { getSession } from "@/lib/auth";
 
 export default async function WorkOrderDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const session = await getSession();
   const { id } = await params;
   const wo = await getWorkOrderById(id);
   if (!wo) notFound();
@@ -15,7 +17,10 @@ export default async function WorkOrderDetailPage({
 
   return (
     <div className="space-y-4">
-      <WorkOrderDetail initial={wo} />
+      <WorkOrderDetail
+        initial={wo}
+        canEditAssignee={session?.role === "admin"}
+      />
       <div className="flex gap-2">
         {!isCompleted && (
           <Link

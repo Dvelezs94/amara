@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getWorkOrderById } from "@/lib/work-orders";
 import { WorkOrderForm } from "../../WorkOrderForm";
+import { getSession } from "@/lib/auth";
 
 export default async function EditWorkOrderPage({
   params,
@@ -9,6 +10,8 @@ export default async function EditWorkOrderPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const session = await getSession();
+  if (!session) redirect("/login");
   const wo = await getWorkOrderById(id);
   if (!wo) notFound();
   if (wo.status === "completed") redirect(`/work-orders/${id}`);
@@ -17,6 +20,7 @@ export default async function EditWorkOrderPage({
       <h1 className="text-xl font-semibold text-zinc-900">Editar orden de trabajo</h1>
       <WorkOrderForm
         workOrderId={id}
+        canEditAssignee={session.role === "admin"}
         initial={{
           title: wo.title,
           description: wo.description ?? undefined,

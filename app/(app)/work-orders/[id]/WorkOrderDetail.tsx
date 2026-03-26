@@ -31,6 +31,7 @@ type ChecklistItem = {
 
 export function WorkOrderDetail({
   initial,
+  canEditAssignee = false,
 }: {
   initial: {
     id: string;
@@ -52,10 +53,14 @@ export function WorkOrderDetail({
       createdAt: string | Date;
     }[];
   };
+  canEditAssignee?: boolean;
 }) {
   const [checklist, setChecklist] = useState(initial.checklist);
   const [attachments, setAttachments] = useState(initial.attachments);
   const [noteList, setNoteList] = useState(initial.notes);
+  const [assigneeId, setAssigneeId] = useState(initial.assignee?.id ?? "");
+  const [assigneeUsers, setAssigneeUsers] = useState<Array<{ id: string; name: string }>>([]);
+  const [assigneeSaving, setAssigneeSaving] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
@@ -87,6 +92,25 @@ export function WorkOrderDetail({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!canEditAssignee) return;
+    let cancelled = false;
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) {
+          const list = Array.isArray(data) ? data : [];
+          setAssigneeUsers(list.map((u) => ({ id: u.id, name: u.name })));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAssigneeUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canEditAssignee]);
 
   const mentionCandidates = useMemo(() => {
     if (!mentionOpen) return [];
@@ -283,6 +307,27 @@ export function WorkOrderDetail({
     }
   }
 
+  async function updateAssignee(nextAssigneeId: string) {
+    if (!canEditAssignee || isCompleted) return;
+    const previous = assigneeId;
+    setAssigneeId(nextAssigneeId);
+    setAssigneeSaving(true);
+    try {
+      const res = await fetch(`/api/work-orders/${initial.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assigneeId: nextAssigneeId || null }),
+      });
+      if (!res.ok) {
+        setAssigneeId(previous);
+      }
+    } catch {
+      setAssigneeId(previous);
+    } finally {
+      setAssigneeSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -375,12 +420,29 @@ export function WorkOrderDetail({
             </Link>
           </div>
         )}
-        {initial.assignee && (
+        {canEditAssignee ? (
+          <div>
+            <p className="text-zinc-500">Asignado a</p>
+            <select
+              value={assigneeId}
+              disabled={isCompleted || assigneeSaving}
+              onChange={(e) => updateAssignee(e.target.value)}
+              className="mt-1 w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:opacity-60"
+            >
+              <option value="">Sin asignar</option>
+              {assigneeUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : initial.assignee ? (
           <div>
             <p className="text-zinc-500">Asignado a</p>
             <p className="font-medium text-zinc-900">{initial.assignee.name}</p>
           </div>
-        )}
+        ) : null}
         <div>
           <p className="text-zinc-500">Fecha de vencimiento</p>
           <p className="font-medium text-zinc-900">

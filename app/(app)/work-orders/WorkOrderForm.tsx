@@ -10,9 +10,11 @@ type ChecklistTemplate = { id: string; name: string };
 
 export function WorkOrderForm({
   workOrderId,
+  canEditAssignee = true,
   initial = {},
 }: {
   workOrderId?: string;
+  canEditAssignee?: boolean;
   initial?: {
     title?: string;
     description?: string;
@@ -55,7 +57,10 @@ export function WorkOrderForm({
     const description = (form.elements.namedItem("description") as HTMLTextAreaElement).value.trim();
     const priority = (form.elements.namedItem("priority") as HTMLSelectElement).value;
     const assetId = (form.elements.namedItem("assetId") as HTMLSelectElement).value || undefined;
-    const assigneeId = (form.elements.namedItem("assigneeId") as HTMLSelectElement).value || undefined;
+    const assigneeId = canEditAssignee
+      ? (form.elements.namedItem("assigneeId") as HTMLSelectElement | null)?.value ||
+        undefined
+      : undefined;
     const dueDate = (form.elements.namedItem("dueDate") as HTMLInputElement).value || undefined;
     const checklistTemplateId = (form.elements.namedItem("checklistTemplateId") as HTMLSelectElement)?.value || undefined;
 
@@ -69,7 +74,7 @@ export function WorkOrderForm({
             description: description || null,
             priority,
             assetId: assetId || null,
-            assigneeId: assigneeId || null,
+            ...(canEditAssignee ? { assigneeId: assigneeId || null } : {}),
             dueDate: dueDate || null,
           }),
         });
@@ -173,24 +178,26 @@ export function WorkOrderForm({
           ))}
         </select>
       </div>
-      <div>
-        <label htmlFor="assigneeId" className="block text-sm font-medium text-zinc-700 mb-1">
-          Asignado a
-        </label>
-        <select
-          id="assigneeId"
-          name="assigneeId"
-          defaultValue={initial.assigneeId ?? ""}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-        >
-          <option value="">Sin asignar</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {canEditAssignee && (
+        <div>
+          <label htmlFor="assigneeId" className="block text-sm font-medium text-zinc-700 mb-1">
+            Asignado a
+          </label>
+          <select
+            id="assigneeId"
+            name="assigneeId"
+            defaultValue={initial.assigneeId ?? ""}
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            <option value="">Sin asignar</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div>
         <label htmlFor="dueDate" className="block text-sm font-medium text-zinc-700 mb-1">
           Fecha de vencimiento

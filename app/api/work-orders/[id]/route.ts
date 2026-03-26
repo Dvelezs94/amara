@@ -89,6 +89,12 @@ export async function PATCH(
     );
   }
   const body = await req.json().catch(() => ({}));
+  if (body.assigneeId !== undefined && session.role !== "admin") {
+    return NextResponse.json(
+      { error: "Solo administradores pueden cambiar el asignado" },
+      { status: 403 }
+    );
+  }
   const updates: Partial<typeof workOrders.$inferInsert> = {
     updatedAt: new Date(),
   };
