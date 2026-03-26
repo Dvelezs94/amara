@@ -11,9 +11,9 @@ export const users = sqliteTable("users", {
   email: text("email").unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
-  role: text("role", { enum: ["technician", "supervisor", "admin"] })
+  role: text("role", { enum: ["operator", "admin"] })
     .notNull()
-    .default("technician"),
+    .default("operator"),
   avatarUrl: text("avatar_url"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
@@ -178,6 +178,25 @@ export const auditLogs = sqliteTable("audit_logs", {
   /** null = accion del sistema o publica (ej. solicitud sin sesion) */
   userId: text("user_id").references(() => users.id),
   metadata: text("metadata", { mode: "json" }),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const notifications = sqliteTable("notifications", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  type: text("type", { enum: ["assignment", "work_order_update", "mention"] })
+    .notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  workOrderId: text("work_order_id").references(() => workOrders.id, {
+    onDelete: "cascade",
+  }),
+  noteId: text("note_id").references(() => notes.id, { onDelete: "cascade" }),
+  readAt: integer("read_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

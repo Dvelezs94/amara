@@ -2,8 +2,7 @@ import { getSession } from "@/lib/auth";
 import { ProfilePhotoUpload } from "./ProfilePhotoUpload";
 
 function roleLabel(role: string) {
-  if (role === "technician") return "Técnico";
-  if (role === "supervisor") return "Supervisor";
+  if (role === "operator") return "Operador";
   if (role === "admin") return "Administrador";
   return role;
 }

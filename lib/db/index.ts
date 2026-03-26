@@ -65,4 +65,32 @@ if (missingFolioRows.length > 0) {
   tx(missingFolioRows);
 }
 
+sqlite
+  .prepare(
+    `
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT,
+      work_order_id TEXT REFERENCES work_orders(id) ON DELETE CASCADE,
+      note_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
+      read_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )
+    `
+  )
+  .run();
+sqlite
+  .prepare(
+    "CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications (user_id, created_at DESC)"
+  )
+  .run();
+sqlite
+  .prepare(
+    "CREATE INDEX IF NOT EXISTS notifications_user_unread_idx ON notifications (user_id, read_at)"
+  )
+  .run();
+
 export const db = drizzle(sqlite, { schema });

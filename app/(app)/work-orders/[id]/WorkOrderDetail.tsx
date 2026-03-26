@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Check, Square, ImagePlus } from "lucide-react";
 
@@ -55,11 +55,95 @@ export function WorkOrderDetail({
 }) {
   const [checklist, setChecklist] = useState(initial.checklist);
   const [attachments, setAttachments] = useState(initial.attachments);
+  const [noteList, setNoteList] = useState(initial.notes);
+  const [newComment, setNewComment] = useState("");
+  const [commentSaving, setCommentSaving] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [users, setUsers] = useState<
+    Array<{ id: string; name: string; username: string }>
+  >([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionStart, setMentionStart] = useState<number | null>(null);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionIndex, setMentionIndex] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const woPhotoInputRef = useRef<HTMLInputElement>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const isCompleted = initial.status === "completed";
   const checklistUnlocked = initial.status === "in_progress";
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setUsers(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const mentionCandidates = useMemo(() => {
+    if (!mentionOpen) return [];
+    const query = mentionQuery.trim().toLowerCase();
+    const list = users;
+    if (!query) return list.slice(0, 8);
+    return list
+      .filter(
+        (u) =>
+          u.username.toLowerCase().includes(query) ||
+          u.name.toLowerCase().includes(query)
+      )
+      .slice(0, 8);
+  }, [mentionOpen, mentionQuery, users]);
+
+  function closeMentions() {
+    setMentionOpen(false);
+    setMentionStart(null);
+    setMentionQuery("");
+    setMentionIndex(0);
+  }
+
+  function updateMentionState(text: string, caret: number) {
+    const beforeCaret = text.slice(0, caret);
+    const match = beforeCaret.match(/(^|\s)@([a-zA-Z0-9._-]*)$/);
+    if (!match) {
+      closeMentions();
+      return;
+    }
+    const typed = match[2] ?? "";
+    const atIndex = beforeCaret.lastIndexOf("@");
+    if (atIndex < 0) {
+      closeMentions();
+      return;
+    }
+    setMentionOpen(true);
+    setMentionStart(atIndex);
+    setMentionQuery(typed);
+    setMentionIndex(0);
+  }
+
+  function applyMention(username: string) {
+    if (mentionStart == null) return;
+    const el = commentInputRef.current;
+    if (!el) return;
+    const caret = el.selectionStart ?? newComment.length;
+    const before = newComment.slice(0, mentionStart);
+    const after = newComment.slice(caret);
+    const next = `${before}@${username} ${after}`;
+    setNewComment(next);
+    closeMentions();
+    requestAnimationFrame(() => {
+      const pos = before.length + username.length + 2;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  }
 
   async function uploadWorkOrderPhoto(file: File) {
     const fd = new FormData();
@@ -162,6 +246,41 @@ export function WorkOrderDetail({
       body: JSON.stringify({ status }),
     });
     window.location.reload();
+  }
+
+  async function addComment(e: React.FormEvent) {
+    e.preventDefault();
+    const body = newComment.trim();
+    if (!body) return;
+    setCommentSaving(true);
+    setCommentError(null);
+    try {
+      const res = await fetch(`/api/work-orders/${initial.id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCommentError(
+          typeof data.error === "string" ? data.error : "No se pudo guardar el comentario"
+        );
+        return;
+      }
+      setNoteList((prev) => [
+        {
+          id: data.id,
+          body: data.body ?? body,
+          createdAt: data.createdAt ?? new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setNewComment("");
+    } catch {
+      setCommentError("No se pudo guardar el comentario");
+    } finally {
+      setCommentSaving(false);
+    }
   }
 
   return (
@@ -303,7 +422,7 @@ export function WorkOrderDetail({
       )}
 
       {checklist.length > 0 && (
-        <section>
+        <section className="max-w-4xl">
           <h2 className="text-sm font-medium text-zinc-500 mb-2">Checklist</h2>
           {!checklistUnlocked && initial.status === "open" && (
             <p className="mb-2 text-xs text-amber-700">
@@ -313,7 +432,10 @@ export function WorkOrderDetail({
           <ul className="space-y-2">
             {checklist.map((item) =>
               item.type === "step" ? (
-                <li key={item.id} className="flex items-center gap-2">
+                <li
+                  key={item.id}
+                  className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2.5"
+                >
                   {!checklistUnlocked ? (
                     <span className="text-zinc-600">
                       {item.completed ? (
@@ -347,7 +469,10 @@ export function WorkOrderDetail({
                   </span>
                 </li>
               ) : (
-                <li key={item.id} className="flex flex-col gap-1">
+                <li
+                  key={item.id}
+                  className="flex flex-col gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5"
+                >
                   <label className="text-sm font-medium text-zinc-700">
                     {item.label}
                   </label>
@@ -382,12 +507,17 @@ export function WorkOrderDetail({
                   ) : (
                     <>
                       {item.fieldType === "checkbox" && (
-                        <input
-                          type="checkbox"
-                          checked={item.value === true}
-                          onChange={(e) => updateFieldValue(item.id, e.target.checked)}
-                          className="rounded border-zinc-300 text-primary-600"
-                        />
+                        <div className="self-start">
+                          <label className="inline-flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={item.value === true}
+                              onChange={(e) => updateFieldValue(item.id, e.target.checked)}
+                              className="h-4 w-4 shrink-0 rounded border-zinc-300 text-primary-600 accent-primary-600"
+                            />
+                            <span className="text-sm text-zinc-700">Marcar si aplica</span>
+                          </label>
+                        </div>
                       )}
                       {item.fieldType === "text" && (
                         <input
@@ -469,11 +599,83 @@ export function WorkOrderDetail({
         </section>
       )}
 
-      {initial.notes.length > 0 && (
-        <section>
-          <h2 className="text-sm font-medium text-zinc-500 mb-2">Notas</h2>
+      <section>
+        <h2 className="text-sm font-medium text-zinc-500 mb-2">Comentarios</h2>
+        <form onSubmit={addComment} className="mb-3 space-y-2">
+          <textarea
+            ref={commentInputRef}
+            value={newComment}
+            onChange={(e) => {
+              const next = e.target.value;
+              setNewComment(next);
+              updateMentionState(next, e.target.selectionStart ?? next.length);
+            }}
+            onKeyDown={(e) => {
+              if (!mentionOpen || mentionCandidates.length === 0) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setMentionIndex((prev) => (prev + 1) % mentionCandidates.length);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setMentionIndex((prev) =>
+                  prev === 0 ? mentionCandidates.length - 1 : prev - 1
+                );
+                return;
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                const picked = mentionCandidates[mentionIndex];
+                if (picked) applyMention(picked.username);
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                closeMentions();
+              }
+            }}
+            rows={3}
+            placeholder="Escribe un comentario... (usa @usuario para etiquetar)"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          />
+          {mentionOpen && mentionCandidates.length > 0 && (
+            <div className="rounded-md border border-zinc-300 bg-white shadow-sm">
+              <ul className="max-h-48 overflow-y-auto py-1">
+                {mentionCandidates.map((u, idx) => (
+                  <li key={u.id}>
+                    <button
+                      type="button"
+                      onClick={() => applyMention(u.username)}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                        idx === mentionIndex ? "bg-zinc-100" : "hover:bg-zinc-50"
+                      }`}
+                    >
+                      <span className="text-zinc-900">{u.name}</span>
+                      <span className="text-zinc-500">@{u.username}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-xs text-zinc-500">
+            Puedes etiquetar con <span className="font-semibold">@usuario</span>.
+          </p>
+          {commentError ? <p className="text-xs text-red-600">{commentError}</p> : null}
+          <button
+            type="submit"
+            disabled={commentSaving || !newComment.trim()}
+            className="rounded-lg bg-primary-600 text-white py-2 px-3 text-sm font-medium disabled:opacity-50"
+          >
+            {commentSaving ? "Guardando..." : "Agregar comentario"}
+          </button>
+        </form>
+        {noteList.length === 0 ? (
+          <p className="text-sm text-zinc-500">Aún no hay comentarios.</p>
+        ) : (
           <ul className="space-y-2">
-            {initial.notes.map((n) => (
+            {noteList.map((n) => (
               <li
                 key={n.id}
                 className="rounded-lg bg-zinc-50 p-3 text-sm text-zinc-900"
@@ -485,8 +687,8 @@ export function WorkOrderDetail({
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }

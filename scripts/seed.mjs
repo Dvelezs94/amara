@@ -207,7 +207,7 @@ async function run() {
         username: "operador",
         email: "operador@metalnova.local",
         name: "Operador Turno A",
-        role: "technician",
+        role: "operator",
         passwordHash: passwordHashOperador,
       },
     ];

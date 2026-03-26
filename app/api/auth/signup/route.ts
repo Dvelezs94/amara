@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
-import { createUser, createSession } from "@/lib/auth";
+import { createUser, getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
 
 export async function POST(req: Request) {
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const body = await req.json().catch(() => ({}));
   const username = (body.username ?? "").trim().toLowerCase();
   const emailRaw = (body.email ?? "").trim().toLowerCase();
@@ -45,13 +50,12 @@ export async function POST(req: Request) {
     }
   }
   const user = await createUser({ username, email, name, password });
-  await createSession(user.id);
   await recordAuditLog({
     entityType: "user",
     entityId: user.id,
-    action: "registered",
-    userId: user.id,
+    action: "created_by_admin",
+    userId: session.id,
     metadata: { username, email, role: user.role },
   });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, id: user.id });
 }

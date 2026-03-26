@@ -26,27 +26,86 @@ body {
   min-height: 100dvh;
 }
 
-/* HMI-like baseline styling layer */
+/* Terminal-like global UI language */
 .hmi body {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
   letter-spacing: 0.01em;
+  background-color: #06080d !important;
+  color: #e5e7eb !important;
   background-image:
-    linear-gradient(rgba(31, 60, 136, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(31, 60, 136, 0.05) 1px, transparent 1px);
-  background-size: 24px 24px;
+    linear-gradient(rgba(220, 38, 38, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(220, 38, 38, 0.055) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 
-.hmi .rounded-xl {
-  border-radius: 0.6rem !important;
+.hmi .rounded-xl,
+.hmi .rounded-lg,
+.hmi .rounded-md {
+  border-radius: 0.2rem !important;
 }
 
-.hmi .rounded-lg {
-  border-radius: 0.45rem !important;
+.hmi .rounded-sm {
+  border-radius: 0.15rem !important;
 }
 
-.hmi .bg-white {
+.hmi .bg-surface,
+.hmi .bg-white,
+.hmi .bg-white\/95,
+.hmi .bg-zinc-50,
+.hmi .bg-zinc-50\/50,
+.hmi .bg-zinc-50\/80 {
+  background-color: #151a24 !important;
+}
+
+.hmi .bg-white,
+.hmi .bg-white\/95 {
   box-shadow:
-    inset 0 0 0 1px rgba(31, 60, 136, 0.08),
-    0 4px 14px rgba(15, 23, 42, 0.08);
+    inset 0 0 0 1px rgba(148, 163, 184, 0.22),
+    0 8px 20px rgba(2, 6, 23, 0.52) !important;
+}
+
+.hmi .text-zinc-900,
+.hmi .text-zinc-800,
+.hmi .text-zinc-700 {
+  color: #f3f4f6 !important;
+}
+
+.hmi .text-zinc-600,
+.hmi .text-zinc-500,
+.hmi .text-zinc-400 {
+  color: #9aa5bc !important;
+}
+
+.hmi .border-zinc-100,
+.hmi .border-zinc-200,
+.hmi .border-zinc-300 {
+  border-color: #2a3e5a !important;
+}
+
+.hmi .border {
+  border-color: #2a3e5a !important;
+}
+
+.hmi .divide-zinc-100 > :not([hidden]) ~ :not([hidden]),
+.hmi .divide-zinc-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #243751 !important;
+}
+
+.hmi .bg-primary-600 {
+  background-color: #9a3412 !important;
+  color: #fef2f2 !important;
+}
+
+.hmi .text-primary-600,
+.hmi .text-primary-700 {
+  color: #fb923c !important;
+}
+
+.hmi .bg-primary-50,
+.hmi .bg-primary-100 {
+  background-color: rgba(249, 115, 22, 0.18) !important;
+  border-color: rgba(251, 146, 60, 0.54) !important;
 }
 
 .hmi button,
@@ -55,76 +114,36 @@ body {
   letter-spacing: 0.02em;
 }
 
-/* Global dark theme overrides for existing utility-based UI */
-.dark .bg-surface {
-  background-color: #0f172a !important;
-}
-.dark .bg-white {
-  background-color: #1e293b !important;
-}
-.dark .bg-white\/95 {
-  background-color: rgba(30, 41, 59, 0.95) !important;
-}
-.dark .bg-zinc-50,
-.dark .bg-zinc-50\/80,
-.dark .bg-zinc-50\/50 {
-  background-color: #0f172a !important;
-}
-.dark .text-zinc-900 {
-  color: #f8fafc !important;
-}
-.dark .text-zinc-800,
-.dark .text-zinc-700 {
-  color: #e2e8f0 !important;
-}
-.dark .text-zinc-600,
-.dark .text-zinc-500,
-.dark .text-zinc-400 {
-  color: #94a3b8 !important;
-}
-.dark .border-zinc-200,
-.dark .border-zinc-100,
-.dark .border-zinc-300 {
-  border-color: #334155 !important;
-}
-.dark .hover\:bg-zinc-100:hover {
-  background-color: #1f2937 !important;
-}
-.dark .hover\:bg-zinc-50:hover {
-  background-color: #111827 !important;
-}
-.dark input,
-.dark textarea,
-.dark select {
-  background-color: #0f172a !important;
-  color: #e2e8f0 !important;
-  border-color: #334155 !important;
-}
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: #64748b !important;
-}
-.dark .bg-black\/50 {
-  background-color: rgba(2, 6, 23, 0.7) !important;
+.hmi .hover\:bg-zinc-100:hover,
+.hmi .hover\:bg-zinc-50:hover {
+  background-color: #13253b !important;
 }
 
-.dark.hmi body {
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
-  background-size: 24px 24px;
+.hmi .bg-black\/50 {
+  background-color: rgba(2, 6, 23, 0.76) !important;
 }
 
-.dark.hmi .bg-white,
-.dark.hmi .bg-white\/95 {
+.hmi input,
+.hmi textarea,
+.hmi select {
+  background-color: #0d1827 !important;
+  color: #f3f4f6 !important;
+  border-color: #2a3e5a !important;
+}
+
+.hmi input::placeholder,
+.hmi textarea::placeholder {
+  color: #6b778f !important;
+}
+
+.hmi .shadow-sm,
+.hmi .shadow,
+.hmi .shadow-md,
+.hmi .shadow-lg,
+.hmi .shadow-xl {
   box-shadow:
-    inset 0 0 0 1px rgba(148, 163, 184, 0.25),
-    0 6px 16px rgba(2, 6, 23, 0.45) !important;
-}
-
-.dark.hmi .text-zinc-900,
-.dark.hmi .text-zinc-800 {
-  text-shadow: 0 0 0.5px rgba(148, 163, 184, 0.45);
+    inset 0 0 0 1px rgba(55, 81, 112, 0.42),
+    0 8px 20px rgba(2, 8, 17, 0.45) !important;
 }
 
 /* Touch-friendly tap targets */

@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ClipboardList,
-  Package,
   ListChecks,
   BarChart2,
   CalendarDays,
@@ -18,8 +17,8 @@ import {
   ChevronDown,
   Wrench,
   ArrowLeft,
-  Moon,
-  Sun,
+  Bell,
+  Search,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import type { SessionUser } from "@/lib/auth-shared";
@@ -55,8 +54,7 @@ const baseNavSections: { type: string; items: NavItem[] }[] = [
 
 function roleLabel(role: string) {
   if (role === "admin") return "Administrador";
-  if (role === "supervisor") return "Supervisor";
-  if (role === "technician") return "Tecnico";
+  if (role === "operator") return "Operador";
   return role;
 }
 
@@ -103,9 +101,33 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const userRole = roleLabel(user.role);
   const navSections = [
-    ...baseNavSections,
+    ...(user.role === "admin"
+      ? baseNavSections
+      : [
+          {
+            type: "Operaciones",
+            items: [
+              {
+                href: "/work-orders",
+                label: "Órdenes de trabajo",
+                icon: ClipboardList,
+              } satisfies NavItem,
+            ],
+          },
+          {
+            type: "Contenido",
+            items: [
+              {
+                href: "/knowledge-base",
+                label: "Base de conocimiento",
+                icon: BookOpen,
+              } satisfies NavItem,
+            ],
+          },
+        ]),
     ...(user.role === "admin"
       ? [
           {
@@ -129,7 +151,21 @@ export function AppShell({
   const mainNav = navSections.flatMap((s) => s.items);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notifications, setNotifications] = useState<
+    Array<{
+      id: string;
+      title: string;
+      body: string | null;
+      type: "assignment" | "work_order_update" | "mention";
+      workOrderId: string | null;
+      readAt: string | null;
+      createdAt: string;
+    }>
+  >([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const showBackButton =
     pathname.startsWith("/work-orders") ||
     pathname.startsWith("/checklists") ||
@@ -137,58 +173,99 @@ export function AppShell({
 
   const profileDesktopRef = useRef<HTMLDivElement>(null);
   const profileMobileRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const isDark = document.documentElement.classList.contains("dark");
-    setTheme(isDark ? "dark" : "light");
-  }, []);
+    setSearchQuery(searchParams.get("q") ?? "");
+  }, [searchParams]);
 
   useEffect(() => {
-    if (!profileMenuOpen) return;
+    if (!profileMenuOpen && !notificationsOpen) return;
     function handleClickOutside(e: MouseEvent) {
       const target = e.target as Node;
       const insideDesktop = profileDesktopRef.current?.contains(target);
       const insideMobile = profileMobileRef.current?.contains(target);
+      const insideNotifications = notificationsRef.current?.contains(target);
       if (!insideDesktop && !insideMobile) setProfileMenuOpen(false);
+      if (!insideNotifications) setNotificationsOpen(false);
     }
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
-  }, [profileMenuOpen]);
+  }, [profileMenuOpen, notificationsOpen]);
 
-  function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.classList.toggle("dark", next === "dark");
-    localStorage.setItem("theme", next);
-    setTheme(next);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadNotifications() {
+      setNotificationsLoading(true);
+      try {
+        const res = await fetch("/api/notifications");
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled) {
+          setNotifications(Array.isArray(data.items) ? data.items : []);
+          setUnreadCount(Number(data.unreadCount ?? 0));
+        }
+      } finally {
+        if (!cancelled) setNotificationsLoading(false);
+      }
+    }
+    void loadNotifications();
+    const timer = setInterval(() => {
+      void loadNotifications();
+    }, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  function submitSearch() {
+    const q = searchQuery.trim();
+    const targetBase = pathname.startsWith("/knowledge-base")
+      ? "/knowledge-base"
+      : "/work-orders";
+    if (!q) {
+      router.push(targetBase);
+      return;
+    }
+    router.push(`${targetBase}?q=${encodeURIComponent(q)}`);
+  }
+
+  async function markAllNotificationsRead() {
+    await fetch("/api/notifications", { method: "PATCH" });
+    setNotifications((prev) =>
+      prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() }))
+    );
+    setUnreadCount(0);
   }
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex md:w-56 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-zinc-200">
-        <div className="flex items-center h-14 px-4 border-b border-zinc-200">
-          <Link href="/work-orders" className="font-semibold text-zinc-900">
-            AmiMaint
+      <aside className="hidden md:flex md:w-[260px] md:flex-col md:fixed md:inset-y-0 bg-[#091523] border-r border-[#1a2a3f]">
+        <div className="flex h-24 flex-col justify-center px-6 border-b border-[#1a2a3f]">
+          <Link href="/work-orders" className="text-[33px] font-bold uppercase tracking-tight text-[#f4b281] leading-none">
+            Amimaint
           </Link>
+          <p className="mt-1 text-xs uppercase tracking-[0.15em] text-[#7890af]">CMMS v1.0</p>
         </div>
-        <nav className="flex-1 p-3 overflow-y-auto space-y-6">
+        <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-6">
           {navSections.map((section) => (
             <div key={section.type}>
-              <p className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              <p className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6580a2]">
                 {section.type}
               </p>
-              <div className="space-y-0.5">
+              <div className="space-y-1">
                 {section.items.map(({ href, label, icon: Icon }) => (
                   <Link
                     key={href}
                     href={href}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium tap-target ${
+                    className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] tap-target ${
                       pathname.startsWith(href)
-                        ? "bg-primary-50 text-primary-700"
-                        : "text-zinc-600 hover:bg-zinc-100"
+                        ? "bg-[#efac78] text-[#0d1728]"
+                        : "text-[#9fb1c9] hover:bg-[#102137]"
                     }`}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
+                    <Icon className="h-4 w-4 shrink-0" />
                     {label}
                   </Link>
                 ))}
@@ -196,14 +273,14 @@ export function AppShell({
             </div>
           ))}
         </nav>
-        <div className="p-3 border-t border-zinc-200" ref={profileDesktopRef}>
+        <div className="p-3 border-t border-[#1a2a3f]" ref={profileDesktopRef}>
           <button
             type="button"
             onClick={() => setProfileMenuOpen((o) => !o)}
-            className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm font-medium tap-target ${
+            className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-sm font-medium tap-target ${
               pathname.startsWith("/profile") || profileMenuOpen
-                ? "bg-primary-50 text-primary-700"
-                : "text-zinc-600 hover:bg-zinc-100"
+                ? "bg-[#efac78] text-[#0d1728]"
+                : "text-[#9fb1c9] hover:bg-[#102137]"
             }`}
           >
             <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -215,7 +292,7 @@ export function AppShell({
               />
               <span className="flex min-w-0 flex-col text-left leading-tight">
                 <span className="truncate">Perfil</span>
-                <span className="truncate text-xs font-normal text-zinc-500">
+                <span className="truncate text-xs font-normal text-[#6f85a3]">
                   {user.name} · {userRole}
                 </span>
               </span>
@@ -241,16 +318,16 @@ export function AppShell({
         />
       )}
       <aside
-        className={`fixed top-0 left-0 z-50 h-full w-64 bg-white border-r border-zinc-200 transform transition-transform md:hidden ${
+        className={`fixed top-0 left-0 z-50 h-full w-64 bg-[#091523] border-r border-[#1a2a3f] transform transition-transform md:hidden ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between h-14 px-4 border-b border-zinc-200">
-          <span className="font-semibold text-zinc-900">Menú</span>
+        <div className="flex items-center justify-between h-14 px-4 border-b border-[#1a2a3f]">
+          <span className="font-semibold text-[#f4b281]">Menú</span>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
-            className="p-2 rounded-lg hover:bg-zinc-100 tap-target"
+            className="p-2 rounded-lg hover:bg-[#102137] tap-target"
             aria-label="Cerrar menú"
           >
             <X className="h-5 w-5" />
@@ -259,7 +336,7 @@ export function AppShell({
         <nav className="flex-1 p-3 overflow-y-auto space-y-6">
           {navSections.map((section) => (
             <div key={section.type}>
-              <p className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              <p className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[#6580a2]">
                 {section.type}
               </p>
               <div className="space-y-0.5">
@@ -268,13 +345,13 @@ export function AppShell({
                     key={href}
                     href={href}
                     onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium tap-target ${
+                    className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] tap-target ${
                       pathname.startsWith(href)
-                        ? "bg-primary-50 text-primary-700"
-                        : "text-zinc-600 hover:bg-zinc-100"
+                        ? "bg-[#efac78] text-[#0d1728]"
+                        : "text-[#9fb1c9] hover:bg-[#102137]"
                     }`}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
+                    <Icon className="h-4 w-4 shrink-0" />
                     {label}
                   </Link>
                 ))}
@@ -282,14 +359,14 @@ export function AppShell({
             </div>
           ))}
         </nav>
-        <div className="p-3 border-t border-zinc-200">
+        <div className="p-3 border-t border-[#1a2a3f]">
           <button
             type="button"
             onClick={() => setProfileMenuOpen((o) => !o)}
-            className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm font-medium tap-target ${
+            className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-sm font-medium tap-target ${
               pathname.startsWith("/profile") || profileMenuOpen
-                ? "bg-primary-50 text-primary-700"
-                : "text-zinc-600 hover:bg-zinc-100"
+                ? "bg-[#efac78] text-[#0d1728]"
+                : "text-[#9fb1c9] hover:bg-[#102137]"
             }`}
           >
             <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -301,7 +378,7 @@ export function AppShell({
               />
               <span className="flex min-w-0 flex-col text-left leading-tight">
                 <span className="truncate">Perfil</span>
-                <span className="truncate text-xs font-normal text-zinc-500">
+                <span className="truncate text-xs font-normal text-[#6f85a3]">
                   {user.name} · {userRole}
                 </span>
               </span>
@@ -324,49 +401,134 @@ export function AppShell({
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col md:pl-56 min-h-screen">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 px-4 bg-white/95 backdrop-blur border-b border-zinc-200">
+      <div className="flex-1 flex flex-col md:pl-[260px] min-h-screen">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 px-4 bg-[#061321]/95 backdrop-blur border-b border-[#1a2a3f]">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="p-2 -ml-2 rounded-lg hover:bg-zinc-100 tap-target md:hidden"
+            className="p-2 -ml-2 rounded-lg hover:bg-[#102137] tap-target md:hidden"
             aria-label="Abrir menú"
           >
-            <Menu className="h-5 w-5 text-zinc-600" />
+            <Menu className="h-5 w-5 text-[#9fb1c9]" />
           </button>
           {showBackButton && (
             <button
               type="button"
               onClick={() => router.back()}
-              className="p-2 rounded-lg hover:bg-zinc-100 tap-target"
+              className="p-2 rounded-lg hover:bg-[#102137] tap-target"
               aria-label="Volver"
             >
-              <ArrowLeft className="h-5 w-5 text-zinc-600" />
+              <ArrowLeft className="h-5 w-5 text-[#9fb1c9]" />
             </button>
           )}
-          <Link href="/work-orders" className="md:hidden font-semibold text-zinc-900">
+          <Link href="/work-orders" className="md:hidden font-semibold text-[#f4b281]">
             AmiMaint
           </Link>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2 rounded-md border border-[#1a2a3f] bg-[#0b1a2d] px-3 py-2 min-w-[260px]">
+              <Search className="h-4 w-4 text-[#6f85a3]" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitSearch();
+                  }
+                }}
+                aria-label="Buscar"
+                className="w-full bg-transparent border-0 p-0 text-xs text-[#9fb1c9] placeholder:text-[#6f85a3] focus:outline-none"
+                placeholder={
+                  pathname.startsWith("/knowledge-base")
+                    ? "Buscar en base de conocimiento..."
+                    : "Buscar ordenes de trabajo..."
+                }
+              />
+            </div>
             <button
               type="button"
-              onClick={toggleTheme}
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-              aria-label="Cambiar tema"
-              title={theme === "dark" ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+              onClick={submitSearch}
+              className="hidden md:inline-flex items-center justify-center rounded-md border border-[#1a2a3f] bg-[#0b1a2d] p-2 text-[#9fb1c9] hover:bg-[#102137]"
+              aria-label="Buscar"
             >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              {theme === "dark" ? "Claro" : "Oscuro"}
+              <Search className="h-4 w-4" />
             </button>
+            <div className="relative hidden md:block" ref={notificationsRef}>
+              <button
+                type="button"
+                onClick={() => setNotificationsOpen((v) => !v)}
+                className="inline-flex items-center justify-center rounded-md border border-[#1a2a3f] bg-[#0b1a2d] p-2 text-[#9fb1c9] hover:bg-[#102137]"
+                aria-label="Notificaciones"
+              >
+                <Bell className="h-4 w-4" />
+                {unreadCount > 0 && (
+                  <span className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-[#efac78] px-1 text-[10px] font-bold text-[#0d1728]">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              {notificationsOpen && (
+                <div className="absolute right-0 z-40 mt-2 w-80 rounded-md border border-[#1a2a3f] bg-[#0b1a2d] shadow-lg">
+                  <div className="flex items-center justify-between border-b border-[#1a2a3f] px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#9fb1c9]">
+                      Notificaciones
+                    </p>
+                    <button
+                      type="button"
+                      onClick={markAllNotificationsRead}
+                      className="text-xs font-medium text-[#efac78] hover:underline"
+                    >
+                      Marcar todo leido
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto p-2">
+                    {notificationsLoading ? (
+                      <p className="px-2 py-3 text-xs text-[#7890af]">Cargando...</p>
+                    ) : notifications.length === 0 ? (
+                      <p className="px-2 py-3 text-xs text-[#7890af]">Sin notificaciones</p>
+                    ) : (
+                      notifications.map((n) => (
+                        <Link
+                          key={n.id}
+                          href={n.workOrderId ? `/work-orders/${n.workOrderId}` : "/work-orders"}
+                          onClick={async () => {
+                            await fetch(`/api/notifications/${n.id}`, {
+                              method: "PATCH",
+                            });
+                            setNotifications((prev) =>
+                              prev.map((item) =>
+                                item.id === n.id
+                                  ? { ...item, readAt: item.readAt ?? new Date().toISOString() }
+                                  : item
+                              )
+                            );
+                            setUnreadCount((prev) => Math.max(0, prev - (n.readAt ? 0 : 1)));
+                            setNotificationsOpen(false);
+                          }}
+                          className={`mb-1 block rounded-md border px-2 py-2 text-xs ${
+                            n.readAt
+                              ? "border-[#1a2a3f] text-[#7890af]"
+                              : "border-[#2a3e5a] bg-[#102137] text-[#d4deee]"
+                          }`}
+                        >
+                          <p className="font-semibold">{n.title}</p>
+                          {n.body && <p className="mt-0.5 truncate">{n.body}</p>}
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 p-4 pb-24 md:pb-4 md:max-w-app md:w-full md:mx-auto">
+        <main className="flex-1 p-4 pb-24 md:pb-4 md:max-w-none md:w-full md:mx-auto">
           {children}
         </main>
 
         {/* Bottom nav (mobile only) */}
-        <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around h-16 bg-white border-t border-zinc-200 md:hidden">
+        <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around h-16 bg-[#091523] border-t border-[#1a2a3f] md:hidden">
           {mainNav.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}

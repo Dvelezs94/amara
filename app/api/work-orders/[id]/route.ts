@@ -9,6 +9,7 @@ import { notes } from "@/lib/db/schema";
 import { attachments } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
+import { createNotification } from "@/lib/notifications";
 
 export async function GET(
   _req: Request,
@@ -102,6 +103,28 @@ export async function PATCH(
   if (body.status === "completed") updates.completedAt = new Date();
 
   await db.update(workOrders).set(updates).where(eq(workOrders.id, id));
+
+  const nextAssigneeId =
+    body.assigneeId !== undefined ? body.assigneeId || null : wo.assigneeId;
+  const assigneeChanged = body.assigneeId !== undefined && nextAssigneeId !== wo.assigneeId;
+  if (assigneeChanged && nextAssigneeId && nextAssigneeId !== session.id) {
+    await createNotification({
+      userId: nextAssigneeId,
+      type: "assignment",
+      title: "Nueva orden asignada",
+      body: wo.title,
+      workOrderId: id,
+    });
+  }
+  if (!assigneeChanged && nextAssigneeId && nextAssigneeId !== session.id) {
+    await createNotification({
+      userId: nextAssigneeId,
+      type: "work_order_update",
+      title: "Actualización en orden asignada",
+      body: wo.title,
+      workOrderId: id,
+    });
+  }
 
   await recordAuditLog({
     entityType: "work_order",

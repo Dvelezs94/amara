@@ -10,6 +10,7 @@ import { eq, desc, and } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
 import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
+import { createNotification } from "@/lib/notifications";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -80,6 +81,15 @@ export async function POST(req: Request) {
     createdAt: now,
     updatedAt: now,
   });
+  if (body.assigneeId && body.assigneeId !== session.id) {
+    await createNotification({
+      userId: body.assigneeId,
+      type: "assignment",
+      title: "Nueva orden asignada",
+      body: title,
+      workOrderId: id,
+    });
+  }
   if (checklistTemplateId) {
     const templateItems = await db.query.checklistTemplateItems.findMany({
       where: eq(checklistTemplateItems.checklistTemplateId, checklistTemplateId),

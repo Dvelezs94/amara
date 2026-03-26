@@ -42,6 +42,13 @@ type DashboardKpis = {
   windowDays: number;
 };
 
+const statusColors: Record<PendingOrder["status"], string> = {
+  open: "bg-amber-100 text-amber-800",
+  in_progress: "bg-blue-100 text-blue-800",
+  completed: "bg-emerald-100 text-emerald-800",
+  cancelled: "bg-zinc-100 text-zinc-600",
+};
+
 export default function DashboardPage() {
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
@@ -174,30 +181,29 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-zinc-900">Dashboard</h1>
+        <h1 className="text-3xl font-bold uppercase tracking-tight text-zinc-900">Dashboard</h1>
         <p className="text-zinc-500">Cargando…</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-zinc-900">Dashboard</h1>
+        <div>
+          <h1 className="text-4xl font-bold uppercase leading-none text-zinc-900">Dashboard</h1>
+        </div>
         <Link
           href="/analytics"
-          className="inline-flex items-center gap-2 rounded-xl bg-primary-600 text-white py-2.5 px-4 text-sm font-medium"
+          className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 px-4 text-sm font-semibold uppercase tracking-[0.08em]"
         >
           <BarChart2 className="h-4 w-4" />
-          Añadir gráfico desde analíticas
+          Añadir gráfico
         </Link>
       </div>
-      <p className="text-sm text-zinc-500">
-        Arrastra las tarjetas para reordenar. Los gráficos se guardan aquí desde la página de analíticas.
-      </p>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+        <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             MTTR
             <span title="Tiempo medio de reparación: promedio de horas desde creación hasta finalización de órdenes completadas.">
@@ -209,7 +215,7 @@ export default function DashboardPage() {
           </p>
           <p className="mt-1 text-xs text-zinc-500">Tiempo medio de reparación ({kpis?.windowDays ?? 30} días)</p>
         </section>
-        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+        <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             Inactividad
             <span title="Horas de inactividad: suma de horas de órdenes completadas en la ventana de tiempo.">
@@ -221,7 +227,7 @@ export default function DashboardPage() {
           </p>
           <p className="mt-1 text-xs text-zinc-500">Horas de parada acumuladas ({kpis?.windowDays ?? 30} días)</p>
         </section>
-        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+        <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             Planificado vs no planificado
             <span title="Porcentaje de trabajo planificado respecto al total de órdenes en la ventana.">
@@ -235,7 +241,7 @@ export default function DashboardPage() {
             Planificado {kpis?.plannedCount ?? 0} · No planificado {kpis?.unplannedCount ?? 0}
           </p>
         </section>
-        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+        <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             OEE
             <span title="Eficiencia global del equipo estimada con base en disponibilidad (1 - inactividad / horas disponibles).">
@@ -250,7 +256,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+        <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-zinc-900">Órdenes pendientes</h2>
             <Link href="/work-orders" className="text-sm font-medium text-primary-600 hover:underline">
@@ -262,12 +268,16 @@ export default function DashboardPage() {
           ) : (
             <ul className="space-y-2">
               {pendingOrders.map((order) => (
-                <li key={order.id} className="rounded-lg border border-zinc-100 bg-surface p-3">
+                <li key={order.id} className="rounded-md border border-zinc-100 bg-surface p-3">
                   <div className="flex items-start justify-between gap-2">
                     <Link href={`/work-orders/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
                       {order.title}
                     </Link>
-                    <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        statusColors[order.status]
+                      }`}
+                    >
                       {statusLabel(order.status)}
                     </span>
                   </div>
@@ -283,7 +293,7 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-zinc-200 bg-white p-4">
+        <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-zinc-900">Próximos eventos</h2>
             <Link href="/calendario" className="text-sm font-medium text-primary-600 hover:underline">
@@ -295,7 +305,7 @@ export default function DashboardPage() {
           ) : (
             <ul className="space-y-2">
               {upcomingEvents.map((event) => (
-                <li key={event.id} className="rounded-lg border border-zinc-100 bg-surface p-3">
+                <li key={event.id} className="rounded-md border border-zinc-100 bg-surface p-3">
                   <p className="font-medium text-zinc-900">{event.name}</p>
                   <p className="mt-1 text-xs text-zinc-500">
                     Fecha: {formatDate(event.nextRunAt)}
@@ -313,8 +323,12 @@ export default function DashboardPage() {
         </section>
       </div>
 
+      <p className="text-sm text-zinc-500">
+        Arrastra las tarjetas para reordenar. Los gráficos se guardan aquí desde la página de analíticas.
+      </p>
+
       {widgets.length === 0 ? (
-        <div className="rounded-xl border border-zinc-200 border-dashed bg-zinc-50 p-12 text-center">
+        <div className="rounded-lg border border-zinc-200 border-dashed bg-zinc-50 p-12 text-center">
           <p className="text-zinc-600 mb-2">Aún no hay gráficos en el dashboard</p>
           <Link
             href="/analytics"
@@ -334,7 +348,7 @@ export default function DashboardPage() {
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, index)}
               onDragEnd={handleDragEnd}
-              className={`relative rounded-xl border-2 bg-white transition-colors ${
+              className={`relative rounded-lg border-2 bg-white transition-colors ${
                 draggedId === w.id
                   ? "opacity-50 border-primary-300"
                   : dropIndex === index && draggedId !== w.id
@@ -348,7 +362,8 @@ export default function DashboardPage() {
                     : "md:col-span-1 xl:col-span-2"
               }`}
             >
-              <div className="flex items-center justify-between gap-2 p-2 border-b border-zinc-100 bg-zinc-50/80 rounded-t-xl cursor-grab active:cursor-grabbing">
+              
+              <div className="flex items-center justify-between gap-2 p-2 border-b border-zinc-100 bg-zinc-50/80 rounded-t-lg cursor-grab active:cursor-grabbing">
                 <div className="flex items-center gap-1.5 text-zinc-500" title="Arrastrar para reordenar">
                   <GripVertical className="h-4 w-4" />
                 </div>

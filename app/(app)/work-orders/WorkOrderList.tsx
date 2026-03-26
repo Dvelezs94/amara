@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { GripVertical } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 
 type WorkOrderRow = {
   id: string;
@@ -49,6 +50,8 @@ function formatDate(s: string | null) {
 }
 
 export function WorkOrderList() {
+  const searchParams = useSearchParams();
+  const q = (searchParams.get("q") ?? "").trim().toLowerCase();
   const [items, setItems] = useState<WorkOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -73,6 +76,22 @@ export function WorkOrderList() {
       cancelled = true;
     };
   }, []);
+
+  const filteredItems = useMemo(() => {
+    if (!q) return items;
+    return items.filter((wo) => {
+      const haystack = [
+        wo.title,
+        wo.assetName,
+        wo.assetAssetId,
+        wo.assigneeName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [items, q]);
 
   async function moveWorkOrder(workOrderId: string, to: BoardStatus) {
     const current = items.find((item) => item.id === workOrderId);
@@ -135,9 +154,19 @@ export function WorkOrderList() {
       {error && (
         <p className="rounded-lg bg-red-50 p-2 text-sm text-red-600">{error}</p>
       )}
+      {q && (
+        <p className="text-sm text-zinc-500">
+          Buscando: <span className="font-medium text-zinc-700">{q}</span>
+        </p>
+      )}
+      {q && filteredItems.length === 0 && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center text-zinc-500">
+          No se encontraron ordenes para esa busqueda.
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-3">
         {boardColumns.map((column) => {
-          const columnItems = items.filter((wo) => wo.status === column.key);
+          const columnItems = filteredItems.filter((wo) => wo.status === column.key);
           const isDropActive = dropTarget === column.key;
           return (
             <section

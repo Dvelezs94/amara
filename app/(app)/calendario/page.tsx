@@ -9,7 +9,7 @@ import { eq, asc } from "drizzle-orm";
 import { formatRecurrenceLabel } from "@/lib/maintenance-recurrence";
 import { MaintenanceAssigneeSelect } from "./MaintenanceAssigneeSelect";
 import { CalendarMonthView } from "./CalendarMonthView";
-import { CreateMaintenanceEventForm } from "./CreateMaintenanceEventForm";
+import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
 
 export const dynamic = "force-dynamic";
 
@@ -132,33 +132,31 @@ export default async function CalendarioPage() {
   }));
 
   return (
-    <div className="space-y-4">
-      <header>
-        <h1 className="text-xl font-semibold text-zinc-900">Calendario</h1>
-        <p className="text-sm text-zinc-500">
-          Vista mensual y tareas de mantenimiento preventivo con repetición
-          (diaria, semanal, mensual, etc.).
-        </p>
+    <div className="space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold uppercase tracking-tight text-zinc-900">Calendario</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            Vista mensual y tareas de mantenimiento preventivo con repetición
+            (diaria, semanal, mensual, etc.).
+          </p>
+        </div>
+        <CalendarCreateEventModal
+          assets={assetOptions.map((a) => ({
+            id: a.id,
+            name: a.name,
+            sublabel: a.assetId,
+          }))}
+          users={userList}
+          checklistTemplates={templateOptions}
+        />
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <CalendarMonthView schedules={calendarSchedules} />
-        </div>
-        <div className="lg:col-span-2">
-          <CreateMaintenanceEventForm
-            assets={assetOptions.map((a) => ({
-              id: a.id,
-              name: a.name,
-              sublabel: a.assetId,
-            }))}
-            users={userList}
-            checklistTemplates={templateOptions}
-          />
-        </div>
-      </div>
+      <CalendarMonthView schedules={calendarSchedules} />
 
-      <h2 className="text-sm font-semibold text-zinc-800">Lista de programaciones</h2>
+      <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-zinc-800">
+        Lista de programaciones
+      </h2>
 
       {schedules.length === 0 ? (
         <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm text-zinc-500">

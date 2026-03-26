@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FileText, ExternalLink, Package, Upload, Trash2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 
 type FileWithAsset = {
   id: string;
@@ -15,6 +16,8 @@ type FileWithAsset = {
 };
 
 export default function KnowledgeBasePage() {
+  const searchParams = useSearchParams();
+  const q = (searchParams.get("q") ?? "").trim().toLowerCase();
   const [files, setFiles] = useState<FileWithAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -63,12 +66,33 @@ export default function KnowledgeBasePage() {
     if (res.ok) setFiles((prev) => prev.filter((f) => f.id !== id));
   }
 
+  const filteredFiles = useMemo(() => {
+    if (!q) return files;
+    return files.filter((f) => {
+      const haystack = [
+        f.filename,
+        f.category,
+        f.asset?.name,
+        f.asset?.assetId,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [files, q]);
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold text-zinc-900">Base de conocimiento</h1>
       <p className="text-sm text-zinc-500">
         Archivos y documentación: sube aquí o desde la ficha de cada activo (manuales, especificaciones, etc.).
       </p>
+      {q && (
+        <p className="text-sm text-zinc-500">
+          Buscando: <span className="font-medium text-zinc-700">{q}</span>
+        </p>
+      )}
 
       <form onSubmit={handleUpload} className="flex flex-wrap items-end gap-3 p-4 rounded-xl border border-zinc-200 bg-zinc-50/50">
         <div>
@@ -112,10 +136,14 @@ export default function KnowledgeBasePage() {
             Ver maquinas
           </Link>
         </div>
+      ) : filteredFiles.length === 0 ? (
+        <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center">
+          <p className="text-zinc-600">No se encontraron archivos para esa busqueda.</p>
+        </div>
       ) : (
         <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
           <ul className="divide-y divide-zinc-100">
-            {files.map((f) => (
+            {filteredFiles.map((f) => (
               <li key={f.id} className="flex items-center gap-4 p-4 hover:bg-zinc-50/50">
                 <FileText className="h-5 w-5 text-zinc-400 shrink-0" />
                 <div className="min-w-0 flex-1">

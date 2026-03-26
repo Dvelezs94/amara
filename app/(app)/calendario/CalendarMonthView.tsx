@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   expandOccurrencesInRange,
   formatRecurrenceLabel,
@@ -40,14 +41,11 @@ export function CalendarMonthView({
   schedules: CalendarSchedulePayload[];
 }) {
   const router = useRouter();
-  const [cursor, setCursor] = useState(() => {
-    const n = new Date();
-    return { year: n.getFullYear(), month: n.getMonth() };
-  });
-
-  const { year, month } = cursor;
+  const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
   const monthStart = startOfCalendarMonth(year, month);
-  const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<{
     id: string;
     name: string;
@@ -55,8 +53,113 @@ export function CalendarMonthView({
     color?: string | null;
     dateLabel: string;
     dateYmd: string;
-    deleting?: boolean;
   } | null>(null);
+  const [creatingWorkOrder, setCreatingWorkOrder] = useState(false);
+  const [createWorkOrderError, setCreateWorkOrderError] = useState<string | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [userOptions, setUserOptions] = useState<{ id: string; name: string }[]>([]);
+  const [loadingUserOptions, setLoadingUserOptions] = useState(false);
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState("");
+  const [assigneePromptOpen, setAssigneePromptOpen] = useState(false);
+  const [linkedWorkOrders, setLinkedWorkOrders] = useState<
+    { id: string; folio: number | null; title: string; status: string; createdAt: string | Date }[]
+  >([]);
+  const [loadingLinkedWorkOrders, setLoadingLinkedWorkOrders] = useState(false);
+  const [visibleLinkedWorkOrders, setVisibleLinkedWorkOrders] = useState(5);
+
+  useEffect(() => {
+    if (!selectedEvent) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      setLinkedWorkOrders([]);
+      setLoadingLinkedWorkOrders(false);
+      setSelectedAssigneeId("");
+      setAssigneePromptOpen(false);
+      setVisibleLinkedWorkOrders(5);
+      return;
+    }
+    let cancelled = false;
+    setLoadingLinkedWorkOrders(true);
+    fetch(`/api/maintenance-schedules/${selectedEvent.id}/work-orders`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        setLinkedWorkOrders(Array.isArray(data) ? data : []);
+        setVisibleLinkedWorkOrders(5);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLinkedWorkOrders([]);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoadingLinkedWorkOrders(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      setUserOptions([]);
+      setLoadingUserOptions(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingUserOptions(true);
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const users = Array.isArray(data) ? data : [];
+        setUserOptions(users);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setUserOptions([]);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoadingUserOptions(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEvent]);
+
+  function statusLabel(status: string) {
+    if (status === "open") return "Abierta";
+    if (status === "in_progress") return "En progreso";
+    if (status === "completed") return "Completada";
+    if (status === "cancelled") return "Cancelada";
+    return status;
+  }
+
+  function statusBadgeClass(status: string) {
+    if (status === "open") return "bg-amber-100 text-amber-800";
+    if (status === "in_progress") return "bg-blue-100 text-blue-800";
+    if (status === "completed") return "bg-emerald-100 text-emerald-800";
+    if (status === "cancelled") return "bg-zinc-100 text-zinc-600";
+    return "bg-zinc-100 text-zinc-700";
+  }
+
+  function formatOpenedAt(value: string | Date) {
+    return new Date(value).toLocaleString("es-MX", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
 
   const dayEvents = useMemo(() => {
     const mStart = startOfCalendarMonth(year, month);
@@ -135,249 +238,432 @@ export function CalendarMonthView({
     return cells;
   }, [schedules, year, month]);
 
-  function prevMonth() {
-    setCursor((c) => {
-      const m = c.month - 1;
-      if (m < 0) return { year: c.year - 1, month: 11 };
-      return { year: c.year, month: m };
-    });
-  }
-
-  function nextMonth() {
-    setCursor((c) => {
-      const m = c.month + 1;
-      if (m > 11) return { year: c.year + 1, month: 0 };
-      return { year: c.year, month: m };
-    });
-  }
-
   function goToToday() {
-    const now = new Date();
-    setCursor({ year: now.getFullYear(), month: now.getMonth() });
+    setCurrentDate(new Date());
   }
 
-  const title = monthStart.toLocaleDateString("es-MX", {
-    month: "long",
-    year: "numeric",
-  });
+  function prevPeriod() {
+    setCurrentDate((prev) => {
+      const next = new Date(prev);
+      if (viewMode === "month") next.setMonth(next.getMonth() - 1);
+      else if (viewMode === "week") next.setDate(next.getDate() - 7);
+      else next.setDate(next.getDate() - 1);
+      return next;
+    });
+  }
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const sync = () => setIsDarkTheme(root.classList.contains("dark"));
-    sync();
-    const obs = new MutationObserver(sync);
-    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
-  }, []);
+  function nextPeriod() {
+    setCurrentDate((prev) => {
+      const next = new Date(prev);
+      if (viewMode === "month") next.setMonth(next.getMonth() + 1);
+      else if (viewMode === "week") next.setDate(next.getDate() + 7);
+      else next.setDate(next.getDate() + 1);
+      return next;
+    });
+  }
+
+  const weekStart = useMemo(() => {
+    const base = new Date(currentDate);
+    const shift = mondayBasedIndex(base);
+    base.setDate(base.getDate() - shift);
+    return base;
+  }, [currentDate]);
+  const weekEnd = useMemo(() => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + 6);
+    return d;
+  }, [weekStart]);
+
+  const title =
+    viewMode === "day"
+      ? currentDate.toLocaleDateString("es-MX", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })
+      : viewMode === "week"
+        ? `${weekStart.toLocaleDateString("es-MX", {
+            day: "2-digit",
+            month: "short",
+          })} - ${weekEnd.toLocaleDateString("es-MX", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })}`
+        : monthStart.toLocaleDateString("es-MX", {
+            month: "long",
+            year: "numeric",
+          });
+
+  const visibleCells = useMemo(() => {
+    if (viewMode === "month") return dayEvents;
+    if (viewMode === "week") {
+      const startYmd = toYmdLocal(weekStart);
+      const endYmd = toYmdLocal(weekEnd);
+      return dayEvents.filter((cell) => {
+        const ymd = toYmdLocal(cell.date);
+        return ymd >= startYmd && ymd <= endYmd;
+      });
+    }
+    const dayYmd = toYmdLocal(currentDate);
+    return dayEvents.filter((cell) => toYmdLocal(cell.date) === dayYmd);
+  }, [viewMode, dayEvents, weekStart, weekEnd, currentDate]);
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold capitalize text-zinc-900">
-          {title}
-        </h2>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={goToToday}
-            className="rounded-lg border border-primary-300 bg-primary-50 px-2 py-1 text-xs font-medium text-primary-800 hover:bg-primary-100"
-            title="Ir al día actual"
-          >
-            Hoy
-          </button>
-          <button
-            type="button"
-            onClick={prevMonth}
-            className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
-          >
-            ←
-          </button>
-          <button
-            type="button"
-            onClick={nextMonth}
-            className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
-          >
-            →
-          </button>
+    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold uppercase tracking-wide text-zinc-900">
+              {title}
+            </h2>
+            <button
+              type="button"
+              onClick={prevPeriod}
+              className="rounded-sm border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+              aria-label="Mes anterior"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              onClick={goToToday}
+              className="rounded-sm border border-zinc-300 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-700 hover:bg-zinc-50"
+            >
+              Hoy
+            </button>
+            <button
+              type="button"
+              onClick={nextPeriod}
+              className="rounded-sm border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+              aria-label="Mes siguiente"
+            >
+              →
+            </button>
+          </div>
+          <div className="inline-flex rounded-sm border border-zinc-300 bg-zinc-50 text-[11px] font-semibold uppercase tracking-wider">
+            <button
+              type="button"
+              onClick={() => setViewMode("month")}
+              className={`px-3 py-1 ${viewMode === "month" ? "bg-primary-50 text-primary-700" : "text-zinc-500"}`}
+            >
+              Mes
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("week")}
+              className={`px-3 py-1 ${viewMode === "week" ? "bg-primary-50 text-primary-700" : "text-zinc-500"}`}
+            >
+              Semana
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("day")}
+              className={`px-3 py-1 ${viewMode === "day" ? "bg-primary-50 text-primary-700" : "text-zinc-500"}`}
+            >
+              Día
+            </button>
+          </div>
+        </div>
+        {viewMode !== "day" && (
+          <div className={`grid border-b border-zinc-200 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 ${viewMode === "week" ? "grid-cols-7" : "grid-cols-7"}`}>
+            {WEEK_HEADER.map((w) => (
+              <div key={w} className="border-r border-zinc-200 py-2 last:border-r-0">
+                {w}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className={viewMode === "day" ? "grid grid-cols-1" : "grid grid-cols-7"}>
+          {visibleCells.map((cell, i) => {
+            const dateYmd = toYmdLocal(cell.date);
+            return (
+              <div
+                key={i}
+                onClick={() => setCurrentDate(new Date(cell.date))}
+                className={`min-h-[108px] border-r border-b border-zinc-200 px-2 py-1 text-left align-top transition-colors ${
+                  cell.inMonth ? "bg-surface" : "bg-zinc-50/50"
+                } ${cell.isToday ? "ring-1 ring-inset ring-accent-500" : ""}`}
+              >
+                <div
+                  className={`mb-1 text-xs font-medium ${
+                    cell.inMonth ? "text-zinc-800" : "text-zinc-500"
+                  }`}
+                >
+                  {cell.date.getDate()}
+                </div>
+                <div className="space-y-1">
+                  {cell.events.slice(0, 2).map((ev) => (
+                    <button
+                      key={`${ev.id}-${i}`}
+                      type="button"
+                      onClick={() =>
+                        setSelectedEvent({
+                          id: ev.id,
+                          name: ev.name,
+                          recurrence: ev.recurrence,
+                          color: ev.color,
+                          dateLabel: cell.date.toLocaleDateString("es-MX", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          }),
+                          dateYmd,
+                        })
+                      }
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="block w-full truncate rounded-sm px-1.5 py-0.5 text-left text-[10px] font-semibold uppercase tracking-wide text-white"
+                      style={{ backgroundColor: ev.color ?? "#1F3C88" }}
+                      title={ev.name}
+                    >
+                      {ev.name}
+                    </button>
+                  ))}
+                  {cell.events.length > 2 ? (
+                    <div className="text-[10px] font-semibold text-zinc-500">
+                      +{cell.events.length - 2} more
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-        {WEEK_HEADER.map((w) => (
-          <div key={w} className="py-1">
-            {w}
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-0.5">
-        {dayEvents.map((cell, i) => (
+
+      {selectedEvent ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => {
+            setSelectedEvent(null);
+            setCreateWorkOrderError(null);
+            setActionsOpen(false);
+            setAssigneePromptOpen(false);
+          }}
+        >
           <div
-            key={i}
-            style={{
-              backgroundColor: cell.isToday
-                ? isDarkTheme
-                  ? "#172554"
-                  : "#DBEAFE"
-                : cell.inMonth
-                  ? isDarkTheme
-                    ? "#334155"
-                    : "#FFFFFF"
-                  : isDarkTheme
-                    ? "#3F3F46"
-                    : "#F8FAFC",
-              borderColor: cell.isToday
-                ? isDarkTheme
-                  ? "#F36C21"
-                  : "#1F3C88"
-                : cell.inMonth
-                  ? isDarkTheme
-                    ? "#64748B"
-                    : "#D4D4D8"
-                  : isDarkTheme
-                    ? "#64748B"
-                    : "#D4D4D8",
-            }}
-            className={[
-              "min-h-[72px] rounded-lg border p-1 text-left text-xs",
-              cell.isToday
-                ? "border-2 !border-primary-500 bg-primary-100/70 shadow-[0_0_0_2px_rgba(31,60,136,0.25)] dark:!border-accent-400 dark:bg-primary-900/55 dark:shadow-[0_0_0_2px_rgba(243,108,33,0.4)]"
-                : "",
-            ].join(" ")}
+            className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-4"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                color: cell.isToday
-                  ? isDarkTheme
-                    ? "#bfdbfe"
-                    : "#1e3a8a"
-                  : cell.inMonth
-                    ? isDarkTheme
-                      ? "#f8fafc"
-                      : "#1f2937"
-                    : isDarkTheme
-                      ? "#cbd5e1"
-                      : "#94a3b8",
-              }}
-              className={[
-                "mb-0.5 text-[11px] font-medium",
-              ].join(" ")}
-            >
-              {cell.date.getDate()}
-            </div>
-            <div className="flex flex-col gap-0.5">
-              {cell.events.map((ev) => (
-                <button
-                  key={`${ev.id}-${i}`}
-                  title={ev.name}
-                  type="button"
-                  onClick={() =>
-                    setSelectedEvent({
-                      id: ev.id,
-                      name: ev.name,
-                      recurrence: ev.recurrence,
-                      color: ev.color,
-                      dateLabel: cell.date.toLocaleDateString("es-MX", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      }),
-                      dateYmd: `${cell.date.getFullYear()}-${String(cell.date.getMonth() + 1).padStart(2, "0")}-${String(cell.date.getDate()).padStart(2, "0")}`,
-                    })
-                  }
-                  className="truncate rounded px-1 py-0.5 text-left text-[10px] font-medium text-white"
-                  style={{ backgroundColor: ev.color ?? "#1F3C88" }}
-                >
-                  {ev.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl">
-            <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="mb-2 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-zinc-900">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  {formatRecurrenceLabel(selectedEvent.recurrence)}
+                </p>
+                <h3 className="mt-1 text-xl font-semibold uppercase text-zinc-900">
                   {selectedEvent.name}
                 </h3>
-                <p className="text-xs text-zinc-500">{selectedEvent.dateLabel}</p>
+                <p className="mt-1 text-xs text-zinc-500">{selectedEvent.dateLabel}</p>
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedEvent(null)}
-                className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
+                onClick={() => {
+                  setSelectedEvent(null);
+                  setCreateWorkOrderError(null);
+                  setActionsOpen(false);
+                  setAssigneePromptOpen(false);
+                }}
+                className="rounded-sm border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
               >
                 Cerrar
               </button>
             </div>
-            <div className="space-y-2 text-sm text-zinc-700">
-              <p>
-                <span className="font-medium text-zinc-900">Frecuencia:</span>{" "}
-                {formatRecurrenceLabel(selectedEvent.recurrence)}
+            {createWorkOrderError ? (
+              <p className="mb-2 text-xs text-red-600">{createWorkOrderError}</p>
+            ) : null}
+            <div className="mb-3 rounded-sm border border-[#2a3e5a] bg-[#0d1827] p-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8ea8cd]">
+                Órdenes asociadas
               </p>
-              <p className="flex items-center gap-2">
-                <span className="font-medium text-zinc-900">Color:</span>
-                <span
-                  className="inline-block h-3 w-3 rounded-full"
-                  style={{ backgroundColor: selectedEvent.color ?? "#1F3C88" }}
-                />
-                <span className="text-xs text-zinc-500">
-                  {(selectedEvent.color ?? "#1F3C88").toUpperCase()}
-                </span>
-              </p>
+              {loadingLinkedWorkOrders ? (
+                <p className="mt-1 text-xs text-[#8ea8cd]">Cargando...</p>
+              ) : linkedWorkOrders.length === 0 ? (
+                <p className="mt-1 text-xs text-[#8ea8cd]">Sin órdenes asociadas.</p>
+              ) : (
+                <ul className="mt-1 space-y-1">
+                  {linkedWorkOrders.slice(0, visibleLinkedWorkOrders).map((wo) => (
+                    <li key={wo.id} className="rounded-sm border border-[#2a3e5a] bg-[#0a1422] px-2 py-1.5">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <Link
+                          href={`/work-orders/${wo.id}`}
+                          className="truncate text-[#fb923c] hover:underline"
+                          onClick={() => setSelectedEvent(null)}
+                        >
+                          {wo.folio != null ? `Folio ${wo.folio} · ` : ""}
+                          {wo.title}
+                        </Link>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusBadgeClass(
+                            wo.status
+                          )}`}
+                        >
+                          {statusLabel(wo.status)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[10px] text-[#8ea8cd]">
+                        Abierta el {formatOpenedAt(wo.createdAt)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {linkedWorkOrders.length > visibleLinkedWorkOrders ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisibleLinkedWorkOrders((prev) =>
+                      Math.min(prev + 5, linkedWorkOrders.length)
+                    )
+                  }
+                  className="mt-2 rounded-sm border border-[#2a3e5a] px-2 py-1 text-[11px] font-semibold uppercase text-[#8ea8cd] hover:bg-[#13253b]"
+                >
+                  Cargar más
+                </button>
+              ) : null}
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={async () => {
-                  if (!selectedEvent) return;
-                  const ok = window.confirm(
-                    `Eliminar solo la ocurrencia del ${selectedEvent.dateLabel}?`
-                  );
-                  if (!ok) return;
-                  setSelectedEvent((prev) => (prev ? { ...prev, deleting: true } : prev));
-                  const res = await fetch(
-                    `/api/maintenance-schedules/${selectedEvent.id}?scope=single&date=${encodeURIComponent(
-                      selectedEvent.dateYmd
-                    )}`,
-                    { method: "DELETE" }
-                  );
-                  setSelectedEvent(null);
-                  if (res.ok) router.refresh();
+                disabled={creatingWorkOrder}
+                onClick={() => {
+                  setCreateWorkOrderError(null);
+                  setAssigneePromptOpen(true);
                 }}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                className="rounded-sm bg-primary-600 px-2.5 py-1.5 text-[11px] font-semibold uppercase text-white hover:bg-primary-700 disabled:opacity-50"
               >
-                Eliminar solo este evento
+                {creatingWorkOrder ? "Creando..." : "Crear orden"}
               </button>
               <button
                 type="button"
-                onClick={async () => {
-                  if (!selectedEvent) return;
-                  const firstConfirm = window.confirm(
-                    "Eliminar toda la serie de este evento? Esta acción no se puede deshacer."
-                  );
-                  if (!firstConfirm) return;
-                  const secondConfirm = window.confirm(
-                    "Confirmación final: se eliminará toda la serie completa. ¿Deseas continuar?"
-                  );
-                  if (!secondConfirm) return;
-                  setSelectedEvent((prev) => (prev ? { ...prev, deleting: true } : prev));
-                  const res = await fetch(
-                    `/api/maintenance-schedules/${selectedEvent.id}?scope=all`,
-                    { method: "DELETE" }
-                  );
-                  setSelectedEvent(null);
-                  if (res.ok) router.refresh();
-                }}
-                className="rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700"
+                className="rounded-sm border border-zinc-300 px-2.5 py-1.5 text-[11px] font-semibold uppercase text-zinc-700 hover:bg-zinc-100"
+                onClick={() => setActionsOpen((prev) => !prev)}
               >
-                Eliminar toda la serie
+                Acciones
               </button>
+              {actionsOpen ? (
+                <div className="min-w-[220px] rounded-sm border border-[#2a3e5a] bg-[#0d1827] p-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const firstConfirm = window.confirm(
+                        `Eliminar solo la ocurrencia del ${selectedEvent.dateLabel}?`
+                      );
+                      if (!firstConfirm) return;
+                      const res = await fetch(
+                        `/api/maintenance-schedules/${selectedEvent.id}?scope=single&date=${encodeURIComponent(
+                          selectedEvent.dateYmd
+                        )}`,
+                        { method: "DELETE" }
+                      );
+                      setSelectedEvent(null);
+                      setActionsOpen(false);
+                      if (res.ok) router.refresh();
+                    }}
+                    className="block w-full rounded-sm px-2 py-1.5 text-left text-[#e5e7eb] hover:bg-[#13253b]"
+                  >
+                    Eliminar evento
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const firstConfirm = window.confirm(
+                        "Eliminar toda la serie de este evento? Esta acción no se puede deshacer."
+                      );
+                      if (!firstConfirm) return;
+                      const secondConfirm = window.confirm(
+                        "Confirmación final: se eliminará toda la serie completa. ¿Deseas continuar?"
+                      );
+                      if (!secondConfirm) return;
+                      const res = await fetch(
+                        `/api/maintenance-schedules/${selectedEvent.id}?scope=all`,
+                        { method: "DELETE" }
+                      );
+                      setSelectedEvent(null);
+                      setActionsOpen(false);
+                      if (res.ok) router.refresh();
+                    }}
+                    className="block w-full rounded-sm px-2 py-1.5 text-left text-red-400 hover:bg-[#13253b]"
+                  >
+                    Eliminar serie
+                  </button>
+                </div>
+              ) : null}
             </div>
+            {assigneePromptOpen ? (
+              <div className="mt-2 rounded-sm border border-zinc-300 bg-zinc-50 p-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
+                  Asignar responsable
+                </p>
+                <select
+                  value={selectedAssigneeId}
+                  onChange={(e) => setSelectedAssigneeId(e.target.value)}
+                  disabled={loadingUserOptions || creatingWorkOrder}
+                  className="w-full rounded-sm border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-800"
+                >
+                  <option value="">
+                    {loadingUserOptions ? "Cargando usuarios..." : "Selecciona un responsable"}
+                  </option>
+                  {userOptions.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-sm border border-zinc-300 px-2 py-1 text-[11px] font-semibold uppercase text-zinc-700 hover:bg-zinc-100"
+                    onClick={() => setAssigneePromptOpen(false)}
+                    disabled={creatingWorkOrder}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-sm bg-primary-600 px-2 py-1 text-[11px] font-semibold uppercase text-white hover:bg-primary-700 disabled:opacity-50"
+                    disabled={creatingWorkOrder || !selectedAssigneeId}
+                    onClick={async () => {
+                      if (!selectedEvent || !selectedAssigneeId) return;
+                      setCreateWorkOrderError(null);
+                      setCreatingWorkOrder(true);
+                      try {
+                        const res = await fetch(
+                          `/api/maintenance-schedules/${selectedEvent.id}/create-work-order`,
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              dateYmd: selectedEvent.dateYmd,
+                              assigneeId: selectedAssigneeId,
+                            }),
+                          }
+                        );
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                          setCreateWorkOrderError(
+                            typeof data.error === "string"
+                              ? data.error
+                              : "No se pudo crear la orden"
+                          );
+                          return;
+                        }
+                        setSelectedEvent(null);
+                        setAssigneePromptOpen(false);
+                        router.push(`/work-orders/${data.id}`);
+                        router.refresh();
+                      } finally {
+                        setCreatingWorkOrder(false);
+                      }
+                    }}
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

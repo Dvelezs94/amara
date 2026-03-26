@@ -49,6 +49,7 @@ export function AnalyticsCharts() {
   const [to, setTo] = useState("");
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [chartType, setChartType] = useState<"line" | "bar" | "pie">("line");
   const [addToDashboardStatus, setAddToDashboardStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -85,30 +86,42 @@ export function AnalyticsCharts() {
   ) ?? [];
   const fieldType = selectedField[0]?.fieldType ?? null;
 
+  useEffect(() => {
+    if (fieldType === "number") {
+      setChartType("line");
+      return;
+    }
+    if (fieldType === "checkbox") {
+      setChartType("pie");
+      return;
+    }
+    if (fieldType === "dropdown" || fieldType === "text") {
+      setChartType("bar");
+    }
+  }, [fieldType, fieldLabel]);
+
   let chartData: { name: string; value: number }[] = [];
-  let lineData: { date: string; value: number; count: number }[] = [];
+  let lineData: { ts: number; date: string; value: number }[] = [];
   if (fieldLabel && data?.workOrders) {
     if (fieldType === "number") {
-      const byDate = new Map<string, { sum: number; count: number }>();
       for (const wo of data.workOrders) {
         const item = wo.checklistItems.find((i) => i.label === fieldLabel);
         const val = item?.value != null ? Number(item.value) : null;
         if (val === null || Number.isNaN(val)) continue;
-        const dateStr = wo.completedAt
-          ? new Date(wo.completedAt).toLocaleDateString("es")
-          : "—";
-        const cur = byDate.get(dateStr) ?? { sum: 0, count: 0 };
-        cur.sum += val;
-        cur.count += 1;
-        byDate.set(dateStr, cur);
+        const ts = wo.completedAt ? new Date(wo.completedAt).getTime() : NaN;
+        if (!Number.isFinite(ts)) continue;
+        lineData.push({
+          ts,
+          date: new Date(ts).toLocaleString("es-MX", {
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          value: Math.round(val * 100) / 100,
+        });
       }
-      lineData = Array.from(byDate.entries())
-        .map(([date, { sum, count }]) => ({
-          date,
-          value: Math.round((sum / count) * 100) / 100,
-          count,
-        }))
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      lineData = lineData.sort((a, b) => a.ts - b.ts);
     } else if (fieldType === "dropdown" || fieldType === "text") {
       const counts = new Map<string, number>();
       for (const item of selectedField) {
@@ -212,6 +225,25 @@ export function AnalyticsCharts() {
 
       {templateId && fieldLabel && data && (
         <div className="flex flex-wrap items-center gap-2">
+          {(fieldType === "number" || fieldType === "checkbox" || fieldType === "dropdown" || fieldType === "text") && (
+            <select
+              value={chartType}
+              onChange={(e) => setChartType(e.target.value as "line" | "bar" | "pie")}
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
+            >
+              {fieldType === "number" ? (
+                <>
+                  <option value="line">Línea</option>
+                  <option value="bar">Barras</option>
+                </>
+              ) : (
+                <>
+                  <option value="bar">Barras</option>
+                  <option value="pie">Pastel</option>
+                </>
+              )}
+            </select>
+          )}
           <button
             type="button"
             disabled={addToDashboardStatus === "saving"}
@@ -227,6 +259,7 @@ export function AnalyticsCharts() {
                     fieldLabel,
                     dateFrom: from || null,
                     dateTo: to || null,
+                    chartType: fieldType === "number" ? (chartType === "pie" ? "line" : chartType) : chartType,
                   }),
                 });
                 if (res.ok) {
@@ -258,18 +291,37 @@ export function AnalyticsCharts() {
       {fieldLabel && fieldType === "number" && lineData.length > 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {fieldLabel} en el tiempo (promedio por día)
+            {fieldLabel} en el tiempo (punto por registro)
           </h2>
           <div className="h-64 md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={lineData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Line type="monotone" dataKey="value" stroke="#1F3C88" strokeWidth={2} name={fieldLabel} />
-              </LineChart>
-            </ResponsiveContainer>
+            {chartType === "bar" ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={lineData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={20} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#1F3C88" name={fieldLabel} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={lineData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={20} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#1F3C88"
+                    strokeWidth={2}
+                    name={fieldLabel}
+                    dot={{ r: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       )}
@@ -280,15 +332,37 @@ export function AnalyticsCharts() {
             {fieldLabel} — distribución
           </h2>
           <div className="h-64 md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="value" fill="#F36C21" name="Cantidad" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {chartType === "pie" ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    label
+                  >
+                    {chartData.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#F36C21" name="Cantidad" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       )}
@@ -299,25 +373,37 @@ export function AnalyticsCharts() {
             {fieldLabel} — sí / no
           </h2>
           <div className="h-64 md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  label
-                >
-                  {chartData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {chartType === "bar" ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#F36C21" name="Cantidad" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    label
+                  >
+                    {chartData.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       )}

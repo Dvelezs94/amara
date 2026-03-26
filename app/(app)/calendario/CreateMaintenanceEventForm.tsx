@@ -36,10 +36,12 @@ export function CreateMaintenanceEventForm({
   assets,
   users,
   checklistTemplates,
+  onCreated,
 }: {
   assets: SelectOption[];
   users: SelectOption[];
   checklistTemplates: SelectOption[];
+  onCreated?: () => void;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -106,6 +108,7 @@ export function CreateMaintenanceEventForm({
       setUntil("");
       setChecklistTemplateId("");
       setColor("#1F3C88");
+      onCreated?.();
       router.refresh();
     } finally {
       setSaving(false);

@@ -13,6 +13,10 @@ export { AVAILABLE_USER_ROLES } from "./auth-shared";
 const SESSION_COOKIE = "session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
+function normalizeRole(role: string | null | undefined): UserRole {
+  return role === "admin" ? "admin" : "operator";
+}
+
 export async function getSession(): Promise<SessionUser | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
@@ -39,7 +43,7 @@ export async function getSession(): Promise<SessionUser | null> {
       username: user.username,
       email: user.email ?? null,
       name: user.name,
-      role: user.role,
+      role: normalizeRole(user.role),
       avatarUrl: user.avatarUrl ?? null,
     };
   } catch {
@@ -59,7 +63,11 @@ function signPayload(payload: Record<string, unknown>): string {
 }
 
 export async function createSession(userId: string): Promise<void> {
-  const token = signPayload({ sub: userId });
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { role: true },
+  });
+  const token = signPayload({ sub: userId, role: normalizeRole(user?.role) });
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -90,7 +98,7 @@ export async function verifyPassword(
     username: user.username,
     email: user.email,
     name: user.name,
-    role: user.role,
+    role: normalizeRole(user.role),
     avatarUrl: user.avatarUrl ?? null,
   };
 }
@@ -110,14 +118,14 @@ export async function createUser(params: {
     email: params.email ?? null,
     name: params.name,
     passwordHash,
-    role: params.role ?? "technician",
+    role: params.role ?? "operator",
   });
   return {
     id,
     username: params.username,
     email: params.email ?? null,
     name: params.name,
-    role: params.role ?? "technician",
+    role: params.role ?? "operator",
     avatarUrl: null,
   };
 }
