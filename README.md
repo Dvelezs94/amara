@@ -4,18 +4,25 @@ Mobile-first maintenance management (CMMS-style) with web support. UI inspired b
 
 ## Color palette
 
-The UI follows a corporate-modern palette with deep blue as the main brand color and orange as the CTA accent.
+The UI uses a modern dark theme centered on navy and deep slate blues, with vibrant orange for CTAs and accents.
 
 - **Primary**
-  - Deep Blue: `#1F3C88` (headers, sections, primary buttons)
-  - White / Off-white: `#FFFFFF`, `#F5F5F5` (backgrounds and content areas)
-- **Secondary**
-  - Orange: `#F36C21` (highlights, stats, CTA actions)
-  - Light Gray: `#E6E6E6` (section backgrounds, separators)
-  - Dark Gray: `#4A4A4A` (body text, subtle UI elements)
-- **Supporting**
-  - Muted Green: `#6FAF6F` (subtle highlights)
-  - Near Black: `#222222` (strong text, footer emphasis)
+  - Navy Blue: `#232B3F` (backgrounds, sidebar, dashboard panels)
+  - Slate Blue: `#25324C` (main content, card backgrounds)
+  - White: `#FFFFFF` (text headers, main icons)
+- **Accent**
+  - Bright Orange: `#F36C21` (active sidebar, buttons, highlights)
+  - Light Orange: `#FFBF8A` (hover, tags, subtle accents)
+- **Secondary & Supporting**
+  - Light Gray: `#A7AEC6` (muted text, icons)
+  - Very Dark Gray: `#121826` (window background, panel shadows)
+  - Deep Gray: `#31394B` (inner cards, status backgrounds)
+  - Pastel Blue: `#C2CEEC` (labels, info chips)
+- **Other**
+  - Success Green: `#6FAF6F` (status chips, check icons)
+  - Accent Yellow: `#FFEDB5` (alert chips)
+
+Overall, the palette conveys clarity and contrast, with a professional dark interface and orange for primary actions—see the screenshot for reference.
 
 ## Stack
 
@@ -46,6 +53,8 @@ The UI follows a corporate-modern palette with deep blue as the main brand color
    ```
 
    Demo login: `demo@amimaint.local` / `demo1234`
+
+   Or create an admin user with `./create-user.js` and follow the prompts
 
 4. **Run**
 

@@ -14,10 +14,12 @@ type WorkOrderRow = {
   assetName: string | null;
   assetAssetId: string | null;
   assigneeName: string | null;
+  assigneeId?: string | null;
   createdAt: string;
 };
 
 type BoardStatus = "open" | "in_progress" | "completed";
+type UserOption = { id: string; name: string };
 
 const boardColumns: { key: BoardStatus; title: string }[] = [
   { key: "open", title: "Abiertas" },
@@ -49,10 +51,13 @@ function formatDate(s: string | null) {
   });
 }
 
-export function WorkOrderList() {
+export function WorkOrderList({ currentUserId }: { currentUserId: string | null }) {
   const searchParams = useSearchParams();
   const q = (searchParams.get("q") ?? "").trim().toLowerCase();
   const [items, setItems] = useState<WorkOrderRow[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
+  const [assigneeInitialized, setAssigneeInitialized] = useState(false);
   const [loading, setLoading] = useState(true);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<BoardStatus | null>(null);
@@ -60,8 +65,36 @@ export function WorkOrderList() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!assigneeInitialized && currentUserId) {
+      setSelectedAssigneeId(currentUserId);
+      setAssigneeInitialized(true);
+    } else if (!assigneeInitialized) {
+      setAssigneeInitialized(true);
+    }
+  }, [assigneeInitialized, currentUserId]);
+
+  useEffect(() => {
     let cancelled = false;
-    fetch("/api/work-orders")
+    fetch("/api/users")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setUsers(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!assigneeInitialized) return;
+    let cancelled = false;
+    const query = selectedAssigneeId
+      ? `?assigneeId=${encodeURIComponent(selectedAssigneeId)}`
+      : "";
+    fetch(`/api/work-orders${query}`)
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled) setItems(Array.isArray(data) ? data : []);
@@ -75,7 +108,7 @@ export function WorkOrderList() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedAssigneeId, assigneeInitialized]);
 
   const filteredItems = useMemo(() => {
     if (!q) return items;
@@ -164,6 +197,54 @@ export function WorkOrderList() {
           No se encontraron ordenes para esa busqueda.
         </div>
       )}
+      <div className="rounded-xl border border-zinc-200 bg-white p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-zinc-500">Asignado:</p>
+          {selectedAssigneeId ? (
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-medium">
+              <span className="text-zinc-900 shrink-0">
+                {users.find((u) => u.id === selectedAssigneeId)?.name ?? "Usuario"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedAssigneeId(null)}
+                className="border-0 bg-transparent p-0 font-bold text-[#FFBF8A] hover:text-accent-200"
+              >
+                Quitar
+              </button>
+            </span>
+          ) : (
+            <span className="text-xs text-zinc-500">Todos</span>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setSelectedAssigneeId(null)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+              selectedAssigneeId == null
+                ? "border-primary-500 bg-primary-600 text-white"
+                : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+            }`}
+          >
+            Todos
+          </button>
+          {users.map((user) => (
+            <button
+              key={user.id}
+              type="button"
+              onClick={() => setSelectedAssigneeId(user.id)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                selectedAssigneeId === user.id
+                  ? "border-primary-500 bg-primary-600 text-white"
+                  : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+              }`}
+            >
+              {user.name}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid gap-3 md:grid-cols-3">
         {boardColumns.map((column) => {
           const columnItems = filteredItems.filter((wo) => wo.status === column.key);
