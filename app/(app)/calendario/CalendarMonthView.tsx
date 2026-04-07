@@ -84,7 +84,7 @@ function buildMonthCells(
           id: s.id,
           name: s.name,
           recurrence: s.recurrence,
-          color: s.color ?? "#1F3C88",
+          color: s.color ?? "#02257D",
         });
         map.set(key, list);
       }
@@ -159,7 +159,7 @@ function buildYearAuditRows(
           id: s.id,
           name: s.name,
           recurrence: s.recurrence,
-          color: s.color ?? "#1F3C88",
+          color: s.color ?? "#02257D",
         });
         map.set(key, list);
       }
@@ -579,7 +579,7 @@ export function CalendarMonthView({
                                   }}
                                   onMouseDown={(e) => e.stopPropagation()}
                                   className="h-2 w-2 shrink-0 rounded-full"
-                                  style={{ backgroundColor: ev.color ?? "#1F3C88" }}
+                                  style={{ backgroundColor: ev.color ?? "#02257D" }}
                                   aria-label={ev.name}
                                 />
                               ))}
@@ -743,7 +743,7 @@ export function CalendarMonthView({
                         }
                         onMouseDown={(e) => e.stopPropagation()}
                         className="block w-full truncate rounded-sm px-1.5 py-0.5 text-left text-[10px] font-semibold uppercase tracking-wide text-white"
-                        style={{ backgroundColor: ev.color ?? "#1F3C88" }}
+                        style={{ backgroundColor: ev.color ?? "#02257D" }}
                         title={ev.name}
                       >
                         {ev.name}
@@ -817,7 +817,7 @@ export function CalendarMonthView({
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <Link
                           href={`/tareas/${wo.id}`}
-                          className="truncate text-[#fb923c] hover:underline"
+                          className="truncate text-[#F14C03] hover:underline"
                           onClick={() => setSelectedEvent(null)}
                         >
                           {wo.folio != null ? `Folio ${wo.folio} · ` : ""}

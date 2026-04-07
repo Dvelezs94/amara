@@ -1,15 +1,15 @@
 /** Colores legibles con texto blanco (uso en iniciales de avatar). */
 const AVATAR_PALETTE = [
-  "#1F3C88",
-  "#2A4C9B",
-  "#3A5BB0",
-  "#1A3272",
-  "#F36C21",
-  "#D95A16",
+  "#02257D",
+  "#0d3170",
+  "#3355AA",
+  "#011a5c",
+  "#F14C03",
+  "#c43d02",
+  "#9E9F9F",
+  "#000000",
   "#6FAF6F",
-  "#4A4A4A",
-  "#222222",
-  "#557DDA",
+  "#E85A0A",
 ] as const;
 
 export function userInitials(name: string): string {

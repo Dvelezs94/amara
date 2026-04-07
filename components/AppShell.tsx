@@ -243,7 +243,7 @@ export function AppShell({
       {/* Desktop sidebar */}
       <aside className="hidden md:flex md:w-[260px] md:flex-col md:fixed md:inset-y-0 bg-[#091523] border-r border-[#1a2a3f]">
         <div className="flex h-24 flex-col justify-center px-6 border-b border-[#1a2a3f]">
-          <Link href="/tareas" className="text-[33px] font-bold uppercase tracking-tight text-[#f4b281] leading-none">
+          <Link href="/tareas" className="text-[33px] font-bold uppercase tracking-tight text-[#F14C03] leading-none">
             MSA
           </Link>
           <p className="mt-1 text-xs uppercase tracking-[0.15em] text-[#7890af]">Maintenance Support Assistant</p>
@@ -261,7 +261,7 @@ export function AppShell({
                     href={href}
                     className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] tap-target ${
                       pathname.startsWith(href)
-                        ? "bg-[#efac78] text-[#0d1728]"
+                        ? "bg-[#F14C03] text-white"
                         : "text-[#9fb1c9] hover:bg-[#102137]"
                     }`}
                   >
@@ -279,7 +279,7 @@ export function AppShell({
             onClick={() => setProfileMenuOpen((o) => !o)}
             className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-sm font-medium tap-target ${
               pathname.startsWith("/profile") || profileMenuOpen
-                ? "bg-[#efac78] text-[#0d1728]"
+                ? "bg-[#F14C03] text-white"
                 : "text-[#9fb1c9] hover:bg-[#102137]"
             }`}
           >
@@ -323,7 +323,7 @@ export function AppShell({
         }`}
       >
         <div className="flex items-center justify-between h-14 px-4 border-b border-[#1a2a3f]">
-          <span className="font-semibold text-[#f4b281]">Menú</span>
+          <span className="font-semibold text-[#F14C03]">Menú</span>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
@@ -347,7 +347,7 @@ export function AppShell({
                     onClick={() => setSidebarOpen(false)}
                     className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] tap-target ${
                       pathname.startsWith(href)
-                        ? "bg-[#efac78] text-[#0d1728]"
+                        ? "bg-[#F14C03] text-white"
                         : "text-[#9fb1c9] hover:bg-[#102137]"
                     }`}
                   >
@@ -365,7 +365,7 @@ export function AppShell({
             onClick={() => setProfileMenuOpen((o) => !o)}
             className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-sm font-medium tap-target ${
               pathname.startsWith("/profile") || profileMenuOpen
-                ? "bg-[#efac78] text-[#0d1728]"
+                ? "bg-[#F14C03] text-white"
                 : "text-[#9fb1c9] hover:bg-[#102137]"
             }`}
           >
@@ -421,7 +421,7 @@ export function AppShell({
               <ArrowLeft className="h-5 w-5 text-[#9fb1c9]" />
             </button>
           )}
-          <Link href="/tareas" className="md:hidden font-semibold text-[#f4b281]">
+          <Link href="/tareas" className="md:hidden font-semibold text-[#F14C03]">
             AmiMaint
           </Link>
           <div className="ml-auto flex items-center gap-2">
@@ -462,7 +462,7 @@ export function AppShell({
               >
                 <Bell className="h-4 w-4" />
                 {unreadCount > 0 && (
-                  <span className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-[#efac78] px-1 text-[10px] font-bold text-[#0d1728]">
+                  <span className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-[#F14C03] px-1 text-[10px] font-bold text-white">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
@@ -476,7 +476,7 @@ export function AppShell({
                     <button
                       type="button"
                       onClick={markAllNotificationsRead}
-                      className="text-xs font-medium text-[#efac78] hover:underline"
+                      className="text-xs font-medium text-[#F14C03] hover:underline"
                     >
                       Marcar todo leido
                     </button>

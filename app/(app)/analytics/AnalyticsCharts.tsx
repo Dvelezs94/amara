@@ -39,7 +39,7 @@ type ApiResponse = {
   fields: string[];
 };
 
-const COLORS = ["#1F3C88", "#F36C21", "#6FAF6F", "#4A4A4A", "#557DDA", "#1A3272"];
+const COLORS = ["#02257D", "#F14C03", "#9E9F9F", "#000000", "#3355AA", "#E85A0A"];
 
 export function AnalyticsCharts() {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -301,7 +301,7 @@ export function AnalyticsCharts() {
                   <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={20} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#1F3C88" name={fieldLabel} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="value" fill="#02257D" name={fieldLabel} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -314,7 +314,7 @@ export function AnalyticsCharts() {
                   <Line
                     type="monotone"
                     dataKey="value"
-                    stroke="#1F3C88"
+                    stroke="#02257D"
                     strokeWidth={2}
                     name={fieldLabel}
                     dot={{ r: 3 }}
@@ -359,7 +359,7 @@ export function AnalyticsCharts() {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#F36C21" name="Cantidad" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="value" fill="#F14C03" name="Cantidad" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -380,7 +380,7 @@ export function AnalyticsCharts() {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#F36C21" name="Cantidad" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="value" fill="#F14C03" name="Cantidad" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

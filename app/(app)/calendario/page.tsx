@@ -183,7 +183,7 @@ export default async function CalendarioPage() {
               <div className="mt-2">
                 <span
                   className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
-                  style={{ backgroundColor: task.color ?? "#1F3C88" }}
+                  style={{ backgroundColor: task.color ?? "#02257D" }}
                 >
                   Color
                 </span>

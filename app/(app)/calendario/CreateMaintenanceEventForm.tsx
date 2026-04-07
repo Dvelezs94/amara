@@ -24,12 +24,12 @@ const WEEKDAYS: { value: number; label: string }[] = [
 ];
 
 const EVENT_COLORS = [
-  "#1F3C88",
-  "#F36C21",
-  "#6FAF6F",
-  "#4A4A4A",
-  "#557DDA",
-  "#973C0B",
+  "#02257D",
+  "#F14C03",
+  "#9E9F9F",
+  "#000000",
+  "#3355AA",
+  "#E85A0A",
 ];
 
 export function CreateMaintenanceEventForm({
@@ -58,7 +58,7 @@ export function CreateMaintenanceEventForm({
   const [assetId, setAssetId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [checklistTemplateId, setChecklistTemplateId] = useState("");
-  const [color, setColor] = useState("#1F3C88");
+  const [color, setColor] = useState("#02257D");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,7 +107,7 @@ export function CreateMaintenanceEventForm({
       setName("");
       setUntil("");
       setChecklistTemplateId("");
-      setColor("#1F3C88");
+      setColor("#02257D");
       onCreated?.();
       router.refresh();
     } finally {

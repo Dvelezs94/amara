@@ -149,7 +149,7 @@ export async function POST(req: Request) {
   }
 
   const colorRaw = typeof body.color === "string" ? body.color.trim().toUpperCase() : "";
-  const color = /^#[0-9A-F]{6}$/.test(colorRaw) ? colorRaw : "#1F3C88";
+  const color = /^#[0-9A-F]{6}$/.test(colorRaw) ? colorRaw : "#02257D";
 
   let checklistTemplateId: string | null =
     body.checklistTemplateId != null && body.checklistTemplateId !== ""

@@ -4,7 +4,7 @@
   "description": "Gestión de mantenimiento AMISSA",
   "start_url": "/tareas",
   "display": "standalone",
-  "background_color": "#F5F5F5",
-  "theme_color": "#1F3C88",
+  "background_color": "#FFFFFF",
+  "theme_color": "#02257D",
   "orientation": "portrait-primary"
 }

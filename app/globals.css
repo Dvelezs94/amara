@@ -3,12 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: 31 60 136;
+  /* AMISSA marca: Azul #02257D, Naranja #F14C03, Gris #9E9F9F, Blanco/Negro */
+  --color-primary: 2 37 125;
   --color-surface: 245 245 245;
   --color-surface-card: 255 255 255;
-  --color-accent: 243 108 33;
-  --color-text: 74 74 74;
-  --color-text-strong: 34 34 34;
+  --color-accent: 241 76 3;
+  --color-text: 90 90 90;
+  --color-text-strong: 0 0 0;
+  --color-text-muted: 158 159 159;
   --color-support-green: 111 175 111;
 }
 
@@ -93,19 +95,19 @@ body {
 }
 
 .hmi .bg-primary-600 {
-  background-color: #9a3412 !important;
-  color: #fef2f2 !important;
+  background-color: #02257d !important;
+  color: #ffffff !important;
 }
 
 .hmi .text-primary-600,
 .hmi .text-primary-700 {
-  color: #fb923c !important;
+  color: #f14c03 !important;
 }
 
 .hmi .bg-primary-50,
 .hmi .bg-primary-100 {
-  background-color: rgba(249, 115, 22, 0.18) !important;
-  border-color: rgba(251, 146, 60, 0.54) !important;
+  background-color: rgba(2, 37, 125, 0.2) !important;
+  border-color: rgba(2, 37, 125, 0.45) !important;
 }
 
 .hmi button,
@@ -252,16 +254,17 @@ body {
 }
 
 /* Tipo de tarea (Rutinaria / Orden de trabajo): color explícito para que no lo pise el tema HMI */
+/* Tipo tarea: azul marca / naranja marca */
 .wo-kind-routine {
-  background-color: #047857 !important;
-  color: #ecfdf5 !important;
-  border: 1px solid #065f46 !important;
+  background-color: #02257d !important;
+  color: #ffffff !important;
+  border: 1px solid #011752 !important;
 }
 
 .wo-kind-on-demand {
-  background-color: #ea580c !important;
-  color: #fffbeb !important;
-  border: 1px solid #c2410c !important;
+  background-color: #f14c03 !important;
+  color: #ffffff !important;
+  border: 1px solid #c43d06 !important;
 }
 
 .wo-kind-emphasis {
@@ -269,15 +272,15 @@ body {
 }
 
 .hmi .wo-kind-routine {
-  background-color: #059669 !important;
-  color: #ecfdf5 !important;
-  border-color: #047857 !important;
+  background-color: #02257d !important;
+  color: #ffffff !important;
+  border-color: #011752 !important;
 }
 
 .hmi .wo-kind-on-demand {
-  background-color: #ea580c !important;
-  color: #fffbeb !important;
-  border-color: #c2410c !important;
+  background-color: #f14c03 !important;
+  color: #ffffff !important;
+  border-color: #c43d06 !important;
 }
 
 .hmi .wo-kind-emphasis {
