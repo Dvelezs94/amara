@@ -9,7 +9,8 @@ import { recordAuditLog } from "@/lib/audit";
 import { join } from "path";
 import { writeFile, mkdir } from "fs/promises";
 
-const UPLOAD_DIR = "public/uploads/work-orders";
+const UPLOAD_DIR_FS = "public/uploads/work-orders";
+const UPLOAD_DIR_PUBLIC = "uploads/work-orders";
 
 const ALLOWED_PREFIX = "image/";
 
@@ -37,7 +38,14 @@ export async function GET(
     where: eq(attachments.workOrderId, workOrderId),
     orderBy: [desc(attachments.createdAt)],
   });
-  return NextResponse.json(rows);
+  return NextResponse.json(
+    rows.map((r) => ({
+      ...r,
+      fileUrl: r.fileUrl.startsWith("/public/")
+        ? r.fileUrl.replace("/public/", "/")
+        : r.fileUrl,
+    }))
+  );
 }
 
 export async function POST(
@@ -87,13 +95,13 @@ export async function POST(
     file.name.slice(0, file.name.length - ext.length)
   );
   const uniqueName = `${createId()}${ext}`;
-  const dir = join(process.cwd(), UPLOAD_DIR);
+  const dir = join(process.cwd(), UPLOAD_DIR_FS);
   await mkdir(dir, { recursive: true });
   const filePath = join(dir, uniqueName);
   const bytes = await file.arrayBuffer();
   await writeFile(filePath, Buffer.from(bytes));
 
-  const fileUrl = `/${UPLOAD_DIR}/${uniqueName}`;
+  const fileUrl = `/${UPLOAD_DIR_PUBLIC}/${uniqueName}`;
   const id = createId();
   const displayName = baseName + ext || file.name;
 

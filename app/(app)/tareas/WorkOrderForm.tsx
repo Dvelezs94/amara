@@ -84,7 +84,7 @@ export function WorkOrderForm({
           setLoading(false);
           return;
         }
-        router.push(`/work-orders/${workOrderId}`);
+        router.push(`/tareas/${workOrderId}`);
       } else {
         const res = await fetch("/api/work-orders", {
           method: "POST",
@@ -105,7 +105,7 @@ export function WorkOrderForm({
           setLoading(false);
           return;
         }
-        router.push(`/work-orders/${data.id}`);
+        router.push(`/tareas/${data.id}`);
       }
       router.refresh();
     } catch {
@@ -240,7 +240,7 @@ export function WorkOrderForm({
         </button>
         {workOrderId ? (
           <Link
-            href={`/work-orders/${workOrderId}`}
+            href={`/tareas/${workOrderId}`}
             className="rounded-xl border border-zinc-300 py-3 px-4 font-medium text-zinc-700 tap-target"
           >
             Cancelar

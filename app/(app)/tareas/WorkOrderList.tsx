@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { GripVertical } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import {
+  parseWorkOrderKind,
+  workOrderKindBadgeClass,
+  workOrderKindLabel,
+} from "@/lib/work-order-kind";
 
 type WorkOrderRow = {
   id: string;
@@ -11,6 +16,7 @@ type WorkOrderRow = {
   status: string;
   priority: string;
   dueDate: string | null;
+  kind?: string | null;
   assetName: string | null;
   assetAssetId: string | null;
   assigneeName: string | null;
@@ -26,13 +32,6 @@ const boardColumns: { key: BoardStatus; title: string }[] = [
   { key: "in_progress", title: "En progreso" },
   { key: "completed", title: "Terminadas" },
 ];
-
-const statusColors: Record<string, string> = {
-  open: "bg-amber-100 text-amber-800",
-  in_progress: "bg-blue-100 text-blue-800",
-  completed: "bg-emerald-100 text-emerald-800",
-  cancelled: "bg-zinc-100 text-zinc-600",
-};
 
 const priorityColors: Record<string, string> = {
   low: "text-zinc-500",
@@ -113,11 +112,13 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
   const filteredItems = useMemo(() => {
     if (!q) return items;
     return items.filter((wo) => {
+      const k = parseWorkOrderKind(wo.kind);
       const haystack = [
         wo.title,
         wo.assetName,
         wo.assetAssetId,
         wo.assigneeName,
+        workOrderKindLabel(k),
       ]
         .filter(Boolean)
         .join(" ")
@@ -171,9 +172,9 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center">
-        <p className="text-zinc-500">Aún no hay órdenes de trabajo.</p>
+        <p className="text-zinc-500">Aún no hay tareas.</p>
         <Link
-          href="/work-orders/new"
+          href="/tareas/new"
           className="mt-3 inline-block text-primary-600 font-medium"
         >
           Crear una
@@ -194,7 +195,7 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
       )}
       {q && filteredItems.length === 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center text-zinc-500">
-          No se encontraron ordenes para esa busqueda.
+          No se encontraron tareas para esa búsqueda.
         </div>
       )}
       <div className="rounded-xl border border-zinc-200 bg-white p-3">
@@ -298,7 +299,7 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
                   >
                     <div className="mb-1 flex items-start justify-between gap-2">
                       <Link
-                        href={`/work-orders/${wo.id}`}
+                        href={`/tareas/${wo.id}`}
                         className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900 hover:text-primary-700"
                       >
                         {wo.title}
@@ -307,19 +308,12 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <span
-                        className={`rounded-full px-2 py-0.5 font-medium ${
-                          statusColors[wo.status] ?? "bg-zinc-100 text-zinc-600"
-                        }`}
+                        className={`rounded-full px-2.5 py-1 text-xs font-normal ${workOrderKindBadgeClass(
+                          parseWorkOrderKind(wo.kind),
+                          true
+                        )}`}
                       >
-                        {wo.status === "open"
-                          ? "Abierta"
-                          : wo.status === "in_progress"
-                            ? "En curso"
-                            : wo.status === "completed"
-                              ? "Completada"
-                              : wo.status === "cancelled"
-                                ? "Cancelada"
-                                : wo.status.replace("_", " ")}
+                        {workOrderKindLabel(parseWorkOrderKind(wo.kind))}
                       </span>
                       <span className={priorityColors[wo.priority] ?? ""}>
                         {wo.priority === "low"
@@ -346,7 +340,7 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
                 ))}
                 {columnItems.length === 0 && (
                   <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-center text-xs text-zinc-400">
-                    Arrastra ordenes aqui
+                    Arrastra tareas aquí
                   </div>
                 )}
               </div>

@@ -7,7 +7,8 @@ import { join } from "path";
 import { writeFile, mkdir } from "fs/promises";
 import { recordAuditLog } from "@/lib/audit";
 
-const UPLOAD_DIR = "public/uploads/asset-files";
+const UPLOAD_DIR_FS = "public/uploads/asset-files";
+const UPLOAD_DIR_PUBLIC = "uploads/asset-files";
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
@@ -34,13 +35,13 @@ export async function POST(req: Request) {
   const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
   const baseName = sanitizeFilename(file.name.slice(0, file.name.length - ext.length));
   const uniqueName = `${createId()}${ext || ""}`;
-  const dir = join(process.cwd(), UPLOAD_DIR);
+  const dir = join(process.cwd(), UPLOAD_DIR_FS);
   await mkdir(dir, { recursive: true });
   const filePath = join(dir, uniqueName);
   const bytes = await file.arrayBuffer();
   await writeFile(filePath, Buffer.from(bytes));
 
-  const fileUrl = `/${UPLOAD_DIR}/${uniqueName}`;
+  const fileUrl = `/${UPLOAD_DIR_PUBLIC}/${uniqueName}`;
   const id = createId();
   await db.insert(assetFiles).values({
     id,

@@ -6,6 +6,11 @@ import { workOrders } from "@/lib/db/schema";
 import { assetFiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { AssetFilesSection } from "./AssetFilesSection";
+import {
+  parseWorkOrderKind,
+  workOrderKindBadgeClass,
+  workOrderKindLabel,
+} from "@/lib/work-order-kind";
 
 async function getAsset(id: string) {
   const asset = await db.query.assets.findFirst({
@@ -19,6 +24,7 @@ async function getAsset(id: string) {
         title: workOrders.title,
         status: workOrders.status,
         dueDate: workOrders.dueDate,
+        kind: workOrders.kind,
       })
       .from(workOrders)
       .where(eq(workOrders.assetId, id)),
@@ -55,10 +61,19 @@ export default async function AssetDetailPage({
             {asset.workOrders.map((wo) => (
               <li key={wo.id}>
                 <Link
-                  href={`/work-orders/${wo.id}`}
+                  href={`/tareas/${wo.id}`}
                   className="block rounded-lg border border-zinc-200 bg-white p-3 hover:border-primary-200"
                 >
-                  <p className="font-medium text-zinc-900">{wo.title}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-zinc-900">{wo.title}</p>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${workOrderKindBadgeClass(
+                        parseWorkOrderKind(wo.kind)
+                      )}`}
+                    >
+                      {workOrderKindLabel(parseWorkOrderKind(wo.kind))}
+                    </span>
+                  </div>
                   <p className="text-xs text-zinc-500">
                     {wo.status === "open" ? "Abierta" : wo.status === "in_progress" ? "En curso" : wo.status === "completed" ? "Completada" : wo.status} · Vence{" "}
                     {wo.dueDate

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const apiPublicPrefix = "/api/auth/";
-const operatorAllowedAppPrefixes = ["/work-orders", "/knowledge-base", "/profile"];
+const operatorAllowedAppPrefixes = ["/tareas", "/knowledge-base", "/profile"];
 const operatorAllowedApiPrefixes = [
   "/api/work-orders",
   "/api/knowledge-base",
@@ -36,9 +36,12 @@ function isAllowedPrefix(path: string, prefixes: string[]): boolean {
 
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
+  if (path.startsWith("/uploads/")) return NextResponse.next();
   if (path === "/" || path === "/login" || path === "/solicitud")
     return NextResponse.next();
   if (path.startsWith(apiPublicPrefix)) return NextResponse.next();
+  /** Public form: crear orden sin sesión (misma ruta sirve con sesión de operador/admin) */
+  if (path === "/api/solicitud") return NextResponse.next();
   const session = req.cookies.get("session")?.value;
   if (!session) {
     const login = new URL("/login", req.url);
@@ -60,7 +63,7 @@ export function middleware(req: NextRequest) {
     if (path.startsWith("/api/")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    return NextResponse.redirect(new URL("/work-orders", req.url));
+    return NextResponse.redirect(new URL("/tareas", req.url));
   }
 
   if (role === "operator") {
@@ -77,7 +80,7 @@ export function middleware(req: NextRequest) {
     if (isAllowedPrefix(path, operatorAllowedAppPrefixes)) {
       return NextResponse.next();
     }
-    return NextResponse.redirect(new URL("/work-orders", req.url));
+    return NextResponse.redirect(new URL("/tareas", req.url));
   }
 
   return NextResponse.next();

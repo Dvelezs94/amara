@@ -4,14 +4,14 @@ import Link from "next/link";
 
 export default async function HomePage() {
   const session = await getSession();
-  if (session) redirect("/work-orders");
+  if (session) redirect("/tareas");
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-surface">
       <h1 className="text-2xl font-semibold mb-1 text-[rgb(var(--color-text-strong))]">
-        AmiMaint
+        MSA
       </h1>
       <p className="mb-8 text-center text-[rgb(var(--color-text))]">
-        Gestión de mantenimiento AMISSA
+        Maintenance Software Assistant
       </p>
       <div className="flex flex-col gap-3 w-full max-w-xs">
         <Link

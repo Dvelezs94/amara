@@ -146,6 +146,144 @@ body {
     0 8px 20px rgba(2, 8, 17, 0.45) !important;
 }
 
+/*
+ * Calendar year view: zinc-* / opacity utilities are not remapped above, so they
+ * stay light gray on the HMI dark shell. These tokens match inputs / panels.
+ */
+.hmi .cal-year-month-card {
+  background-color: #151a24 !important;
+  border-color: #2a3e5a !important;
+}
+
+.hmi .cal-year-month-title {
+  background-color: #0d1827 !important;
+  border-color: #2a3e5a !important;
+  color: #e5e7eb !important;
+}
+
+.hmi .cal-year-dow-row {
+  background-color: #121a28 !important;
+  border-color: #2a3e5a !important;
+  color: #8b9cb8 !important;
+}
+
+.hmi .cal-year-dow-row > div {
+  border-color: #243751 !important;
+}
+
+.hmi .cal-year-grid-bg {
+  background-color: #0d1827 !important;
+}
+
+.hmi .cal-year-cell-in {
+  background-color: #151a24 !important;
+  border-color: #243751 !important;
+}
+
+.hmi .cal-year-cell-out {
+  background-color: #0a101a !important;
+  border-color: #243751 !important;
+}
+
+.hmi .cal-year-cell-in:hover,
+.hmi .cal-year-cell-out:hover {
+  background-color: #13253b !important;
+}
+
+.hmi .cal-year-cell-in .cal-year-daynum {
+  color: #f3f4f6 !important;
+}
+
+.hmi .cal-year-cell-out .cal-year-daynum {
+  color: #6b778f !important;
+}
+
+.hmi .cal-year-audit-strip {
+  background-color: #0d1827 !important;
+  border-color: #2a3e5a !important;
+}
+
+.hmi .cal-year-table-scroll {
+  background-color: #151a24 !important;
+  border-color: #2a3e5a !important;
+}
+
+.hmi .cal-year-thead {
+  background-color: #121a28 !important;
+  border-color: #2a3e5a !important;
+  color: #b8c5d9 !important;
+}
+
+.hmi .cal-year-tbody {
+  background-color: #151a24 !important;
+  color: #e5e7eb !important;
+}
+
+.hmi .cal-year-tr {
+  border-color: #243751 !important;
+}
+
+.hmi .cal-year-tr:nth-child(even) {
+  background-color: #101826 !important;
+}
+
+.hmi .cal-year-tr:nth-child(odd) {
+  background-color: #151a24 !important;
+}
+
+.hmi .cal-year-tr:hover {
+  background-color: #13253b !important;
+}
+
+.hmi .cal-year-empty {
+  background-color: #151a24 !important;
+  border-color: #2a3e5a !important;
+  color: #9aa5bc !important;
+}
+
+.hmi .cal-year-page-btn {
+  background-color: #151a24 !important;
+  border-color: #2a3e5a !important;
+  color: #e5e7eb !important;
+}
+
+.hmi .cal-year-page-btn:hover:not(:disabled) {
+  background-color: #13253b !important;
+}
+
+/* Tipo de tarea (Rutinaria / Orden de trabajo): color explícito para que no lo pise el tema HMI */
+.wo-kind-routine {
+  background-color: #047857 !important;
+  color: #ecfdf5 !important;
+  border: 1px solid #065f46 !important;
+}
+
+.wo-kind-on-demand {
+  background-color: #ea580c !important;
+  color: #fffbeb !important;
+  border: 1px solid #c2410c !important;
+}
+
+.wo-kind-emphasis {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22) !important;
+}
+
+.hmi .wo-kind-routine {
+  background-color: #059669 !important;
+  color: #ecfdf5 !important;
+  border-color: #047857 !important;
+}
+
+.hmi .wo-kind-on-demand {
+  background-color: #ea580c !important;
+  color: #fffbeb !important;
+  border-color: #c2410c !important;
+}
+
+.hmi .wo-kind-emphasis {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+}
+
 /* Touch-friendly tap targets */
 @media (pointer: coarse) {
   .tap-target {

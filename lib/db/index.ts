@@ -65,6 +65,23 @@ if (missingFolioRows.length > 0) {
   tx(missingFolioRows);
 }
 
+const hasWorkOrderKindColumn = workOrderColumns.some((col) => col.name === "kind");
+if (!hasWorkOrderKindColumn) {
+  sqlite
+    .prepare(
+      "ALTER TABLE work_orders ADD COLUMN kind TEXT NOT NULL DEFAULT 'on_demand'"
+    )
+    .run();
+  sqlite
+    .prepare(
+      `UPDATE work_orders SET kind = 'routine' WHERE id IN (
+        SELECT entity_id FROM audit_logs
+        WHERE entity_type = 'work_order' AND action = 'created_from_schedule'
+      )`
+    )
+    .run();
+}
+
 sqlite
   .prepare(
     `

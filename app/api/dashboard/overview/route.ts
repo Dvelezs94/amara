@@ -36,6 +36,7 @@ export async function GET() {
       status: workOrders.status,
       dueDate: workOrders.dueDate,
       priority: workOrders.priority,
+      kind: workOrders.kind,
       assetName: assets.name,
     })
     .from(workOrders)

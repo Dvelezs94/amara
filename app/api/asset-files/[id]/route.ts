@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { assetFiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { unlink } from "fs/promises";
-import { join } from "path";
+import { toDiskPathFromFileUrl } from "@/lib/file-storage";
 
 export async function DELETE(
   _req: Request,
@@ -21,7 +21,13 @@ export async function DELETE(
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const filePath = join(process.cwd(), row.fileUrl.slice(1));
+  if (row.assetId == null && session.role !== "admin") {
+    return NextResponse.json(
+      { error: "Solo administradores pueden eliminar archivos de la base de conocimiento" },
+      { status: 403 }
+    );
+  }
+  const filePath = toDiskPathFromFileUrl(row.fileUrl);
   try {
     await unlink(filePath);
   } catch {

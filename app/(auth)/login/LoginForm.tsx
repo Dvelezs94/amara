@@ -29,7 +29,7 @@ export function LoginForm() {
         setLoading(false);
         return;
       }
-      router.push("/work-orders");
+      router.push("/tareas");
       router.refresh();
     } catch {
       setError("Algo salió mal");

@@ -5,7 +5,7 @@ import Link from "next/link";
 
 export default async function LoginPage() {
   const session = await getSession();
-  if (session) redirect("/work-orders");
+  if (session) redirect("/tareas");
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-surface">
       <h1 className="text-xl font-semibold text-zinc-900 mb-6">Iniciar sesión</h1>

@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { GripVertical, Trash2, BarChart2, CircleHelp } from "lucide-react";
 import { AnalyticsChartCard } from "@/components/AnalyticsChartCard";
+import {
+  parseWorkOrderKind,
+  workOrderKindBadgeClass,
+  workOrderKindLabel,
+} from "@/lib/work-order-kind";
 
 type Widget = {
   id: string;
@@ -22,6 +27,7 @@ type PendingOrder = {
   dueDate: string | null;
   priority: "low" | "medium" | "high" | "urgent";
   assetName: string | null;
+  kind?: string | null;
 };
 
 type UpcomingEvent = {
@@ -258,23 +264,32 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-zinc-900">Órdenes pendientes</h2>
-            <Link href="/work-orders" className="text-sm font-medium text-primary-600 hover:underline">
+            <h2 className="text-sm font-semibold text-zinc-900">Tareas pendientes</h2>
+            <Link href="/tareas" className="text-sm font-medium text-primary-600 hover:underline">
               Ver todas
             </Link>
           </div>
           {pendingOrders.length === 0 ? (
-            <p className="text-sm text-zinc-500">No hay órdenes pendientes.</p>
+            <p className="text-sm text-zinc-500">No hay tareas pendientes.</p>
           ) : (
             <ul className="space-y-2">
               {pendingOrders.map((order) => (
                 <li key={order.id} className="rounded-md border border-zinc-100 bg-surface p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <Link href={`/work-orders/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
-                      {order.title}
-                    </Link>
+                    <div className="min-w-0 flex-1">
+                      <Link href={`/tareas/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
+                        {order.title}
+                      </Link>
+                      <span
+                        className={`ml-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${workOrderKindBadgeClass(
+                          parseWorkOrderKind(order.kind)
+                        )}`}
+                      >
+                        {workOrderKindLabel(parseWorkOrderKind(order.kind))}
+                      </span>
+                    </div>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                         statusColors[order.status]
                       }`}
                     >

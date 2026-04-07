@@ -14,10 +14,10 @@ export default async function EditWorkOrderPage({
   if (!session) redirect("/login");
   const wo = await getWorkOrderById(id);
   if (!wo) notFound();
-  if (wo.status === "completed") redirect(`/work-orders/${id}`);
+  if (wo.status === "completed") redirect(`/tareas/${id}`);
   return (
     <div className="max-w-lg mx-auto space-y-4">
-      <h1 className="text-xl font-semibold text-zinc-900">Editar orden de trabajo</h1>
+      <h1 className="text-xl font-semibold text-zinc-900">Editar tarea</h1>
       <WorkOrderForm
         workOrderId={id}
         canEditAssignee={session.role === "admin"}
@@ -32,10 +32,10 @@ export default async function EditWorkOrderPage({
         }}
       />
       <Link
-        href={`/work-orders/${id}`}
+        href={`/tareas/${id}`}
         className="block text-center text-sm text-primary-600"
       >
-        Volver a la orden
+        Volver a la tarea
       </Link>
     </div>
   );

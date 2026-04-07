@@ -31,7 +31,7 @@ export function SignupForm() {
         setLoading(false);
         return;
       }
-      router.push("/work-orders");
+      router.push("/tareas");
       router.refresh();
     } catch {
       setError("Algo salió mal");

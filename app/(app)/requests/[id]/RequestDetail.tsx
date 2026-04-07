@@ -46,7 +46,7 @@ export function RequestDetail({ request }: { request: RequestData }) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.workOrderId) {
-        router.push(`/work-orders/${data.workOrderId}`);
+        router.push(`/tareas/${data.workOrderId}`);
         router.refresh();
       }
     } finally {
@@ -131,7 +131,7 @@ export function RequestDetail({ request }: { request: RequestData }) {
       )}
       {request.status === "converted" && request.workOrderId && (
         <Link
-          href={`/work-orders/${request.workOrderId}`}
+          href={`/tareas/${request.workOrderId}`}
           className="inline-block rounded-xl bg-primary-600 text-white py-2.5 px-4 text-sm font-medium"
         >
           Ver orden de trabajo

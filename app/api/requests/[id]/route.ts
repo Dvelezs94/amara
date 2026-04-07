@@ -77,6 +77,7 @@ export async function POST(
       description: r.description,
       status: "open",
       priority: r.priority ?? "medium",
+      kind: "on_demand",
       assetId: r.assetId,
       requesterId: r.requesterId,
       createdAt: now,

@@ -63,6 +63,10 @@ export const workOrders = sqliteTable("work_orders", {
   requesterId: text("requester_id"),
   dueDate: integer("due_date", { mode: "timestamp" }),
   completedAt: integer("completed_at", { mode: "timestamp" }),
+  /** routine = desde mantenimiento programado; on_demand = creada bajo demanda */
+  kind: text("kind", { enum: ["routine", "on_demand"] })
+    .notNull()
+    .default("on_demand"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

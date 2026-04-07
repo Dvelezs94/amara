@@ -48,6 +48,7 @@ export async function POST(req: Request) {
     description: finalDescription,
     status: "open",
     priority: prioridad,
+    kind: "on_demand",
     requesterId: null,
     createdAt: now,
     updatedAt: now,

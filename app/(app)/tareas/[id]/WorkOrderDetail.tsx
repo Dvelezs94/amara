@@ -3,6 +3,11 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Check, Square, ImagePlus } from "lucide-react";
+import {
+  parseWorkOrderKind,
+  workOrderKindBadgeClass,
+  workOrderKindLabel,
+} from "@/lib/work-order-kind";
 
 const statusColors: Record<string, string> = {
   open: "bg-amber-100 text-amber-800",
@@ -39,6 +44,7 @@ export function WorkOrderDetail({
     description: string | null;
     status: string;
     priority: string;
+    kind?: string | null;
     dueDate: string | Date | null;
     completedAt: string | Date | null;
     asset: { id: string; name: string; assetId: string } | null;
@@ -77,6 +83,7 @@ export function WorkOrderDetail({
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const isCompleted = initial.status === "completed";
   const checklistUnlocked = initial.status === "in_progress";
+  const kind = parseWorkOrderKind(initial.kind);
 
   useEffect(() => {
     let cancelled = false;
@@ -334,6 +341,13 @@ export function WorkOrderDetail({
         <h1 className="text-xl font-semibold text-zinc-900">{initial.title}</h1>
         <div className="mt-2 flex flex-wrap gap-2">
           <span
+            className={`rounded-full px-2.5 py-0.5 text-sm font-medium ${workOrderKindBadgeClass(
+              kind
+            )}`}
+          >
+            {workOrderKindLabel(kind)}
+          </span>
+          <span
             className={`rounded-full px-2.5 py-0.5 text-sm font-medium ${
               statusColors[initial.status] ?? "bg-zinc-100 text-zinc-600"
             }`}
@@ -352,7 +366,7 @@ export function WorkOrderDetail({
       )}
 
       <section>
-        <h2 className="text-sm font-medium text-zinc-500 mb-2">Fotos de la orden</h2>
+        <h2 className="text-sm font-medium text-zinc-500 mb-2">Fotos de la tarea</h2>
         {uploadError && (
           <p className="mb-2 text-sm text-red-600">{uploadError}</p>
         )}

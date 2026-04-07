@@ -37,7 +37,7 @@ const baseNavSections: { type: string; items: NavItem[] }[] = [
     type: "Operaciones",
     items: [
       { href: "/calendario", label: "Calendario", icon: CalendarDays },
-      { href: "/work-orders", label: "Órdenes de trabajo", icon: ClipboardList },
+      { href: "/tareas", label: "Tareas", icon: ClipboardList },
       { href: "/checklists", label: "Checklist", icon: ListChecks },
       { href: "/assets", label: "Maquinas", icon: Wrench },
     ],
@@ -111,8 +111,8 @@ export function AppShell({
             type: "Operaciones",
             items: [
               {
-                href: "/work-orders",
-                label: "Órdenes de trabajo",
+                href: "/tareas",
+                label: "Tareas",
                 icon: ClipboardList,
               } satisfies NavItem,
             ],
@@ -167,7 +167,7 @@ export function AppShell({
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const showBackButton =
-    pathname.startsWith("/work-orders") ||
+    pathname.startsWith("/tareas") ||
     pathname.startsWith("/checklists") ||
     pathname.startsWith("/assets");
 
@@ -222,7 +222,7 @@ export function AppShell({
     const q = searchQuery.trim();
     const targetBase = pathname.startsWith("/knowledge-base")
       ? "/knowledge-base"
-      : "/work-orders";
+      : "/tareas";
     if (!q) {
       router.push(targetBase);
       return;
@@ -243,10 +243,10 @@ export function AppShell({
       {/* Desktop sidebar */}
       <aside className="hidden md:flex md:w-[260px] md:flex-col md:fixed md:inset-y-0 bg-[#091523] border-r border-[#1a2a3f]">
         <div className="flex h-24 flex-col justify-center px-6 border-b border-[#1a2a3f]">
-          <Link href="/work-orders" className="text-[33px] font-bold uppercase tracking-tight text-[#f4b281] leading-none">
-            Amimaint
+          <Link href="/tareas" className="text-[33px] font-bold uppercase tracking-tight text-[#f4b281] leading-none">
+            MSA
           </Link>
-          <p className="mt-1 text-xs uppercase tracking-[0.15em] text-[#7890af]">CMMS v1.0</p>
+          <p className="mt-1 text-xs uppercase tracking-[0.15em] text-[#7890af]">Maintenance Support Assistant</p>
         </div>
         <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-6">
           {navSections.map((section) => (
@@ -421,7 +421,7 @@ export function AppShell({
               <ArrowLeft className="h-5 w-5 text-[#9fb1c9]" />
             </button>
           )}
-          <Link href="/work-orders" className="md:hidden font-semibold text-[#f4b281]">
+          <Link href="/tareas" className="md:hidden font-semibold text-[#f4b281]">
             AmiMaint
           </Link>
           <div className="ml-auto flex items-center gap-2">
@@ -441,7 +441,7 @@ export function AppShell({
                 placeholder={
                   pathname.startsWith("/knowledge-base")
                     ? "Buscar en base de conocimiento..."
-                    : "Buscar ordenes de trabajo..."
+                    : "Buscar tareas..."
                 }
               />
             </div>
@@ -490,7 +490,7 @@ export function AppShell({
                       notifications.map((n) => (
                         <Link
                           key={n.id}
-                          href={n.workOrderId ? `/work-orders/${n.workOrderId}` : "/work-orders"}
+                          href={n.workOrderId ? `/tareas/${n.workOrderId}` : "/tareas"}
                           onClick={async () => {
                             await fetch(`/api/notifications/${n.id}`, {
                               method: "PATCH",

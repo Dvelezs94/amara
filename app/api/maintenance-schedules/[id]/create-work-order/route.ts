@@ -71,6 +71,7 @@ export async function POST(
     description: `Generada desde calendario de mantenimiento (${schedule.id}).`,
     status: "open",
     priority: "medium",
+    kind: "routine",
     assetId: schedule.assetId ?? null,
     assigneeId,
     requesterId: session.id,
