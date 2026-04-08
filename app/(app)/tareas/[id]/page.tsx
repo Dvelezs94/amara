@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { getWorkOrderById } from "@/lib/work-orders";
 import { WorkOrderDetail } from "./WorkOrderDetail";
 import { getSession } from "@/lib/auth";
@@ -13,30 +12,11 @@ export default async function WorkOrderDetailPage({
   const { id } = await params;
   const wo = await getWorkOrderById(id);
   if (!wo) notFound();
-  const isCompleted = wo.status === "completed";
 
   return (
-    <div className="space-y-4">
-      <WorkOrderDetail
-        initial={wo}
-        canEditAssignee={session?.role === "admin"}
-      />
-      <div className="flex gap-2">
-        {!isCompleted && (
-          <Link
-            href={`/tareas/${id}/edit`}
-            className="rounded-xl border border-zinc-300 py-2.5 px-4 text-sm font-medium text-zinc-700 tap-target"
-          >
-            Editar
-          </Link>
-        )}
-        <Link
-          href="/tareas"
-          className="rounded-xl border border-zinc-300 py-2.5 px-4 text-sm font-medium text-zinc-700 tap-target"
-        >
-          Volver al listado
-        </Link>
-      </div>
-    </div>
+    <WorkOrderDetail
+      initial={wo}
+      canEditAssignee={session?.role === "admin"}
+    />
   );
 }

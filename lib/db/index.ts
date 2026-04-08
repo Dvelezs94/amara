@@ -82,6 +82,20 @@ if (!hasWorkOrderKindColumn) {
     .run();
 }
 
+const workOrderColumnsAfterKind = sqlite
+  .prepare("PRAGMA table_info('work_orders')")
+  .all() as Array<{ name?: string }>;
+const hasBoardSortOrderColumn = workOrderColumnsAfterKind.some(
+  (col) => col.name === "board_sort_order"
+);
+if (!hasBoardSortOrderColumn) {
+  sqlite
+    .prepare(
+      "ALTER TABLE work_orders ADD COLUMN board_sort_order INTEGER NOT NULL DEFAULT 0"
+    )
+    .run();
+}
+
 sqlite
   .prepare(
     `

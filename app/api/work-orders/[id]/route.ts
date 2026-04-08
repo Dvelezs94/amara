@@ -7,7 +7,7 @@ import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
 import { notes } from "@/lib/db/schema";
 import { attachments } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, max } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
 import { createNotification } from "@/lib/notifications";
 
@@ -33,13 +33,13 @@ export async function GET(
     wo.assigneeId
       ? db.query.users.findFirst({
           where: eq(users.id, wo.assigneeId!),
-          columns: { id: true, name: true, email: true },
+          columns: { id: true, name: true, email: true, avatarUrl: true },
         })
       : null,
     wo.requesterId
       ? db.query.users.findFirst({
           where: eq(users.id, wo.requesterId),
-          columns: { id: true, name: true },
+          columns: { id: true, name: true, avatarUrl: true },
         })
       : null,
   ]);
@@ -100,7 +100,16 @@ export async function PATCH(
   };
   if (body.title !== undefined) updates.title = body.title.trim();
   if (body.description !== undefined) updates.description = body.description?.trim() ?? null;
-  if (body.status !== undefined) updates.status = body.status;
+  if (body.status !== undefined && body.status !== wo.status) {
+    const [maxRow] = await db
+      .select({ m: max(workOrders.boardSortOrder) })
+      .from(workOrders)
+      .where(eq(workOrders.status, body.status));
+    updates.status = body.status;
+    updates.boardSortOrder = (maxRow?.m ?? -1) + 1;
+  } else if (body.status !== undefined) {
+    updates.status = body.status;
+  }
   if (body.priority !== undefined) updates.priority = body.priority;
   if (body.assetId !== undefined) updates.assetId = body.assetId || null;
   if (body.assigneeId !== undefined) updates.assigneeId = body.assigneeId || null;

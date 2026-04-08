@@ -238,6 +238,9 @@ export function AppShell({
   setUnreadCount(0);
  }
 
+ const profileAreaActive =
+  pathname.startsWith("/profile") || profileMenuOpen;
+
  return (
   <div className="min-h-screen flex flex-col md:flex-row">
    {/* Desktop sidebar */}
@@ -280,7 +283,7 @@ export function AppShell({
       type="button"
       onClick={() => setProfileMenuOpen((o) => !o)}
       className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-sm font-medium tap-target ${
-       pathname.startsWith("/profile") || profileMenuOpen
+       profileAreaActive
         ? "bg-[#F14C03] text-white"
         : "text-zinc-700 hover:bg-primary-50"
       }`}
@@ -294,7 +297,11 @@ export function AppShell({
        />
        <span className="flex min-w-0 flex-col text-left leading-tight">
         <span className="truncate">Perfil</span>
-        <span className="truncate text-xs font-normal text-neutral-400">
+        <span
+         className={`truncate text-xs font-normal ${
+          profileAreaActive ? "text-white/85" : "text-neutral-400"
+         }`}
+        >
          {user.name} · {userRole}
         </span>
        </span>
@@ -366,7 +373,7 @@ export function AppShell({
       type="button"
       onClick={() => setProfileMenuOpen((o) => !o)}
       className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-sm font-medium tap-target ${
-       pathname.startsWith("/profile") || profileMenuOpen
+       profileAreaActive
         ? "bg-[#F14C03] text-white"
         : "text-zinc-700 hover:bg-primary-50"
       }`}
@@ -380,7 +387,11 @@ export function AppShell({
        />
        <span className="flex min-w-0 flex-col text-left leading-tight">
         <span className="truncate">Perfil</span>
-        <span className="truncate text-xs font-normal text-neutral-400">
+        <span
+         className={`truncate text-xs font-normal ${
+          profileAreaActive ? "text-white/85" : "text-neutral-400"
+         }`}
+        >
          {user.name} · {userRole}
         </span>
        </span>

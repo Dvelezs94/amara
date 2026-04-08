@@ -73,6 +73,8 @@ export const workOrders = sqliteTable("work_orders", {
   updatedAt: integer("updated_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
+  /** Order within the Kanban column (same status); lower = higher on the board */
+  boardSortOrder: integer("board_sort_order").notNull().default(0),
 });
 
 export const checklistTemplates = sqliteTable("checklist_templates", {

@@ -19,13 +19,13 @@ export async function getWorkOrderById(id: string) {
     wo.assigneeId
       ? db.query.users.findFirst({
           where: eq(users.id, wo.assigneeId),
-          columns: { id: true, name: true, email: true },
+          columns: { id: true, name: true, email: true, avatarUrl: true },
         })
       : null,
     wo.requesterId
       ? db.query.users.findFirst({
           where: eq(users.id, wo.requesterId),
-          columns: { id: true, name: true },
+          columns: { id: true, name: true, avatarUrl: true },
         })
       : null,
   ]);

@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { GripVertical } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import type { LucideIcon } from "lucide-react";
 import {
-  parseWorkOrderKind,
-  workOrderKindBadgeClass,
-  workOrderKindLabel,
-} from "@/lib/work-order-kind";
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUp,
+  Equal,
+  GripVertical,
+  Minus,
+} from "lucide-react";
+import { UserAvatar } from "@/components/UserAvatar";
+import { useRouter, useSearchParams } from "next/navigation";
+import { parseWorkOrderKind, workOrderKindLabel } from "@/lib/work-order-kind";
 
 type WorkOrderRow = {
   id: string;
@@ -22,6 +28,8 @@ type WorkOrderRow = {
   assetAssetId: string | null;
   assigneeName: string | null;
   assigneeId?: string | null;
+  assigneeAvatarUrl?: string | null;
+  boardSortOrder?: number;
   createdAt: string;
 };
 
@@ -34,12 +42,50 @@ const boardColumns: { key: BoardStatus; title: string }[] = [
   { key: "completed", title: "Terminadas" },
 ];
 
-const priorityColors: Record<string, string> = {
-  low: "text-zinc-500",
-  medium: "text-zinc-700",
-  high: "text-amber-600",
-  urgent: "text-red-600",
+/** Jira-style priority: icon shape + color by level */
+const priorityVisual: Record<
+  string,
+  { Icon: LucideIcon; className: string; label: string }
+> = {
+  low: {
+    Icon: ChevronDown,
+    className: "text-[#0065FF]",
+    label: "Prioridad baja",
+  },
+  medium: {
+    Icon: Equal,
+    className: "text-[#E2A100]",
+    label: "Prioridad media",
+  },
+  high: {
+    Icon: ChevronUp,
+    className: "text-[#FF8B00]",
+    label: "Prioridad alta",
+  },
+  urgent: {
+    Icon: ChevronsUp,
+    className: "text-[#BF2600]",
+    label: "Prioridad urgente",
+  },
 };
+
+function WorkOrderPriorityIcon({ priority }: { priority: string }) {
+  const p = priorityVisual[priority] ?? {
+    Icon: Minus,
+    className: "text-zinc-400",
+    label: `Prioridad: ${priority}`,
+  };
+  const Icon = p.Icon;
+  return (
+    <span
+      className="inline-flex shrink-0"
+      title={p.label}
+      aria-label={p.label}
+    >
+      <Icon className={`h-4 w-4 ${p.className}`} strokeWidth={2.5} aria-hidden />
+    </span>
+  );
+}
 
 function formatDate(s: string | null) {
   if (!s) return "—";
@@ -51,11 +97,77 @@ function formatDate(s: string | null) {
   });
 }
 
+/** True when the calendar day of the due date is strictly before today (local). */
+function isDueDatePast(s: string | null) {
+  if (!s) return false;
+  const due = new Date(s);
+  if (Number.isNaN(due.getTime())) return false;
+  const startToday = new Date();
+  startToday.setHours(0, 0, 0, 0);
+  const startDue = new Date(due);
+  startDue.setHours(0, 0, 0, 0);
+  return startDue < startToday;
+}
+
+const RELATIVE_DUE_MAX_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Calendar-day delta from today (local): positive = future, negative = past. */
+function calendarDaysFromToday(dueStr: string): number | null {
+  const due = new Date(dueStr);
+  if (Number.isNaN(due.getTime())) return null;
+  const startToday = new Date();
+  startToday.setHours(0, 0, 0, 0);
+  const startDue = new Date(due);
+  startDue.setHours(0, 0, 0, 0);
+  return Math.round((startDue.getTime() - startToday.getTime()) / DAY_MS);
+}
+
+/** Spanish relative due copy; falls back to a short date when far away. */
+function formatDueRelative(s: string | null) {
+  if (!s) return "—";
+  const diff = calendarDaysFromToday(s);
+  if (diff === null) return "—";
+
+  if (diff === 0) return "Vence hoy";
+  if (diff === 1) return "Vence mañana";
+  if (diff >= 2 && diff <= RELATIVE_DUE_MAX_DAYS) {
+    return `Vence en ${diff} días`;
+  }
+  if (diff > RELATIVE_DUE_MAX_DAYS) {
+    return `Vence el ${formatDate(s)}`;
+  }
+
+  if (diff === -1) return "Venció ayer";
+  if (diff <= -2 && diff >= -RELATIVE_DUE_MAX_DAYS) {
+    return `Venció hace ${-diff} días`;
+  }
+  return `Venció el ${formatDate(s)}`;
+}
+
+/** Insertion index (0..n) for a column drop from pointer Y; excludes the dragged card from hit targets. */
+function insertionIndexFromPointer(
+  container: HTMLElement,
+  clientY: number,
+  excludeId: string
+): number {
+  const elements = [
+    ...container.querySelectorAll<HTMLElement>("article[data-woid]"),
+  ].filter((el) => el.dataset.woid !== excludeId);
+  for (let i = 0; i < elements.length; i += 1) {
+    const box = elements[i]!.getBoundingClientRect();
+    const mid = box.top + box.height / 2;
+    if (clientY < mid) return i;
+  }
+  return elements.length;
+}
+
 export function WorkOrderList({
   currentUserId,
 }: {
   currentUserId: string | null;
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const searchQueryRaw = (searchParams.get("q") ?? "").trim();
   const isSearching = searchQueryRaw.length > 0;
@@ -68,6 +180,10 @@ export function WorkOrderList({
   const [loading, setLoading] = useState(true);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<BoardStatus | null>(null);
+  const [insertIndicator, setInsertIndicator] = useState<{
+    column: BoardStatus;
+    index: number;
+  } | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,14 +254,59 @@ export function WorkOrderList({
     });
   }, [items, q]);
 
+  const canReorderColumn =
+    !isSearching && selectedAssigneeId == null;
+
+  async function persistColumnOrder(
+    column: BoardStatus,
+    orderedIds: string[]
+  ) {
+    const previousItems = items;
+    const orderMap = new Map(orderedIds.map((id, i) => [id, i]));
+    setError(null);
+    setItems((list) =>
+      list.map((wo) =>
+        wo.status === column && orderMap.has(wo.id)
+          ? { ...wo, boardSortOrder: orderMap.get(wo.id)! }
+          : wo
+      )
+    );
+    try {
+      const res = await fetch("/api/work-orders/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: column, orderedIds }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setItems(previousItems);
+        setError(data.error ?? "No se pudo guardar el orden.");
+      }
+    } catch {
+      setItems(previousItems);
+      setError("No se pudo guardar el orden.");
+    }
+  }
+
   async function moveWorkOrder(workOrderId: string, to: BoardStatus) {
     const current = items.find((item) => item.id === workOrderId);
     if (!current || current.status === to) return;
     const previousItems = items;
+    const targetMax = Math.max(
+      -1,
+      ...items
+        .filter((w) => w.status === to && w.id !== workOrderId)
+        .map((w) => w.boardSortOrder ?? 0)
+    );
+    const nextSort = targetMax + 1;
     setError(null);
     setSavingId(workOrderId);
     setItems((list) =>
-      list.map((wo) => (wo.id === workOrderId ? { ...wo, status: to } : wo))
+      list.map((wo) =>
+        wo.id === workOrderId
+          ? { ...wo, status: to, boardSortOrder: nextSort }
+          : wo
+      )
     );
     try {
       const res = await fetch(`/api/work-orders/${workOrderId}`, {
@@ -265,7 +426,16 @@ export function WorkOrderList({
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         {boardColumns.map((column) => {
-          const columnItems = filteredItems.filter((wo) => wo.status === column.key);
+          const columnItems = filteredItems
+            .filter((wo) => wo.status === column.key)
+            .sort((a, b) => {
+              const ao = a.boardSortOrder ?? 0;
+              const bo = b.boardSortOrder ?? 0;
+              if (ao !== bo) return ao - bo;
+              return (
+                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+              );
+            });
           const isDropActive = dropTarget === column.key;
           return (
             <section
@@ -277,15 +447,6 @@ export function WorkOrderList({
               onDragLeave={() => {
                 setDropTarget((current) => (current === column.key ? null : current));
               }}
-              onDrop={async (e) => {
-                e.preventDefault();
-                setDropTarget(null);
-                const id = e.dataTransfer.getData("text/plain");
-                if (!id) return;
-                // Ensure drag visual state is always cleared, even if dragend doesn't fire.
-                setDraggingId(null);
-                await moveWorkOrder(id, column.key);
-              }}
               className={`rounded-xl border bg-white p-3 min-h-[18rem] ${
                 isDropActive ? "border-primary-400 ring-2 ring-primary-100" : "border-zinc-200"
               }`}
@@ -296,74 +457,193 @@ export function WorkOrderList({
                   {columnItems.length}
                 </span>
               </header>
-              <div className="space-y-2">
-                {columnItems.map((wo) => (
-                  <article
-                    key={wo.id}
-                    draggable={savingId !== wo.id}
-                    onDragStart={(e) => {
-                      setDraggingId(wo.id);
-                      e.dataTransfer.setData("text/plain", wo.id);
-                      e.dataTransfer.effectAllowed = "move";
-                    }}
-                    onDragEnd={() => {
-                      setDraggingId(null);
-                      setDropTarget(null);
-                    }}
-                    className={`rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition ${
-                      draggingId === wo.id ? "opacity-60" : ""
-                    } ${savingId === wo.id ? "pointer-events-none opacity-60" : ""}`}
-                  >
-                    <div className="mb-1 flex items-start justify-between gap-2">
-                      <Link
-                        href={`/tareas/${wo.id}`}
-                        className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900 hover:text-primary-700"
+              <div
+                className="space-y-2 min-h-[4rem]"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDropTarget(column.key);
+                  if (!draggingId) return;
+                  const idx = insertionIndexFromPointer(
+                    e.currentTarget,
+                    e.clientY,
+                    draggingId
+                  );
+                  setInsertIndicator({ column: column.key, index: idx });
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDropTarget(null);
+                  setInsertIndicator(null);
+                  const id = e.dataTransfer.getData("text/plain");
+                  if (!id) return;
+                  setDraggingId(null);
+                  const current = items.find((w) => w.id === id);
+                  if (!current) return;
+                  const insertIdx = insertionIndexFromPointer(
+                    e.currentTarget,
+                    e.clientY,
+                    id
+                  );
+                  if (current.status === column.key) {
+                    if (!canReorderColumn) return;
+                    const ordered = columnItems.map((w) => w.id);
+                    const from = ordered.indexOf(id);
+                    if (from === -1) return;
+                    let to = insertIdx;
+                    if (from < to) to -= 1;
+                    if (from === to) return;
+                    const next = [...ordered];
+                    next.splice(from, 1);
+                    next.splice(to, 0, id);
+                    await persistColumnOrder(column.key, next);
+                  } else {
+                    await moveWorkOrder(id, column.key);
+                  }
+                }}
+              >
+                {columnItems.map((wo, i) => {
+                  const overdue = isDueDatePast(wo.dueDate);
+                  const dueLineClass = overdue ? "text-red-600" : "text-zinc-400";
+                  const openWorkOrder = () => {
+                    router.push(`/tareas/${wo.id}`);
+                  };
+                  const cardAriaLabel =
+                    wo.folio != null
+                      ? `Folio ${wo.folio}: ${wo.title}. Abrir detalle.`
+                      : `${wo.title}. Abrir detalle.`;
+                  const showInsertBefore =
+                    insertIndicator?.column === column.key &&
+                    insertIndicator.index === i &&
+                    draggingId != null;
+                  return (
+                    <Fragment key={wo.id}>
+                      {showInsertBefore ? (
+                        <div
+                          className="h-0.5 rounded-full bg-primary-500"
+                          aria-hidden
+                        />
+                      ) : null}
+                      <article
+                      data-woid={wo.id}
+                      role="link"
+                      tabIndex={savingId === wo.id ? -1 : 0}
+                      aria-label={cardAriaLabel}
+                      draggable={savingId !== wo.id}
+                      onDragStart={(e) => {
+                        setDraggingId(wo.id);
+                        e.dataTransfer.setData("text/plain", wo.id);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => {
+                        setDraggingId(null);
+                        setDropTarget(null);
+                        setInsertIndicator(null);
+                      }}
+                      onClick={openWorkOrder}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openWorkOrder();
+                        }
+                      }}
+                      className={`rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition cursor-pointer hover:border-zinc-300 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2 ${
+                        draggingId === wo.id ? "opacity-60" : ""
+                      } ${savingId === wo.id ? "pointer-events-none opacity-60" : ""}`}
+                    >
+                      <div className="mb-1 flex items-start justify-between gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                          {wo.title}
+                        </span>
+                        <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />
+                      </div>
+                      <p
+                        className="mt-1 text-xs font-medium text-primary-700"
+                        title={wo.folio == null ? wo.id : undefined}
                       >
-                        {wo.folio != null ? (
-                          <span className="text-primary-700">Folio {wo.folio}</span>
+                        {wo.folio != null
+                          ? `Folio ${wo.folio}`
+                          : `Tarea ${wo.id.slice(0, 8)}…`}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {wo.assetName
+                          ? `${wo.assetName}${wo.assetAssetId ? ` (${wo.assetAssetId})` : ""}`
+                          : "Sin activo"}
+                      </p>
+                      <div
+                        className={`mt-2 flex items-center gap-2 ${
+                          wo.status === "completed"
+                            ? "justify-end"
+                            : "justify-between"
+                        }`}
+                      >
+                        {wo.status !== "completed" ? (
+                          <div
+                            className={`flex min-w-0 items-center gap-1 text-xs ${dueLineClass}`}
+                          >
+                            <CalendarDays
+                              className="h-3.5 w-3.5 shrink-0"
+                              aria-hidden
+                            />
+                            <span
+                              className="truncate"
+                              title={
+                                wo.dueDate
+                                  ? new Date(wo.dueDate).toLocaleDateString("es", {
+                                      weekday: "long",
+                                      day: "numeric",
+                                      month: "long",
+                                      year: "numeric",
+                                    })
+                                  : undefined
+                              }
+                            >
+                              {formatDueRelative(wo.dueDate)}
+                            </span>
+                          </div>
                         ) : null}
-                        {wo.folio != null ? " · " : null}
-                        {wo.title}
-                      </Link>
-                      <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {wo.assigneeName ? (
+                            <span
+                              className="inline-flex shrink-0"
+                              title={wo.assigneeName}
+                            >
+                              <UserAvatar
+                                userId={wo.assigneeId ?? ""}
+                                name={wo.assigneeName}
+                                avatarUrl={wo.assigneeAvatarUrl}
+                                size="sm"
+                                className="!h-6 !w-6 !text-[9px] ring-1 ring-zinc-200"
+                              />
+                              <span className="sr-only">{wo.assigneeName}</span>
+                            </span>
+                          ) : null}
+                          <WorkOrderPriorityIcon priority={wo.priority} />
+                        </div>
+                      </div>
+                    </article>
+                    </Fragment>
+                  );
+                })}
+                {insertIndicator?.column === column.key &&
+                insertIndicator.index === columnItems.length &&
+                draggingId != null ? (
+                  <div className="h-0.5 rounded-full bg-primary-500" aria-hidden />
+                ) : null}
+                {columnItems.length === 0 ? (
+                  <>
+                    {draggingId && insertIndicator?.column === column.key ? (
+                      <div
+                        className="mb-2 h-0.5 rounded-full bg-primary-500"
+                        aria-hidden
+                      />
+                    ) : null}
+                    <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-center text-xs text-zinc-400">
+                      Arrastra tareas aquí
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-normal ${workOrderKindBadgeClass(
-                          parseWorkOrderKind(wo.kind),
-                          true
-                        )}`}
-                      >
-                        {workOrderKindLabel(parseWorkOrderKind(wo.kind))}
-                      </span>
-                      <span className={priorityColors[wo.priority] ?? ""}>
-                        {wo.priority === "low"
-                          ? "Baja"
-                          : wo.priority === "medium"
-                            ? "Media"
-                            : wo.priority === "high"
-                              ? "Alta"
-                              : wo.priority === "urgent"
-                                ? "Urgente"
-                                : wo.priority}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      {wo.assetName
-                        ? `${wo.assetName}${wo.assetAssetId ? ` (${wo.assetAssetId})` : ""}`
-                        : "Sin activo"}
-                    </p>
-                    <p className="text-xs text-zinc-400">Vence {formatDate(wo.dueDate)}</p>
-                    {wo.assigneeName && (
-                      <p className="mt-1 text-xs text-zinc-500">{wo.assigneeName}</p>
-                    )}
-                  </article>
-                ))}
-                {columnItems.length === 0 && (
-                  <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-center text-xs text-zinc-400">
-                    Arrastra tareas aquí
-                  </div>
-                )}
+                  </>
+                ) : null}
               </div>
             </section>
           );

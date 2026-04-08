@@ -2,7 +2,16 @@
 
 import { useMemo, useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Check, Square, ImagePlus } from "lucide-react";
+import {
+  Check,
+  Square,
+  ImagePlus,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUp,
+  Equal,
+} from "lucide-react";
+import { UserAvatar } from "@/components/UserAvatar";
 import {
   parseWorkOrderKind,
   workOrderKindBadgeClass,
@@ -14,6 +23,16 @@ const statusColors: Record<string, string> = {
   in_progress: "bg-blue-100 text-blue-800",
   completed: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-zinc-100 text-zinc-600",
+};
+
+const priorityDetail: Record<
+  string,
+  { Icon: typeof Equal; className: string; label: string }
+> = {
+  low: { Icon: ChevronDown, className: "text-[#0065FF]", label: "Baja" },
+  medium: { Icon: Equal, className: "text-[#E2A100]", label: "Media" },
+  high: { Icon: ChevronUp, className: "text-[#FF8B00]", label: "Alta" },
+  urgent: { Icon: ChevronsUp, className: "text-[#BF2600]", label: "Urgente" },
 };
 
 function formatDate(s: string | Date | null) {
@@ -40,6 +59,7 @@ export function WorkOrderDetail({
 }: {
   initial: {
     id: string;
+    folio?: number | null;
     title: string;
     description: string | null;
     status: string;
@@ -48,8 +68,8 @@ export function WorkOrderDetail({
     dueDate: string | Date | null;
     completedAt: string | Date | null;
     asset: { id: string; name: string; assetId: string } | null;
-    assignee: { id: string; name: string } | null;
-    requester: { id: string; name: string } | null;
+    assignee: { id: string; name: string; avatarUrl?: string | null } | null;
+    requester: { id: string; name: string; avatarUrl?: string | null } | null;
     checklist: ChecklistItem[];
     notes: { id: string; body: string; createdAt: string | Date }[];
     attachments: {
@@ -335,38 +355,99 @@ export function WorkOrderDetail({
     }
   }
 
+  const pr = priorityDetail[initial.priority] ?? {
+    Icon: Equal,
+    className: "text-zinc-400",
+    label: initial.priority,
+  };
+  const PriIcon = pr.Icon;
+  const assigneeDisplayName =
+    assigneeId === ""
+      ? null
+      : assigneeUsers.find((u) => u.id === assigneeId)?.name ??
+        (initial.assignee?.id === assigneeId ? initial.assignee.name : null);
+
+  const statusLabel =
+    initial.status === "open"
+      ? "Abierta"
+      : initial.status === "in_progress"
+        ? "En curso"
+        : initial.status === "completed"
+          ? "Completada"
+          : initial.status === "cancelled"
+            ? "Cancelada"
+            : initial.status.replace("_", " ");
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-zinc-900">{initial.title}</h1>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-sm font-medium ${workOrderKindBadgeClass(
-              kind
-            )}`}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <nav
+          className="flex flex-wrap items-center gap-1 text-sm text-zinc-500"
+          aria-label="Migas de pan"
+        >
+          <Link
+            href="/tareas"
+            className="font-medium text-[#F14C03] hover:underline"
           >
-            {workOrderKindLabel(kind)}
+            Tareas
+          </Link>
+          <span aria-hidden className="text-zinc-400">
+            /
           </span>
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-sm font-medium ${
-              statusColors[initial.status] ?? "bg-zinc-100 text-zinc-600"
-            }`}
+          <span className="text-zinc-600">
+            {initial.folio != null
+              ? `Folio ${initial.folio}`
+              : `Ref. ${initial.id.slice(0, 8)}…`}
+          </span>
+        </nav>
+        <div className="flex flex-wrap gap-2">
+          {!isCompleted && (
+            <Link
+              href={`/tareas/${initial.id}/edit`}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 tap-target hover:bg-zinc-50"
+            >
+              Editar
+            </Link>
+          )}
+          <Link
+            href="/tareas"
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 tap-target hover:bg-zinc-50"
           >
-            {initial.status === "open" ? "Abierta" : initial.status === "in_progress" ? "En curso" : initial.status === "completed" ? "Completada" : initial.status === "cancelled" ? "Cancelada" : initial.status.replace("_", " ")}
-          </span>
-          <span className="text-zinc-500">{initial.priority === "low" ? "Baja" : initial.priority === "medium" ? "Media" : initial.priority === "high" ? "Alta" : initial.priority === "urgent" ? "Urgente" : initial.priority}</span>
+            Volver al listado
+          </Link>
         </div>
       </div>
 
-      {initial.description && (
-        <section>
-          <h2 className="text-sm font-medium text-zinc-500 mb-1">Descripción</h2>
-          <p className="text-zinc-900 whitespace-pre-wrap">{initial.description}</p>
-        </section>
-      )}
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
+        <div className="min-w-0 flex-1 space-y-8">
+          <header>
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 md:text-[26px] md:leading-snug">
+              {initial.title}
+            </h1>
+          </header>
 
-      <section>
-        <h2 className="text-sm font-medium text-zinc-500 mb-2">Fotos de la tarea</h2>
+          <details
+            open
+            className="group rounded-xl border border-zinc-200 bg-white [&_summary::-webkit-details-marker]:hidden"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-zinc-900">
+              <span>Descripción</span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400 transition group-open:rotate-180" />
+            </summary>
+            <div className="border-t border-zinc-100 px-4 py-4 text-sm leading-relaxed text-zinc-800">
+              {initial.description ? (
+                <p className="whitespace-pre-wrap">{initial.description}</p>
+              ) : (
+                <p className="text-zinc-400">Sin descripción.</p>
+              )}
+            </div>
+          </details>
+
+      <section className="rounded-xl border border-zinc-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-zinc-900">Adjuntos</h2>
+        <p className="mt-0.5 text-xs text-zinc-500 mb-2">
+          Fotos y evidencias de la tarea
+        </p>
         {uploadError && (
           <p className="mb-2 text-sm text-red-600">{uploadError}</p>
         )}
@@ -422,87 +503,13 @@ export function WorkOrderDetail({
         )}
       </section>
 
-      <section className="grid grid-cols-2 gap-3 text-sm">
-        {initial.asset && (
-          <div>
-            <p className="text-zinc-500">Activo</p>
-            <Link
-              href={`/assets/${initial.asset.id}`}
-              className="text-primary-600 font-medium"
-            >
-              {initial.asset.name} ({initial.asset.assetId})
-            </Link>
-          </div>
-        )}
-        {canEditAssignee ? (
-          <div>
-            <p className="text-zinc-500">Asignado a</p>
-            <select
-              value={assigneeId}
-              disabled={isCompleted || assigneeSaving}
-              onChange={(e) => updateAssignee(e.target.value)}
-              className="mt-1 w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:opacity-60"
-            >
-              <option value="">Sin asignar</option>
-              {assigneeUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : initial.assignee ? (
-          <div>
-            <p className="text-zinc-500">Asignado a</p>
-            <p className="font-medium text-zinc-900">{initial.assignee.name}</p>
-          </div>
-        ) : null}
-        <div>
-          <p className="text-zinc-500">Fecha de vencimiento</p>
-          <p className="font-medium text-zinc-900">
-            {formatDate(initial.dueDate)}
-          </p>
-        </div>
-        {initial.requester && (
-          <div>
-            <p className="text-zinc-500">Solicitante</p>
-            <p className="font-medium text-zinc-900">{initial.requester.name}</p>
-          </div>
-        )}
-      </section>
-
-      {initial.status !== "cancelled" && initial.status !== "completed" && (
-        <section>
-          <h2 className="text-sm font-medium text-zinc-500 mb-2">Acciones</h2>
-          <div className="flex gap-2">
-            {initial.status === "open" && (
-              <button
-                type="button"
-                onClick={() => updateStatus("in_progress")}
-                className="rounded-lg bg-primary-600 text-white py-2 px-3 text-sm font-medium"
-              >
-                Iniciar
-              </button>
-            )}
-            {initial.status === "in_progress" && (
-              <button
-                type="button"
-                onClick={() => updateStatus("completed")}
-                className="rounded-lg bg-emerald-600 text-white py-2 px-3 text-sm font-medium"
-              >
-                Completar
-              </button>
-            )}
-          </div>
-        </section>
-      )}
-
       {checklist.length > 0 && (
-        <section className="max-w-4xl">
-          <h2 className="text-sm font-medium text-zinc-500 mb-2">Checklist</h2>
+        <section className="max-w-none rounded-xl border border-zinc-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-zinc-900">Checklist</h2>
           {!checklistUnlocked && initial.status === "open" && (
-            <p className="mb-2 text-xs text-amber-700">
-              Haz clic en <strong>Iniciar</strong> para comenzar y editar el checklist.
+            <p className="mb-2 mt-1 text-xs text-amber-700">
+              Cambia el estado a <strong>En curso</strong> en el panel derecho para
+              editar el checklist.
             </p>
           )}
           <ul className="space-y-2">
@@ -686,8 +693,12 @@ export function WorkOrderDetail({
         </section>
       )}
 
-      <section>
-        <h2 className="text-sm font-medium text-zinc-500 mb-2">Comentarios</h2>
+      <section className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+        <div className="border-b border-zinc-100 px-4 py-3">
+          <h2 className="text-sm font-semibold text-zinc-900">Actividad</h2>
+          <p className="mt-0.5 text-xs font-medium text-zinc-500">Comentarios</p>
+        </div>
+        <div className="p-4">
         <form onSubmit={addComment} className="mb-3 space-y-2">
           <textarea
             ref={commentInputRef}
@@ -775,7 +786,186 @@ export function WorkOrderDetail({
             ))}
           </ul>
         )}
+        </div>
       </section>
+
+        </div>
+
+        <aside className="w-full shrink-0 space-y-4 lg:sticky lg:top-4 lg:w-72 xl:w-80">
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <label
+              htmlFor="wo-status"
+              className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+            >
+              Estado
+            </label>
+            {isCompleted || initial.status === "cancelled" ? (
+              <div
+                className={`inline-flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold ${
+                  statusColors[initial.status] ?? "bg-zinc-100 text-zinc-600"
+                }`}
+              >
+                {statusLabel}
+              </div>
+            ) : (
+              <select
+                id="wo-status"
+                value={initial.status}
+                onChange={(e) => updateStatus(e.target.value)}
+                className="w-full cursor-pointer rounded-lg border-2 border-[#F14C03] bg-[#FFF5F0] py-2.5 pl-3 pr-8 text-sm font-semibold text-zinc-900 shadow-sm focus:border-[#F14C03] focus:outline-none focus:ring-2 focus:ring-[#F14C03]/25"
+              >
+                <option value="open">Abierta</option>
+                <option value="in_progress">En curso</option>
+                <option value="completed">Completada</option>
+                <option value="cancelled">Cancelada</option>
+              </select>
+            )}
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+            <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">
+              Detalles
+            </div>
+            <div className="divide-y divide-zinc-100 px-4">
+              <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                <span className="text-zinc-500">Tipo</span>
+                <div className="min-w-0">
+                  <span
+                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${workOrderKindBadgeClass(
+                      kind
+                    )}`}
+                  >
+                    {workOrderKindLabel(kind)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                <span className="text-zinc-500">Prioridad</span>
+                <div className="flex min-w-0 items-center gap-2 font-medium text-zinc-900">
+                  <PriIcon
+                    className={`h-4 w-4 shrink-0 ${pr.className}`}
+                    strokeWidth={2.5}
+                    aria-hidden
+                  />
+                  <span>{pr.label}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                <span className="text-zinc-500">Asignado</span>
+                <div className="min-w-0">
+                  {canEditAssignee ? (
+                    <div className="space-y-2">
+                      {assigneeId && assigneeDisplayName ? (
+                        <div className="flex items-center gap-2">
+                          <UserAvatar
+                            userId={assigneeId}
+                            name={assigneeDisplayName}
+                            avatarUrl={
+                              initial.assignee?.id === assigneeId
+                                ? initial.assignee.avatarUrl
+                                : null
+                            }
+                            size="sm"
+                            className="!h-8 !w-8 !text-[10px]"
+                          />
+                          <span className="truncate text-sm font-medium text-zinc-900">
+                            {assigneeDisplayName}
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-zinc-400">Sin asignar</p>
+                      )}
+                      <select
+                        value={assigneeId}
+                        disabled={isCompleted || assigneeSaving}
+                        onChange={(e) => updateAssignee(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:opacity-60"
+                      >
+                        <option value="">Sin asignar</option>
+                        {assigneeUsers.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : assigneeDisplayName ? (
+                    <div className="flex items-center gap-2">
+                      <UserAvatar
+                        userId={assigneeId || initial.assignee?.id || ""}
+                        name={assigneeDisplayName}
+                        avatarUrl={initial.assignee?.avatarUrl}
+                        size="sm"
+                        className="!h-8 !w-8 !text-[10px]"
+                      />
+                      <span className="truncate text-sm font-medium text-zinc-900">
+                        {assigneeDisplayName}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-zinc-400">Sin asignar</span>
+                  )}
+                </div>
+              </div>
+
+              {initial.requester ? (
+                <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                  <span className="text-zinc-500">Solicitante</span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <UserAvatar
+                      userId={initial.requester.id}
+                      name={initial.requester.name}
+                      avatarUrl={initial.requester.avatarUrl}
+                      size="sm"
+                      className="!h-8 !w-8 !text-[10px]"
+                    />
+                    <span className="truncate font-medium text-zinc-900">
+                      {initial.requester.name}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              {initial.asset ? (
+                <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                  <span className="text-zinc-500">Activo</span>
+                  <div className="min-w-0">
+                    <Link
+                      href={`/assets/${initial.asset.id}`}
+                      className="font-medium text-[#F14C03] hover:underline"
+                    >
+                      <span className="block truncate">
+                        {initial.asset.name}
+                      </span>
+                      <span className="text-xs font-normal text-zinc-500">
+                        {initial.asset.assetId}
+                      </span>
+                    </Link>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                <span className="text-zinc-500">Vencimiento</span>
+                <span className="font-medium text-zinc-900">
+                  {formatDate(initial.dueDate)}
+                </span>
+              </div>
+
+              {initial.status === "completed" && initial.completedAt ? (
+                <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                  <span className="text-zinc-500">Completada</span>
+                  <span className="font-medium text-zinc-900">
+                    {formatDate(initial.completedAt)}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

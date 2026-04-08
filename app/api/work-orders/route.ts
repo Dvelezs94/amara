@@ -6,7 +6,7 @@ import { workOrderChecklist } from "@/lib/db/schema";
 import { checklistTemplateItems } from "@/lib/db/schema";
 import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, asc, and } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
 import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
@@ -36,16 +36,18 @@ export async function GET(req: Request) {
       completedAt: workOrders.completedAt,
       kind: workOrders.kind,
       createdAt: workOrders.createdAt,
+      boardSortOrder: workOrders.boardSortOrder,
       assetId: workOrders.assetId,
       assigneeId: workOrders.assigneeId,
       assetName: assets.name,
       assetAssetId: assets.assetId,
       assigneeName: users.name,
+      assigneeAvatarUrl: users.avatarUrl,
     })
     .from(workOrders)
     .leftJoin(assets, eq(workOrders.assetId, assets.id))
     .leftJoin(users, eq(workOrders.assigneeId, users.id))
-    .orderBy(desc(workOrders.createdAt));
+    .orderBy(asc(workOrders.boardSortOrder), desc(workOrders.createdAt));
 
   const rows = conditions.length
     ? await base.where(and(...conditions))
