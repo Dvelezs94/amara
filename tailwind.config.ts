@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -36,9 +37,9 @@ const config: Config = {
           900: "#6B2200",
         },
         surface: {
-          DEFAULT: "#F5F5F5",
+          DEFAULT: "#F8FAFC",
           card: "#FFFFFF",
-          muted: "#DCDCDC",
+          muted: "#E8E8E8",
         },
         /** AMISSA manual: Gris #9E9F9F */
         neutral: {

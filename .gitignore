@@ -25,3 +25,5 @@ yarn-error.log*
 sqlite.db
 sqlite.db-journal
 drizzle
+
+public/uploads/*

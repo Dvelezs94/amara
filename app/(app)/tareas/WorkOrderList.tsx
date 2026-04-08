@@ -12,6 +12,7 @@ import {
 
 type WorkOrderRow = {
   id: string;
+  folio: number | null;
   title: string;
   status: string;
   priority: string;
@@ -50,27 +51,25 @@ function formatDate(s: string | null) {
   });
 }
 
-export function WorkOrderList({ currentUserId }: { currentUserId: string | null }) {
+export function WorkOrderList({
+  currentUserId,
+}: {
+  currentUserId: string | null;
+}) {
   const searchParams = useSearchParams();
-  const q = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const searchQueryRaw = (searchParams.get("q") ?? "").trim();
+  const isSearching = searchQueryRaw.length > 0;
+  const q = searchQueryRaw.toLowerCase();
   const [items, setItems] = useState<WorkOrderRow[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
-  const [assigneeInitialized, setAssigneeInitialized] = useState(false);
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(
+    () => currentUserId ?? null
+  );
   const [loading, setLoading] = useState(true);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<BoardStatus | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!assigneeInitialized && currentUserId) {
-      setSelectedAssigneeId(currentUserId);
-      setAssigneeInitialized(true);
-    } else if (!assigneeInitialized) {
-      setAssigneeInitialized(true);
-    }
-  }, [assigneeInitialized, currentUserId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,11 +87,14 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
   }, []);
 
   useEffect(() => {
-    if (!assigneeInitialized) return;
     let cancelled = false;
-    const query = selectedAssigneeId
-      ? `?assigneeId=${encodeURIComponent(selectedAssigneeId)}`
-      : "";
+    setLoading(true);
+    const query =
+      isSearching
+        ? ""
+        : selectedAssigneeId
+          ? `?assigneeId=${encodeURIComponent(selectedAssigneeId)}`
+          : "";
     fetch(`/api/work-orders${query}`)
       .then((res) => res.json())
       .then((data) => {
@@ -107,23 +109,32 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
     return () => {
       cancelled = true;
     };
-  }, [selectedAssigneeId, assigneeInitialized]);
+  }, [selectedAssigneeId, isSearching]);
 
   const filteredItems = useMemo(() => {
     if (!q) return items;
+    const folioPhrase = q.replace(/^folio\s*#?\s*/i, "").replace(/^#\s*/, "").trim();
+    const isNumericFolio = /^\d+$/.test(folioPhrase);
     return items.filter((wo) => {
+      if (isNumericFolio && wo.folio != null && String(wo.folio) === folioPhrase) {
+        return true;
+      }
       const k = parseWorkOrderKind(wo.kind);
-      const haystack = [
+      const parts: (string | null | undefined)[] = [
         wo.title,
         wo.assetName,
         wo.assetAssetId,
         wo.assigneeName,
         workOrderKindLabel(k),
-      ]
+      ];
+      if (wo.folio != null) {
+        parts.push(String(wo.folio), `folio ${wo.folio}`, `#${wo.folio}`);
+      }
+      const haystack = parts
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-      return haystack.includes(q);
+      return haystack.includes(q) || (folioPhrase && haystack.includes(folioPhrase));
     });
   }, [items, q]);
 
@@ -188,10 +199,16 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
       {error && (
         <p className="rounded-lg bg-red-50 p-2 text-sm text-red-600">{error}</p>
       )}
-      {q && (
-        <p className="text-sm text-zinc-500">
-          Buscando: <span className="font-medium text-zinc-700">{q}</span>
-        </p>
+      {isSearching && (
+        <div className="text-sm text-zinc-500">
+          <p>
+            Buscando:{" "}
+            <span className="font-medium text-zinc-700">{searchQueryRaw}</span>
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            La búsqueda incluye tareas de todos los usuarios.
+          </p>
+        </div>
       )}
       {q && filteredItems.length === 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center text-zinc-500">
@@ -302,6 +319,10 @@ export function WorkOrderList({ currentUserId }: { currentUserId: string | null 
                         href={`/tareas/${wo.id}`}
                         className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900 hover:text-primary-700"
                       >
+                        {wo.folio != null ? (
+                          <span className="text-primary-700">Folio {wo.folio}</span>
+                        ) : null}
+                        {wo.folio != null ? " · " : null}
                         {wo.title}
                       </Link>
                       <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />

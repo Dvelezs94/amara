@@ -802,18 +802,21 @@ export function CalendarMonthView({
             {createWorkOrderError ? (
               <p className="mb-2 text-xs text-red-600">{createWorkOrderError}</p>
             ) : null}
-            <div className="mb-3 rounded-sm border border-[#2a3e5a] bg-[#0d1827] p-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8ea8cd]">
+            <div className="mb-3 rounded-sm border border-zinc-200 bg-zinc-50 p-2 dark:border-[#2a3e5a] dark:bg-[#0d1827]">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600 dark:text-[#8ea8cd]">
                 Tareas asociadas
               </p>
               {loadingLinkedWorkOrders ? (
-                <p className="mt-1 text-xs text-[#8ea8cd]">Cargando...</p>
+                <p className="mt-1 text-xs text-zinc-600 dark:text-[#8ea8cd]">Cargando...</p>
               ) : linkedWorkOrders.length === 0 ? (
-                <p className="mt-1 text-xs text-[#8ea8cd]">Sin tareas asociadas.</p>
+                <p className="mt-1 text-xs text-zinc-600 dark:text-[#8ea8cd]">Sin tareas asociadas.</p>
               ) : (
                 <ul className="mt-1 space-y-1">
                   {linkedWorkOrders.slice(0, visibleLinkedWorkOrders).map((wo) => (
-                    <li key={wo.id} className="rounded-sm border border-[#2a3e5a] bg-[#0a1422] px-2 py-1.5">
+                    <li
+                      key={wo.id}
+                      className="rounded-sm border border-zinc-200 bg-white px-2 py-1.5 dark:border-[#2a3e5a] dark:bg-[#0a1422]"
+                    >
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <Link
                           href={`/tareas/${wo.id}`}
@@ -831,7 +834,7 @@ export function CalendarMonthView({
                           {statusLabel(wo.status)}
                         </span>
                       </div>
-                      <p className="mt-1 text-[10px] text-[#8ea8cd]">
+                      <p className="mt-1 text-[10px] text-neutral-400 dark:text-[#8ea8cd]">
                         Abierta el {formatOpenedAt(wo.createdAt)}
                       </p>
                     </li>
@@ -846,7 +849,7 @@ export function CalendarMonthView({
                       Math.min(prev + 5, linkedWorkOrders.length)
                     )
                   }
-                  className="mt-2 rounded-sm border border-[#2a3e5a] px-2 py-1 text-[11px] font-semibold uppercase text-[#8ea8cd] hover:bg-[#13253b]"
+                  className="mt-2 rounded-sm border border-zinc-200 px-2 py-1 text-[11px] font-semibold uppercase text-zinc-700 hover:bg-zinc-100 dark:border-[#2a3e5a] dark:text-[#8ea8cd] dark:hover:bg-[#13253b]"
                 >
                   Cargar más
                 </button>
@@ -872,7 +875,7 @@ export function CalendarMonthView({
                 Acciones
               </button>
               {actionsOpen ? (
-                <div className="min-w-[220px] rounded-sm border border-[#2a3e5a] bg-[#0d1827] p-1 text-xs">
+                <div className="min-w-[220px] rounded-sm border border-zinc-200 bg-white p-1 text-xs shadow-sm dark:border-[#2a3e5a] dark:bg-[#0d1827]">
                   <button
                     type="button"
                     onClick={async () => {
@@ -890,7 +893,7 @@ export function CalendarMonthView({
                       setActionsOpen(false);
                       if (res.ok) router.refresh();
                     }}
-                    className="block w-full rounded-sm px-2 py-1.5 text-left text-[#e5e7eb] hover:bg-[#13253b]"
+                    className="block w-full rounded-sm px-2 py-1.5 text-left text-zinc-800 hover:bg-zinc-100 dark:text-[#e5e7eb] dark:hover:bg-[#13253b]"
                   >
                     Eliminar evento
                   </button>
@@ -913,7 +916,7 @@ export function CalendarMonthView({
                       setActionsOpen(false);
                       if (res.ok) router.refresh();
                     }}
-                    className="block w-full rounded-sm px-2 py-1.5 text-left text-red-400 hover:bg-[#13253b]"
+                    className="block w-full rounded-sm px-2 py-1.5 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-[#13253b]"
                   >
                     Eliminar serie
                   </button>
@@ -940,15 +943,7 @@ export function CalendarMonthView({
                     </option>
                   ))}
                 </select>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    className="rounded-sm border border-zinc-300 px-2 py-1 text-[11px] font-semibold uppercase text-zinc-700 hover:bg-zinc-100"
-                    onClick={() => setAssigneePromptOpen(false)}
-                    disabled={creatingWorkOrder}
-                  >
-                    Cancelar
-                  </button>
+                <div className="mt-2 flex justify-end gap-2">
                   <button
                     type="button"
                     className="rounded-sm bg-primary-600 px-2 py-1 text-[11px] font-semibold uppercase text-white hover:bg-primary-700 disabled:opacity-50"
@@ -988,6 +983,14 @@ export function CalendarMonthView({
                     }}
                   >
                     Confirmar
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-sm border border-zinc-300 px-2 py-1 text-[11px] font-semibold uppercase text-zinc-700 hover:bg-zinc-100"
+                    onClick={() => setAssigneePromptOpen(false)}
+                    disabled={creatingWorkOrder}
+                  >
+                    Cancelar
                   </button>
                 </div>
               </div>

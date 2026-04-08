@@ -9,6 +9,7 @@ import {
   workOrderKindBadgeClass,
   workOrderKindLabel,
 } from "@/lib/work-order-kind";
+import type { DashboardKpis } from "@/lib/dashboard-kpis";
 
 type Widget = {
   id: string;
@@ -38,16 +39,6 @@ type UpcomingEvent = {
   assigneeName: string | null;
 };
 
-type DashboardKpis = {
-  mttrHours: number | null;
-  downtimeHours: number | null;
-  plannedCount: number;
-  unplannedCount: number;
-  plannedPct: number | null;
-  oee: number | null;
-  windowDays: number;
-};
-
 const statusColors: Record<PendingOrder["status"], string> = {
   open: "bg-amber-100 text-amber-800",
   in_progress: "bg-blue-100 text-blue-800",
@@ -66,33 +57,40 @@ export default function DashboardPage() {
   const [widgetSizes, setWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
   const WIDGET_SIZE_KEY = "dashboard-widget-sizes-v1";
 
-  function loadWidgets() {
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    fetch("/api/dashboard/widgets")
-      .then((r) => r.json())
-      .then((list) => setWidgets(Array.isArray(list) ? list : []))
-      .catch(() => setWidgets([]))
-      .finally(() => setLoading(false));
-  }
-
-  function loadOverview() {
-    fetch("/api/dashboard/overview")
-      .then((r) => r.json())
-      .then((data) => {
-        setPendingOrders(Array.isArray(data?.pendingOrders) ? data.pendingOrders : []);
-        setUpcomingEvents(Array.isArray(data?.upcomingEvents) ? data.upcomingEvents : []);
-        setKpis(data?.kpis ?? null);
+    Promise.all([
+      fetch("/api/dashboard/widgets").then(async (r) => {
+        if (!r.ok) throw new Error("widgets");
+        return r.json();
+      }),
+      fetch("/api/dashboard/overview").then(async (r) => {
+        if (!r.ok) throw new Error("overview");
+        return r.json();
+      }),
+    ])
+      .then(([widgetsData, overviewData]) => {
+        if (cancelled) return;
+        setWidgets(Array.isArray(widgetsData) ? widgetsData : []);
+        setPendingOrders(
+          Array.isArray(overviewData?.pendingOrders) ? overviewData.pendingOrders : []
+        );
+        setUpcomingEvents(
+          Array.isArray(overviewData?.upcomingEvents) ? overviewData.upcomingEvents : []
+        );
+        setKpis(overviewData?.kpis ?? null);
       })
       .catch(() => {
+        if (cancelled) return;
+        setWidgets([]);
         setPendingOrders([]);
         setUpcomingEvents([]);
         setKpis(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
-  }
-
-  useEffect(() => {
-    loadWidgets();
-    loadOverview();
     try {
       const raw = localStorage.getItem(WIDGET_SIZE_KEY);
       if (raw) {
@@ -102,6 +100,9 @@ export default function DashboardPage() {
     } catch {
       setWidgetSizes({});
     }
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function setWidgetSize(id: string, size: "sm" | "md" | "lg") {
@@ -201,7 +202,7 @@ export default function DashboardPage() {
         </div>
         <Link
           href="/analytics"
-          className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 px-4 text-sm font-semibold uppercase tracking-[0.08em]"
+          className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 px-4 text-sm font-semibold uppercase tracking-[0.08em] text-white shadow-sm hover:bg-primary-700"
         >
           <BarChart2 className="h-4 w-4" />
           Añadir gráfico
@@ -236,7 +237,7 @@ export default function DashboardPage() {
         <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             Planificado vs no planificado
-            <span title="Porcentaje de trabajo planificado respecto al total de órdenes en la ventana.">
+            <span title="Planificado = tareas rutinarias (calendario). No planificado = órdenes bajo demanda. Sobre tareas creadas en la ventana.">
               <CircleHelp className="h-3.5 w-3.5" />
             </span>
           </p>

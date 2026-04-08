@@ -1,24 +1,24 @@
 type WorkOrderKpiRow = {
   status: string;
-  requesterId: string | null;
+  /** routine = planificado; on_demand u otro = no planificado */
+  kind?: string | null;
   createdAt: Date;
   completedAt: Date | null;
-  description: string | null;
 };
 
 export type DashboardKpis = {
-  mttrHours: number;
+  mttrHours: number | null;
+  /** Horas acumuladas de reparación (completadas en la ventana). */
   downtimeHours: number;
   plannedCount: number;
   unplannedCount: number;
-  plannedPct: number;
-  oee: number;
+  plannedPct: number | null;
+  oee: number | null;
   windowDays: number;
 };
 
 /**
- * Centralized KPI calculator for dashboard cards.
- * Keep dashboard KPI business rules in one place.
+ * KPIs del dashboard (ventana móvil de work orders por fecha de creación).
  */
 export function buildDashboardKpis({
   workOrders,
@@ -30,7 +30,7 @@ export function buildDashboardKpis({
   windowDays?: number;
 }): DashboardKpis {
   const completedWithTimes = workOrders.filter(
-    (wo) => wo.status === "completed" && wo.completedAt && wo.createdAt
+    (wo) => wo.status === "completed" && wo.completedAt != null && wo.createdAt != null
   );
 
   const totalRepairHours = completedWithTimes.reduce((acc, wo) => {
@@ -38,36 +38,38 @@ export function buildDashboardKpis({
     return acc + Math.max(0, diff / 3_600_000);
   }, 0);
 
-  const mttrHours =
-    completedWithTimes.length > 0 ? totalRepairHours / completedWithTimes.length : 0;
-  const downtimeHours = totalRepairHours;
+  const downtimeHours = Number(totalRepairHours.toFixed(1));
 
-  const unplannedCount = workOrders.filter(
-    (wo) =>
-      wo.requesterId != null ||
-      (wo.description ?? "").includes("Solicitud externa desde /solicitud")
-  ).length;
-  const plannedCount = Math.max(0, workOrders.length - unplannedCount);
-  const totalPlanned = plannedCount + unplannedCount;
-  const plannedPct = totalPlanned > 0 ? (plannedCount / totalPlanned) * 100 : 0;
+  const mttrHours =
+    completedWithTimes.length > 0
+      ? Number((totalRepairHours / completedWithTimes.length).toFixed(1))
+      : null;
+
+  const plannedCount = workOrders.filter((wo) => wo.kind === "routine").length;
+  const unplannedCount = Math.max(0, workOrders.length - plannedCount);
+  const totalPlanned = workOrders.length;
+  const plannedPct =
+    totalPlanned > 0
+      ? Number(((plannedCount / totalPlanned) * 100).toFixed(1))
+      : null;
 
   const periodHours = windowDays * 24;
-  const availability =
-    assetCount > 0
-      ? Math.max(
-          0,
-          Math.min(1, 1 - downtimeHours / Math.max(1, assetCount * periodHours))
-        )
-      : 0;
-  const oee = availability * 100;
+  let oee: number | null = null;
+  if (assetCount > 0) {
+    const availability = Math.max(
+      0,
+      Math.min(1, 1 - downtimeHours / Math.max(1, assetCount * periodHours))
+    );
+    oee = Number((availability * 100).toFixed(1));
+  }
 
   return {
-    mttrHours: Number(mttrHours.toFixed(1)),
-    downtimeHours: Number(downtimeHours.toFixed(1)),
+    mttrHours,
+    downtimeHours,
     plannedCount,
     unplannedCount,
-    plannedPct: Number(plannedPct.toFixed(1)),
-    oee: Number(oee.toFixed(1)),
+    plannedPct,
+    oee,
     windowDays,
   };
 }

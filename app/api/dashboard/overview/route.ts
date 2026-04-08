@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, asc, gte, inArray, sql } from "drizzle-orm";
+import { asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -9,6 +9,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { buildDashboardKpis } from "@/lib/dashboard-kpis";
+import { resolveNextMaintenanceDisplayDate } from "@/lib/maintenance-recurrence";
 
 function isMissingAssigneeColumnError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -45,63 +46,80 @@ export async function GET() {
     .orderBy(asc(workOrders.dueDate), asc(workOrders.createdAt))
     .limit(6);
 
-  const upcomingWithAssigneePromise = db
-    .select({
-      id: maintenanceSchedules.id,
-      name: maintenanceSchedules.name,
-      nextRunAt: maintenanceSchedules.nextRunAt,
-      assetName: assets.name,
-      assigneeName: users.name,
-    })
-    .from(maintenanceSchedules)
-    .leftJoin(assets, sql`${maintenanceSchedules.assetId} = ${assets.id}`)
-    .leftJoin(users, sql`${maintenanceSchedules.assigneeId} = ${users.id}`)
-    .where(
-      and(
-        sql`${maintenanceSchedules.nextRunAt} IS NOT NULL`,
-        gte(maintenanceSchedules.nextRunAt, now)
-      )
-    )
-    .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name))
-    .limit(6);
-
-  const [pendingOrders, upcomingEvents] = await Promise.all([
-    pendingOrdersPromise,
-    upcomingWithAssigneePromise.catch(async (error) => {
-      if (!isMissingAssigneeColumnError(error)) throw error;
-      const fallbackUpcoming = await db
+  async function fetchScheduleRowsForUpcoming(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      recurrence: string;
+      nextRunAt: Date | null;
+      assetName: string | null;
+      assigneeName: string | null;
+    }>
+  > {
+    try {
+      return await db
         .select({
           id: maintenanceSchedules.id,
           name: maintenanceSchedules.name,
+          recurrence: maintenanceSchedules.recurrence,
+          nextRunAt: maintenanceSchedules.nextRunAt,
+          assetName: assets.name,
+          assigneeName: users.name,
+        })
+        .from(maintenanceSchedules)
+        .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id))
+        .leftJoin(users, eq(maintenanceSchedules.assigneeId, users.id));
+    } catch (error) {
+      if (!isMissingAssigneeColumnError(error)) throw error;
+      const rows = await db
+        .select({
+          id: maintenanceSchedules.id,
+          name: maintenanceSchedules.name,
+          recurrence: maintenanceSchedules.recurrence,
           nextRunAt: maintenanceSchedules.nextRunAt,
           assetName: assets.name,
         })
         .from(maintenanceSchedules)
-        .leftJoin(assets, sql`${maintenanceSchedules.assetId} = ${assets.id}`)
-        .where(
-          and(
-            sql`${maintenanceSchedules.nextRunAt} IS NOT NULL`,
-            gte(maintenanceSchedules.nextRunAt, now)
-          )
-        )
-        .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name))
-        .limit(6);
-      return fallbackUpcoming.map((item) => ({
-        ...item,
-        assigneeName: null,
-      }));
-    }),
+        .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id));
+      return rows.map((r) => ({ ...r, assigneeName: null as string | null }));
+    }
+  }
+
+  const upcomingRowsPromise = fetchScheduleRowsForUpcoming();
+
+  const [pendingOrders, scheduleRows] = await Promise.all([
+    pendingOrdersPromise,
+    upcomingRowsPromise,
   ]);
+
+  const upcomingEvents = scheduleRows
+    .map((row) => {
+      const displayNext = resolveNextMaintenanceDisplayDate(
+        row.recurrence,
+        row.nextRunAt,
+        now
+      );
+      return { row, displayNext };
+    })
+    .filter((x): x is typeof x & { displayNext: Date } => x.displayNext != null)
+    .sort((a, b) => a.displayNext.getTime() - b.displayNext.getTime())
+    .slice(0, 6)
+    .map(({ row, displayNext }) => ({
+      id: row.id,
+      name: row.name,
+      nextRunAt: displayNext.toISOString(),
+      assetName: row.assetName,
+      assigneeName: row.assigneeName,
+    }));
 
   const [recentWorkOrders, totalAssets] = await Promise.all([
     db
       .select({
         id: workOrders.id,
         status: workOrders.status,
-        requesterId: workOrders.requesterId,
+        kind: workOrders.kind,
         createdAt: workOrders.createdAt,
         completedAt: workOrders.completedAt,
-        description: workOrders.description,
       })
       .from(workOrders)
       .where(gte(workOrders.createdAt, periodStart)),
@@ -120,10 +138,7 @@ export async function GET() {
       ...item,
       dueDate: item.dueDate ? item.dueDate.toISOString() : null,
     })),
-    upcomingEvents: upcomingEvents.map((item) => ({
-      ...item,
-      nextRunAt: item.nextRunAt ? item.nextRunAt.toISOString() : null,
-    })),
+    upcomingEvents,
     kpis,
   });
 }

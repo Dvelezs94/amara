@@ -230,6 +230,41 @@ export function expandOccurrencesInRange(
   return out.sort((a, b) => a.getTime() - b.getTime());
 }
 
+/**
+ * Primera ocurrencia de la regla en el intervalo que empieza el día local de `from` (inclusive).
+ */
+export function nextScheduledOccurrenceOnOrAfter(
+  rule: MaintenanceRecurrenceRule,
+  from: Date,
+  horizonDays = 370
+): Date | null {
+  const rangeStart = startOfDay(from);
+  const rangeEnd = new Date(rangeStart.getTime() + horizonDays * MS_DAY);
+  const occ = expandOccurrencesInRange(rule, rangeStart, rangeEnd);
+  return occ.length > 0 ? occ[0]! : null;
+}
+
+/**
+ * Próxima fecha a mostrar en listados (p. ej. dashboard): prioriza la regla JSON;
+ * si no hay regla parseable, usa `nextRunAt` si sigue siendo vigente.
+ */
+export function resolveNextMaintenanceDisplayDate(
+  recurrenceRaw: string,
+  nextRunAt: Date | null,
+  from: Date
+): Date | null {
+  const startToday = startOfDay(from);
+  const rule = parseRecurrence(recurrenceRaw);
+  if (rule) {
+    const d = nextScheduledOccurrenceOnOrAfter(rule, from);
+    if (d) return d;
+  }
+  if (nextRunAt != null && nextRunAt.getTime() >= startToday.getTime()) {
+    return nextRunAt;
+  }
+  return null;
+}
+
 const WEEKDAY_LABELS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 export function formatRecurrenceLabel(raw: string): string {

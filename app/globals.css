@@ -5,10 +5,10 @@
 :root {
   /* AMISSA marca: Azul #02257D, Naranja #F14C03, Gris #9E9F9F, Blanco/Negro */
   --color-primary: 2 37 125;
-  --color-surface: 245 245 245;
+  --color-surface: 248 250 252;
   --color-surface-card: 255 255 255;
   --color-accent: 241 76 3;
-  --color-text: 90 90 90;
+  --color-text: 82 82 82;
   --color-text-strong: 0 0 0;
   --color-text-muted: 158 159 159;
   --color-support-green: 111 175 111;
@@ -19,6 +19,7 @@
   --color-surface-card: 30 41 59;
   --color-text: 226 232 240;
   --color-text-strong: 248 250 252;
+  --color-text-muted: 158 159 159;
 }
 
 body {

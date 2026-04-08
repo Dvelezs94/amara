@@ -510,7 +510,7 @@ export function WorkOrderDetail({
               item.type === "step" ? (
                 <li
                   key={item.id}
-                  className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2.5"
+                  className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-zinc-900"
                 >
                   {!checklistUnlocked ? (
                     <span className="text-zinc-600">
@@ -538,7 +538,7 @@ export function WorkOrderDetail({
                   )}
                   <span
                     className={
-                      item.completed ? "text-zinc-500 line-through" : ""
+                      item.completed ? "text-zinc-500 line-through" : "text-zinc-900"
                     }
                   >
                     {item.label}
@@ -547,7 +547,7 @@ export function WorkOrderDetail({
               ) : (
                 <li
                   key={item.id}
-                  className="flex flex-col gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5"
+                  className="flex flex-col gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-zinc-900"
                 >
                   <label className="text-sm font-medium text-zinc-700">
                     {item.label}
@@ -672,6 +672,17 @@ export function WorkOrderDetail({
               )
             )}
           </ul>
+          {checklistUnlocked && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => updateStatus("completed")}
+                className="rounded-lg bg-emerald-600 py-2 px-3 text-sm font-medium text-white tap-target hover:bg-emerald-700"
+              >
+                Completar tarea
+              </button>
+            </div>
+          )}
         </section>
       )}
 
