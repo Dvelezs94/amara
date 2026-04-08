@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { GripVertical, Trash2, BarChart2, CircleHelp } from "lucide-react";
+import { GripVertical, Trash2, Plus, CircleHelp } from "lucide-react";
 import { AnalyticsChartCard } from "@/components/AnalyticsChartCard";
 import {
   parseWorkOrderKind,
@@ -204,7 +204,7 @@ export default function DashboardPage() {
           href="/analytics"
           className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 px-4 text-sm font-semibold uppercase tracking-[0.08em] text-white shadow-sm hover:bg-primary-700"
         >
-          <BarChart2 className="h-4 w-4" />
+          <Plus className="h-4 w-4" />
           Añadir gráfico
         </Link>
       </div>
