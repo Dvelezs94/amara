@@ -872,9 +872,9 @@ function AppContent() {
                   </Pressable>
                 </View>
                 {detailLoading ? (
-                  <Text style={styles.cardMeta}>Cargando detalle...</Text>
+                  <Text style={[styles.cardMeta, styles.screenPadH]}>Cargando detalle...</Text>
                 ) : detailError ? (
-                  <Text style={styles.errorText}>{detailError}</Text>
+                  <Text style={[styles.errorText, styles.screenPadH]}>{detailError}</Text>
                 ) : selectedWorkOrder ? (
                   <>
                     <View style={styles.detailBreadcrumb}>
@@ -916,11 +916,9 @@ function AppContent() {
                       </View>
                     </View>
 
-                    <View style={styles.detailCard}>
-                      <View style={styles.detailCardHeader}>
-                        <Text style={styles.detailCardHeaderTitle}>Detalles</Text>
-                      </View>
-                      <View style={styles.detailCardBody}>
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailSectionTitle}>Detalles</Text>
+                      <View style={styles.detailSectionBody}>
                         <View style={styles.detailRow}>
                           <Text style={styles.detailRowLabel}>Tipo</Text>
                           <View style={styles.detailRowValue}>
@@ -1002,11 +1000,9 @@ function AppContent() {
                       </View>
                     </View>
 
-                    <View style={styles.detailCard}>
-                      <View style={styles.detailCardHeader}>
-                        <Text style={styles.detailCardHeaderTitle}>Descripción</Text>
-                      </View>
-                      <View style={styles.detailCardBody}>
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailSectionTitle}>Descripción</Text>
+                      <View style={styles.detailSectionBody}>
                         {selectedWorkOrder.description ? (
                           <Text style={styles.detailDescriptionText}>{selectedWorkOrder.description}</Text>
                         ) : (
@@ -1029,12 +1025,12 @@ function AppContent() {
                     </View>
 
                     {(selectedWorkOrder.attachments?.length ?? 0) > 0 ? (
-                      <View style={styles.detailCard}>
-                        <View style={styles.detailCardHeader}>
-                          <Text style={styles.detailCardHeaderTitle}>Adjuntos</Text>
-                          <Text style={styles.detailCardHeaderSub}>Fotos y evidencias de la tarea</Text>
-                        </View>
-                        <View style={styles.detailCardBody}>
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailSectionTitle}>Adjuntos</Text>
+                        <Text style={styles.detailSectionSubtitle}>
+                          Fotos y evidencias de la tarea
+                        </Text>
+                        <View style={styles.detailSectionBody}>
                           <View style={styles.attachmentGrid}>
                             {(selectedWorkOrder.attachments ?? []).map((a) => (
                               <Pressable
@@ -1058,11 +1054,9 @@ function AppContent() {
                     ) : null}
 
                     {selectedWorkOrder.checklist.length > 0 ? (
-                      <View style={styles.detailCard}>
-                        <View style={styles.detailCardHeader}>
-                          <Text style={styles.detailCardHeaderTitle}>Checklist</Text>
-                        </View>
-                        <View style={styles.detailCardBody}>
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailSectionTitle}>Checklist</Text>
+                        <View style={styles.detailSectionBody}>
                           {selectedWorkOrder.status === "open" ? (
                             <Text style={styles.checklistHint}>
                               Cambia el estado a <Text style={styles.checklistHintStrong}>En curso</Text> para
@@ -1116,12 +1110,10 @@ function AppContent() {
                       </View>
                     ) : null}
 
-                    <View style={styles.detailCard}>
-                      <View style={styles.detailCardHeader}>
-                        <Text style={styles.detailCardHeaderTitle}>Actividad</Text>
-                        <Text style={styles.detailCardHeaderSub}>Comentarios</Text>
-                      </View>
-                      <View style={styles.detailCardBody}>
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailSectionTitle}>Actividad</Text>
+                      <Text style={styles.detailSectionSubtitle}>Comentarios</Text>
+                      <View style={styles.detailSectionBody}>
                         {detailOrderFinished ? (
                           <Text style={styles.helpText}>
                             Esta tarea está cerrada; no se pueden agregar comentarios.
@@ -1221,8 +1213,12 @@ function AppContent() {
                     </Pressable>
                   ))}
                 </ScrollView>
-                {ordersLoading ? <Text style={styles.cardMeta}>Cargando tareas...</Text> : null}
-                {ordersError ? <Text style={styles.errorText}>{ordersError}</Text> : null}
+                {ordersLoading ? (
+                  <Text style={[styles.cardMeta, styles.screenPadH]}>Cargando tareas...</Text>
+                ) : null}
+                {ordersError ? (
+                  <Text style={[styles.errorText, styles.screenPadH]}>{ordersError}</Text>
+                ) : null}
                 <ScrollView
                   style={styles.dashboardScroll}
                   contentContainerStyle={styles.dashboardScrollContent}
@@ -1397,15 +1393,19 @@ function AppContent() {
             )
           ) : activeSection === "knowledgeBase" ? (
             <View style={styles.kbContainer}>
-              <TextInput
-                value={kbQuery}
-                onChangeText={setKbQuery}
-                placeholder="Buscar articulo..."
-                placeholderTextColor={theme.zinc400}
-                style={styles.input}
-              />
-              {kbLoading ? <Text style={styles.cardMeta}>Cargando base de conocimiento...</Text> : null}
-              {kbError ? <Text style={styles.errorText}>{kbError}</Text> : null}
+              <View style={[styles.screenPadH, { paddingTop: 12, paddingBottom: 8 }]}>
+                <TextInput
+                  value={kbQuery}
+                  onChangeText={setKbQuery}
+                  placeholder="Buscar articulo..."
+                  placeholderTextColor={theme.zinc400}
+                  style={styles.input}
+                />
+              </View>
+              {kbLoading ? (
+                <Text style={[styles.cardMeta, styles.screenPadH]}>Cargando base de conocimiento...</Text>
+              ) : null}
+              {kbError ? <Text style={[styles.errorText, styles.screenPadH]}>{kbError}</Text> : null}
               <FlatList
                 data={filteredKnowledge}
                 keyExtractor={(item) => item.id}
@@ -1444,7 +1444,7 @@ function AppContent() {
             </View>
           ) : activeSection === "notifications" ? (
             <View style={styles.kbContainer}>
-              <View style={styles.headerRow}>
+              <View style={[styles.headerRow, styles.screenPadH, { paddingTop: 12 }]}>
                 <Text style={styles.sectionTitle}>Notificaciones</Text>
                 {unreadCount > 0 ? (
                   <Pressable style={styles.ghostButton} onPress={markAllNotificationsRead}>
@@ -1452,8 +1452,12 @@ function AppContent() {
                   </Pressable>
                 ) : null}
               </View>
-              {notificationsLoading ? <Text style={styles.cardMeta}>Cargando notificaciones...</Text> : null}
-              {notificationsError ? <Text style={styles.errorText}>{notificationsError}</Text> : null}
+              {notificationsLoading ? (
+                <Text style={[styles.cardMeta, styles.screenPadH]}>Cargando notificaciones...</Text>
+              ) : null}
+              {notificationsError ? (
+                <Text style={[styles.errorText, styles.screenPadH]}>{notificationsError}</Text>
+              ) : null}
               <FlatList
                 data={notifications}
                 keyExtractor={(item) => item.id}
@@ -1484,8 +1488,12 @@ function AppContent() {
               showsVerticalScrollIndicator={false}
               showsHorizontalScrollIndicator={false}
             >
-              <Text style={styles.sectionTitle}>Perfil del Operador</Text>
-              {profileError ? <Text style={styles.errorText}>{profileError}</Text> : null}
+              <Text style={[styles.sectionTitle, styles.screenPadH, { paddingTop: 16, paddingBottom: 8 }]}>
+                Perfil del Operador
+              </Text>
+              {profileError ? (
+                <Text style={[styles.errorText, styles.screenPadH]}>{profileError}</Text>
+              ) : null}
               <View style={styles.section}>
                 <Text style={styles.cardMeta}>Nombre: {me?.name ?? "—"}</Text>
                 <Text style={styles.cardMeta}>Usuario: {me?.username ?? username}</Text>
@@ -1736,17 +1744,19 @@ const styles = StyleSheet.create({
   primaryButtonDisabled: { opacity: 0.55 },
   primaryButtonText: { color: theme.white, fontSize: 16, fontWeight: "700" },
   errorText: { color: theme.red600, fontSize: 13 },
-  contentArea: { flex: 1, paddingHorizontal: 16, paddingTop: 12, backgroundColor: theme.pageBg },
-  profileContainer: { gap: 10, paddingBottom: 26 },
-  kbContainer: { flex: 1, gap: 10 },
-  detailContent: { gap: 20, paddingBottom: 36 },
-  detailTopBar: { marginBottom: 4 },
+  contentArea: { flex: 1, paddingHorizontal: 0, paddingTop: 0, backgroundColor: theme.white },
+  screenPadH: { paddingHorizontal: 16 },
+  profileContainer: { gap: 0, paddingBottom: 26, paddingHorizontal: 0, backgroundColor: theme.white },
+  kbContainer: { flex: 1, gap: 0, paddingHorizontal: 0, backgroundColor: theme.white },
+  detailContent: { gap: 0, paddingBottom: 28, backgroundColor: theme.white },
+  detailTopBar: { marginBottom: 4, paddingHorizontal: 16, paddingTop: 4 },
   detailBreadcrumb: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
     gap: 4,
-    marginBottom: 12,
+    marginBottom: 8,
+    paddingHorizontal: 16,
   },
   detailBreadcrumbLink: {
     fontSize: 14,
@@ -1760,9 +1770,10 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "600",
     letterSpacing: -0.3,
-    marginBottom: 16,
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
-  detailPanel: { marginBottom: 4 },
+  detailPanel: { marginBottom: 0 },
   detailPanelKicker: {
     fontSize: 11,
     fontWeight: "700",
@@ -1770,11 +1781,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     color: theme.zinc500,
     marginBottom: 8,
+    paddingHorizontal: 16,
   },
   detailStatusBanner: {
-    borderRadius: 10,
+    borderRadius: 0,
     paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     alignItems: "center",
   },
   detailStatusBannerText: { fontSize: 15, fontWeight: "700" },
@@ -1786,28 +1798,37 @@ const styles = StyleSheet.create({
   detailStatusCompletedText: { color: "#065F46" },
   detailStatusCancelled: { backgroundColor: theme.zinc100 },
   detailStatusCancelledText: { color: theme.zinc600 },
-  detailCard: {
+  detailSection: {
+    marginTop: 4,
+    paddingTop: 14,
+    paddingBottom: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.zinc200,
     backgroundColor: theme.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
-    overflow: "hidden",
-    marginBottom: 4,
   },
-  detailCardHeader: {
-    borderBottomWidth: 1,
-    borderBottomColor: theme.zinc100,
+  detailSectionTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.7,
+    color: theme.zinc500,
+    textTransform: "uppercase",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    marginBottom: 8,
   },
-  detailCardHeaderTitle: { fontSize: 14, fontWeight: "700", color: theme.zinc900 },
-  detailCardHeaderSub: { marginTop: 4, fontSize: 12, fontWeight: "500", color: theme.zinc500 },
-  detailCardBody: { paddingHorizontal: 16, paddingVertical: 14, gap: 0 },
+  detailSectionSubtitle: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: theme.zinc400,
+    paddingHorizontal: 16,
+    marginTop: -4,
+    marginBottom: 10,
+  },
+  detailSectionBody: { paddingHorizontal: 16, gap: 0 },
   detailRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   detailRowLabel: {
     width: "38%",
@@ -1831,37 +1852,41 @@ const styles = StyleSheet.create({
   attachmentGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    justifyContent: "space-between",
+    rowGap: 10,
   },
   attachmentCell: {
-    width: "47%",
-    maxWidth: 160,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
+    width: "32%",
+    flexGrow: 0,
+    borderRadius: 0,
+    borderWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.zinc200,
     overflow: "hidden",
     backgroundColor: theme.zinc50,
   },
   attachmentThumb: { width: "100%", aspectRatio: 1, backgroundColor: theme.zinc100 },
   attachmentCaption: { fontSize: 11, color: theme.zinc500, paddingHorizontal: 6, paddingVertical: 4 },
   activityNote: {
-    backgroundColor: theme.zinc50,
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    marginTop: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.zinc100,
   },
   activityNoteBody: { fontSize: 14, color: theme.zinc900 },
   activityNoteMeta: { marginTop: 6, fontSize: 12, color: theme.zinc400 },
   dashboardScroll: { flex: 1 },
-  dashboardScrollContent: { paddingBottom: 20, flexGrow: 1 },
+  dashboardScrollContent: { paddingBottom: 24, flexGrow: 1, paddingHorizontal: 0 },
   dashboardSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 8,
-    marginBottom: 10,
+    marginTop: 6,
+    marginBottom: 8,
+    paddingHorizontal: 16,
   },
-  dashboardSectionHeaderSpaced: { marginTop: 22 },
+  dashboardSectionHeaderSpaced: { marginTop: 16 },
   dashboardSectionKicker: {
     fontSize: 11,
     fontWeight: "700",
@@ -1877,19 +1902,15 @@ const styles = StyleSheet.create({
   },
   dashboardActiveBadgeText: { fontSize: 11, fontWeight: "800", color: "#1E40AF" },
   dashboardSortLink: { fontSize: 13, fontWeight: "700", color: theme.primary },
-  dashboardEmpty: { fontSize: 14, color: theme.zinc500, marginBottom: 12 },
+  dashboardEmpty: { fontSize: 14, color: theme.zinc500, marginBottom: 12, paddingHorizontal: 16 },
   ongoingHero: {
     backgroundColor: theme.white,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
-    shadowColor: "#000",
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    borderRadius: 0,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.zinc200,
   },
   ongoingHeroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
   ongoingHeroTopText: { flex: 1, minWidth: 0 },
@@ -1950,17 +1971,15 @@ const styles = StyleSheet.create({
   },
   pendingCard: {
     backgroundColor: theme.white,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
+    borderRadius: 0,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.zinc200,
     borderLeftWidth: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderTopWidth: 0,
+    borderRightWidth: 0,
   },
   pendingCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   pendingPriorityPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
@@ -1977,11 +1996,12 @@ const styles = StyleSheet.create({
   pendingMetaText: { flex: 1, fontSize: 13, color: theme.zinc600 },
   completedRowCard: {
     backgroundColor: theme.white,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
-    padding: 12,
-    marginBottom: 8,
+    borderRadius: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.zinc200,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 0,
   },
   completedRowTitle: { fontSize: 14, fontWeight: "600", color: theme.zinc800 },
   completedRowMeta: { fontSize: 12, color: theme.zinc500, marginTop: 4 },
@@ -2019,17 +2039,23 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   section: {
-    gap: 8,
-    marginTop: 8,
+    gap: 10,
+    marginTop: 0,
+    paddingTop: 16,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
     backgroundColor: theme.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
-    padding: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.zinc200,
   },
   sectionTitle: { color: theme.zinc900, fontSize: 16, fontWeight: "700" },
   helpText: { color: theme.zinc500, fontSize: 12 },
-  actionsRow: { flexDirection: "row", gap: 8, marginVertical: 8 },
+  actionsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginVertical: 10,
+    paddingHorizontal: 16,
+  },
   secondaryButton: {
     backgroundColor: theme.primary,
     borderRadius: 12,
@@ -2060,13 +2086,15 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: { color: theme.zinc700, fontWeight: "700" },
   checklistCard: {
-    backgroundColor: theme.zinc50,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
+    backgroundColor: "transparent",
+    borderRadius: 0,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    borderWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.zinc100,
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 0,
   },
   checklistHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   checklistFieldReadOnly: {
@@ -2091,14 +2119,15 @@ const styles = StyleSheet.create({
   canvasShell: {
     flex: 1,
     backgroundColor: theme.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
-    padding: 12,
-    gap: 8,
-    marginBottom: 8,
+    borderRadius: 0,
+    borderWidth: 0,
+    paddingTop: 10,
+    paddingBottom: 0,
+    paddingHorizontal: 0,
+    gap: 6,
+    marginBottom: 0,
   },
-  filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  filterRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16 },
   filterTag: {
     flexDirection: "row",
     alignItems: "center",
@@ -2113,7 +2142,7 @@ const styles = StyleSheet.create({
   filterTagText: { color: theme.zinc900, fontWeight: "600", fontSize: 12 },
   filterTagRemove: { color: theme.accent, fontWeight: "700", fontSize: 12 },
   filterUsersScroll: { flexGrow: 0, maxHeight: 44 },
-  filterUsersRow: { gap: 8, alignItems: "center", paddingRight: 8 },
+  filterUsersRow: { gap: 8, alignItems: "center", paddingRight: 16, paddingLeft: 16 },
   userFilterChip: {
     borderRadius: 999,
     borderWidth: 1,
@@ -2155,22 +2184,18 @@ const styles = StyleSheet.create({
   bottomNavTextActive: {
     color: theme.accent,
   },
-  listContent: { gap: 10, paddingBottom: 24 },
+  listContent: { gap: 0, paddingBottom: 24 },
   card: {
     backgroundColor: theme.white,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
-    gap: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderRadius: 0,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.zinc200,
+    gap: 6,
   },
   notificationUnreadCard: {
-    borderColor: theme.primary200,
     backgroundColor: theme.primary50,
   },
   cardTitle: { fontSize: 15, fontWeight: "700", color: theme.zinc900, marginBottom: 4 },
@@ -2179,11 +2204,14 @@ const styles = StyleSheet.create({
   loadMoreButton: {
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.zinc300,
-    backgroundColor: theme.white,
-    paddingVertical: 10,
+    borderRadius: 0,
+    borderWidth: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.zinc200,
+    backgroundColor: theme.zinc50,
+    paddingVertical: 14,
+    marginHorizontal: 0,
+    marginTop: 4,
   },
   loadMoreButtonText: {
     color: theme.primary,
