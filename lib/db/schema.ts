@@ -63,6 +63,8 @@ export const workOrders = sqliteTable("work_orders", {
   requesterId: text("requester_id"),
   dueDate: integer("due_date", { mode: "timestamp" }),
   completedAt: integer("completed_at", { mode: "timestamp" }),
+  /** Set once on first transition to in_progress; null = nunca iniciada */
+  startedAt: integer("started_at", { mode: "timestamp" }),
   /** routine = desde mantenimiento programado; on_demand = creada bajo demanda */
   kind: text("kind", { enum: ["routine", "on_demand"] })
     .notNull()

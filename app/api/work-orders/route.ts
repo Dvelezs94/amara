@@ -34,6 +34,7 @@ export async function GET(req: Request) {
       priority: workOrders.priority,
       dueDate: workOrders.dueDate,
       completedAt: workOrders.completedAt,
+      startedAt: workOrders.startedAt,
       kind: workOrders.kind,
       createdAt: workOrders.createdAt,
       boardSortOrder: workOrders.boardSortOrder,

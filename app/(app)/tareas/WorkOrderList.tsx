@@ -19,6 +19,7 @@ import { parseWorkOrderKind, workOrderKindLabel } from "@/lib/work-order-kind";
 import {
   formatWorkOrderElapsedCompact,
   formatWorkOrderElapsedLabel,
+  workOrderShouldShowElapsed,
 } from "@/lib/work-order-duration";
 
 type WorkOrderRow = {
@@ -37,6 +38,7 @@ type WorkOrderRow = {
   boardSortOrder?: number;
   createdAt: string;
   completedAt?: string | null;
+  startedAt?: string | null;
 };
 
 type BoardStatus = "open" | "in_progress" | "completed";
@@ -530,7 +532,10 @@ export function WorkOrderList({
                   const openWorkOrder = () => {
                     router.push(`/tareas/${wo.id}`);
                   };
-                  const showElapsed = wo.status !== "open";
+                  const showElapsed = workOrderShouldShowElapsed(
+                    wo.status,
+                    wo.startedAt
+                  );
                   const nowMs = Date.now();
                   const elapsedCompact = showElapsed
                     ? formatWorkOrderElapsedCompact(

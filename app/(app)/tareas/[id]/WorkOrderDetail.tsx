@@ -21,6 +21,7 @@ import {
 import {
   formatWorkOrderElapsedCompact,
   formatWorkOrderElapsedLabel,
+  workOrderShouldShowElapsed,
 } from "@/lib/work-order-duration";
 
 const statusColors: Record<string, string> = {
@@ -72,6 +73,7 @@ export function WorkOrderDetail({
     kind?: string | null;
     dueDate: string | Date | null;
     createdAt: string | Date;
+    startedAt?: string | Date | null;
     completedAt: string | Date | null;
     asset: { id: string; name: string; assetId: string } | null;
     assignee: { id: string; name: string; avatarUrl?: string | null } | null;
@@ -969,7 +971,7 @@ export function WorkOrderDetail({
                 </span>
               </div>
 
-              {initial.status !== "open" ? (
+              {workOrderShouldShowElapsed(initial.status, initial.startedAt) ? (
                 (() => {
                   void durationTick;
                   const nowMs = Date.now();

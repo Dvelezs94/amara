@@ -1,4 +1,24 @@
 /**
+ * Show tiempo transcurrido / duración unless the task is still **abierta** and has
+ * never been started (no `startedAt`). Paused tasks (open again after in_progress)
+ * keep `startedAt` and still show elapsed time.
+ */
+export function workOrderShouldShowElapsed(
+  status: string,
+  startedAt: string | Date | null | undefined
+): boolean {
+  if (status === "in_progress") return true;
+  if (status === "completed") return true;
+  if (status === "cancelled") return true;
+  if (status === "open") {
+    if (startedAt == null) return false;
+    const t = new Date(startedAt);
+    return !Number.isNaN(t.getTime());
+  }
+  return true;
+}
+
+/**
  * Human-readable duration from work order creation until completion (if closed)
  * or until `nowMs` (if still open / in progress). Spanish-friendly labels.
  * Suitable for tooltips / assistive context.

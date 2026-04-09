@@ -116,6 +116,13 @@ export async function PATCH(
   if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
   const isCompleting = body.status === "completed";
   if (body.status === "completed") updates.completedAt = new Date();
+  if (
+    body.status === "in_progress" &&
+    wo.status !== "in_progress" &&
+    wo.startedAt == null
+  ) {
+    updates.startedAt = new Date();
+  }
 
   await db.update(workOrders).set(updates).where(eq(workOrders.id, id));
 
