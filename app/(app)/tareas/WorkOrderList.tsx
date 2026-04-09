@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUp,
+  Clock,
   Equal,
   GripVertical,
   Minus,
@@ -15,6 +16,10 @@ import {
 import { UserAvatar } from "@/components/UserAvatar";
 import { useRouter, useSearchParams } from "next/navigation";
 import { parseWorkOrderKind, workOrderKindLabel } from "@/lib/work-order-kind";
+import {
+  formatWorkOrderElapsedCompact,
+  formatWorkOrderElapsedLabel,
+} from "@/lib/work-order-duration";
 
 type WorkOrderRow = {
   id: string;
@@ -31,6 +36,7 @@ type WorkOrderRow = {
   assigneeAvatarUrl?: string | null;
   boardSortOrder?: number;
   createdAt: string;
+  completedAt?: string | null;
 };
 
 type BoardStatus = "open" | "in_progress" | "completed";
@@ -186,6 +192,8 @@ export function WorkOrderList({
   } | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Re-render active tasks ~every minute so transcurrido stays fresh */
+  const [durationTick, setDurationTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,8 +262,20 @@ export function WorkOrderList({
     });
   }, [items, q]);
 
-  const canReorderColumn =
-    !isSearching && selectedAssigneeId == null;
+  const needsLiveDuration = useMemo(
+    () => filteredItems.some((w) => w.status === "in_progress"),
+    [filteredItems]
+  );
+
+  useEffect(() => {
+    if (!needsLiveDuration) return;
+    const id = window.setInterval(() => setDurationTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [needsLiveDuration]);
+
+  // Reordering is safe as long as we are not in text search mode.
+  // With assignee filter active, `items` is still the full dataset for that filtered scope.
+  const canReorderColumn = !isSearching;
 
   async function persistColumnOrder(
     column: BoardStatus,
@@ -504,11 +524,32 @@ export function WorkOrderList({
                 }}
               >
                 {columnItems.map((wo, i) => {
+                  void durationTick;
                   const overdue = isDueDatePast(wo.dueDate);
                   const dueLineClass = overdue ? "text-red-600" : "text-zinc-400";
                   const openWorkOrder = () => {
                     router.push(`/tareas/${wo.id}`);
                   };
+                  const showElapsed = wo.status !== "open";
+                  const nowMs = Date.now();
+                  const elapsedCompact = showElapsed
+                    ? formatWorkOrderElapsedCompact(
+                        wo.createdAt,
+                        wo.status,
+                        wo.completedAt ?? null,
+                        nowMs
+                      )
+                    : null;
+                  const elapsedPrefix =
+                    wo.status === "completed" ? "Duración" : "Transcurrido";
+                  const elapsedTitle = showElapsed
+                    ? formatWorkOrderElapsedLabel(
+                        wo.createdAt,
+                        wo.status,
+                        wo.completedAt ?? null,
+                        nowMs
+                      )
+                    : "";
                   const cardAriaLabel =
                     wo.folio != null
                       ? `Folio ${wo.folio}: ${wo.title}. Abrir detalle.`
@@ -571,6 +612,20 @@ export function WorkOrderList({
                           ? `${wo.assetName}${wo.assetAssetId ? ` (${wo.assetAssetId})` : ""}`
                           : "Sin activo"}
                       </p>
+                      {showElapsed ? (
+                        <p
+                          className="mt-1 flex min-w-0 items-center gap-1 text-xs text-zinc-500"
+                          title={elapsedTitle}
+                        >
+                          <Clock
+                            className="h-3.5 w-3.5 shrink-0 text-zinc-400"
+                            aria-hidden
+                          />
+                          <span className="min-w-0 truncate tabular-nums">
+                            {elapsedPrefix} · {elapsedCompact}
+                          </span>
+                        </p>
+                      ) : null}
                       <div
                         className={`mt-2 flex items-center gap-2 ${
                           wo.status === "completed"

@@ -10,10 +10,10 @@ const roboto = Roboto({
 });
 
 export const metadata: Metadata = {
-  title: "AmiMaint — Mantenimiento",
-  description: "Gestión de mantenimiento AMISSA",
+  title: "MSA — Mantenimiento",
+  description: "Maintenance Software Assistant — gestión de mantenimiento",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "AmiMaint" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "MSA" },
 };
 
 export const viewport: Viewport = {

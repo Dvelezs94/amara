@@ -1,9 +1,12 @@
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import {
+  Alert,
+  BackHandler,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -27,11 +30,16 @@ type WorkOrderListItem = {
   title: string;
   status: WoStatus;
   priority: WoPriority;
+  /** routine = programada; on_demand = bajo demanda (same as web `lib/work-order-kind`) */
+  kind?: string | null;
   dueDate: string | null;
   assetName: string | null;
   assetAssetId: string | null;
   assigneeId: string | null;
   assigneeName: string | null;
+  assigneeAvatarUrl?: string | null;
+  createdAt?: string;
+  boardSortOrder?: number;
 };
 
 type ChecklistItem = {
@@ -43,17 +51,46 @@ type ChecklistItem = {
   fieldType: string | null;
 };
 
+/** All steps done; all fields answered (aligned with web checklist semantics). */
+function isChecklistFullyComplete(checklist: ChecklistItem[]): boolean {
+  if (checklist.length === 0) return true;
+  for (const item of checklist) {
+    if (item.type === "step") {
+      if (item.completed !== true) return false;
+      continue;
+    }
+    if (item.type === "field") {
+      if (item.fieldType === "checkbox") {
+        if (typeof item.value !== "boolean") return false;
+        continue;
+      }
+      if (item.value == null) return false;
+      if (typeof item.value === "boolean") continue;
+      if (typeof item.value === "number" && !Number.isNaN(item.value)) continue;
+      const s = String(item.value).trim();
+      if (s === "") return false;
+      continue;
+    }
+  }
+  return true;
+}
+
 type WorkOrderDetail = {
   id: string;
-  folio?: string | null;
+  folio?: string | number | null;
   title: string;
   description: string | null;
   status: WoStatus;
   priority: WoPriority;
+  kind?: string | null;
   dueDate: string | null;
+  completedAt?: string | null;
   asset: { id: string; name: string; assetId: string } | null;
+  assignee?: { id: string; name: string; avatarUrl?: string | null } | null;
+  requester?: { id: string; name: string; avatarUrl?: string | null } | null;
   checklist: ChecklistItem[];
   notes: { id: string; body: string; createdAt: string }[];
+  attachments?: { id: string; fileUrl: string; filename: string; createdAt: string }[];
 };
 
 type KnowledgeItem = {
@@ -92,6 +129,164 @@ type UserOption = {
 
 const API_HOST = (process.env.EXPO_PUBLIC_API_HOST ?? "").trim().replace(/\/$/, "");
 const apiUrl = (path: string) => `${API_HOST}${path}`;
+
+/** Same naming as web (`app/page.tsx` + `components/AppShell.tsx` sidebar). */
+const BRAND_MARK = "MSA";
+const BRAND_TAGLINE = "Maintenance Software Assistant";
+
+/** Align with web (tailwind + AppShell): light shell, brand orange, primary blue */
+const theme = {
+  surface: "#F8FAFC",
+  pageBg: "#E4E4E7",
+  white: "#FFFFFF",
+  zinc50: "#FAFAFA",
+  zinc100: "#F4F4F5",
+  zinc200: "#E4E4E7",
+  zinc300: "#D4D4D8",
+  zinc400: "#A1A1AA",
+  zinc500: "#71717A",
+  zinc600: "#52525B",
+  zinc700: "#3F3F46",
+  zinc800: "#27272A",
+  zinc900: "#18181B",
+  primary: "#02257D",
+  primary50: "#E8ECF7",
+  primary100: "#C5D0EB",
+  primary200: "#9EB2DB",
+  accent: "#F14C03",
+  red50: "#FEF2F2",
+  red600: "#DC2626",
+} as const;
+
+type WorkOrderKind = "routine" | "on_demand";
+
+/** Mirrors `lib/work-order-kind.ts` on the web app */
+function parseWorkOrderKind(raw: unknown): WorkOrderKind {
+  if (raw === "routine") return "routine";
+  return "on_demand";
+}
+
+function workOrderKindLabel(kind: WorkOrderKind): string {
+  return kind === "routine" ? "Rutinaria" : "Orden de trabajo";
+}
+
+function WorkOrderKindBadge({ kindRaw }: { kindRaw: unknown }) {
+  const k = parseWorkOrderKind(kindRaw);
+  return (
+    <View style={[styles.kindBadge, k === "routine" ? styles.kindBadgeRoutine : styles.kindBadgeOnDemand]}>
+      <Text style={styles.kindBadgeText}>{workOrderKindLabel(k)}</Text>
+    </View>
+  );
+}
+
+const COMPLETED_INITIAL_VISIBLE = 5;
+const COMPLETED_LOAD_MORE_STEP = 5;
+
+const RELATIVE_DUE_MAX_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function calendarDaysFromToday(dueStr: string): number | null {
+  const due = new Date(dueStr);
+  if (Number.isNaN(due.getTime())) return null;
+  const startToday = new Date();
+  startToday.setHours(0, 0, 0, 0);
+  const startDue = new Date(due);
+  startDue.setHours(0, 0, 0, 0);
+  return Math.round((startDue.getTime() - startToday.getTime()) / DAY_MS);
+}
+
+function formatDueShortDate(s: string) {
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es", { month: "short", day: "numeric" });
+}
+
+/** Spanish relative due copy (same idea as web `WorkOrderList` `formatDueRelative`) */
+function formatDueRelative(s: string | null) {
+  if (!s) return "—";
+  const diff = calendarDaysFromToday(s);
+  if (diff === null) return "—";
+  if (diff === 0) return "Vence hoy";
+  if (diff === 1) return "Vence mañana";
+  if (diff >= 2 && diff <= RELATIVE_DUE_MAX_DAYS) return `Vence en ${diff} días`;
+  if (diff > RELATIVE_DUE_MAX_DAYS) return `Vence el ${formatDueShortDate(s)}`;
+  if (diff === -1) return "Venció ayer";
+  if (diff <= -2 && diff >= -RELATIVE_DUE_MAX_DAYS) return `Venció hace ${-diff} días`;
+  return `Venció el ${formatDueShortDate(s)}`;
+}
+
+function formatWoDetailDate(s: string | number | Date | null | undefined) {
+  if (s == null) return "—";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function WorkOrderPriorityIconRN({ priority }: { priority: WoPriority }) {
+  const map: Record<WoPriority, { name: ComponentProps<typeof Ionicons>["name"]; color: string }> = {
+    low: { name: "chevron-down", color: "#0065FF" },
+    medium: { name: "remove", color: "#E2A100" },
+    high: { name: "chevron-up", color: "#FF8B00" },
+    urgent: { name: "alert-circle", color: "#BF2600" },
+  };
+  const p = map[priority] ?? map.medium;
+  return <Ionicons name={p.name} size={18} color={p.color} />;
+}
+
+function formatElapsedClock(createdAt: string | undefined, _refreshToken = 0) {
+  void _refreshToken;
+  if (!createdAt) return "--:--:--";
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+/** Short label for time until due (e.g. 45m, 1.5h, 3d) */
+function formatDurationUntilDueShort(dueDate: string | null) {
+  if (!dueDate) return "—";
+  const due = new Date(dueDate).getTime();
+  if (Number.isNaN(due)) return "—";
+  const ms = due - Date.now();
+  if (ms < 0) return "Vencida";
+  const m = Math.ceil(ms / 60000);
+  if (m < 60) return `${m}m`;
+  const h = ms / 3600000;
+  if (h < 48) {
+    const rounded = Math.round(h * 10) / 10;
+    return rounded % 1 === 0 ? `${Math.round(rounded)}h` : `${rounded}h`;
+  }
+  const d = Math.ceil(ms / (24 * 3600000));
+  return `${d}d`;
+}
+
+function pendingPriorityBorderColor(priority: WoPriority): string {
+  if (priority === "urgent") return "#DC2626";
+  if (priority === "high") return theme.primary;
+  if (priority === "medium") return "#D97706";
+  return theme.zinc300;
+}
+
+function pendingPriorityBadgeTheme(priority: WoPriority) {
+  if (priority === "urgent") return { bg: "#FEF2F2", fg: "#B91C1C", label: "CRÍTICA" };
+  if (priority === "high") return { bg: "#E8ECF7", fg: theme.primary, label: "ALTA" };
+  if (priority === "medium") return { bg: "#FFFBEB", fg: "#B45309", label: "MEDIA" };
+  return { bg: theme.zinc100, fg: theme.zinc600, label: "BAJA" };
+}
+
+function AssigneeInitialsRing({ name }: { name: string }) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const initials =
+    parts.length >= 2
+      ? `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase()
+      : (parts[0]?.slice(0, 2).toUpperCase() ?? "?");
+  return (
+    <View style={styles.assigneeRing} accessibilityLabel={name}>
+      <Text style={styles.assigneeRingText}>{initials}</Text>
+    </View>
+  );
+}
 
 function absoluteFileUrl(path: string) {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
@@ -138,7 +333,9 @@ function AppContent() {
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
   const [assigneeFilterInitialized, setAssigneeFilterInitialized] = useState(false);
-  const [completedVisibleCount, setCompletedVisibleCount] = useState(10);
+  const [completedVisibleCount, setCompletedVisibleCount] = useState(COMPLETED_INITIAL_VISIBLE);
+  const [pendingSortByPriority, setPendingSortByPriority] = useState(true);
+  const [taskListTick, setTaskListTick] = useState(0);
 
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrderDetail | null>(null);
@@ -179,6 +376,40 @@ function AppContent() {
     );
   }, [knowledge, kbQuery]);
 
+  const ongoingTasks = useMemo(
+    () => workOrders.filter((w) => w.status === "in_progress"),
+    [workOrders]
+  );
+  const pendingOpenTasks = useMemo(
+    () => workOrders.filter((w) => w.status === "open"),
+    [workOrders]
+  );
+  const pendingTasksSorted = useMemo(() => {
+    const list = [...pendingOpenTasks];
+    if (pendingSortByPriority) {
+      const rank: Record<WoPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+      list.sort((a, b) => (rank[a.priority] ?? 9) - (rank[b.priority] ?? 9));
+      return list;
+    }
+    list.sort((a, b) => {
+      const o = (a.boardSortOrder ?? 0) - (b.boardSortOrder ?? 0);
+      if (o !== 0) return o;
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+    return list;
+  }, [pendingOpenTasks, pendingSortByPriority]);
+
+  const completedTasks = useMemo(
+    () => workOrders.filter((w) => w.status === "completed"),
+    [workOrders]
+  );
+  const completedTasksVisible = useMemo(
+    () => completedTasks.slice(0, completedVisibleCount),
+    [completedTasks, completedVisibleCount]
+  );
+
   async function loadWorkOrders() {
     setOrdersLoading(true);
     setOrdersError(null);
@@ -188,9 +419,11 @@ function AppContent() {
         : "";
       const data = await apiFetch<WorkOrderListItem[]>(`/api/work-orders${query}`);
       setWorkOrders(Array.isArray(data) ? data : []);
+      setCompletedVisibleCount(COMPLETED_INITIAL_VISIBLE);
     } catch (error) {
-      setOrdersError(error instanceof Error ? error.message : "No se pudo cargar ordenes.");
+      setOrdersError(error instanceof Error ? error.message : "No se pudo cargar las tareas.");
       setWorkOrders([]);
+      setCompletedVisibleCount(COMPLETED_INITIAL_VISIBLE);
     } finally {
       setOrdersLoading(false);
     }
@@ -270,6 +503,12 @@ function AppContent() {
     }
   }
 
+  const closeTaskDetail = useCallback(() => {
+    setSelectedWorkOrderId(null);
+    setSelectedWorkOrder(null);
+    setDetailError(null);
+  }, []);
+
   async function openWorkOrder(id: string) {
     setSelectedWorkOrderId(id);
     setDetailLoading(true);
@@ -303,17 +542,52 @@ function AppContent() {
     }
   }
 
+  async function ensureChecklistCompleteBeforeClose(workOrderId: string): Promise<boolean> {
+    try {
+      const detail = await apiFetch<WorkOrderDetail>(`/api/work-orders/${workOrderId}`);
+      if (detail.checklist.length === 0) return true;
+      if (!isChecklistFullyComplete(detail.checklist)) {
+        Alert.alert(
+          "Checklist incompleto",
+          "Marca todos los pasos y completa los campos del checklist antes de cerrar la tarea."
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "No se pudo verificar el checklist.";
+      setOrdersError(msg);
+      if (selectedWorkOrderId === workOrderId) setDetailError(msg);
+      return false;
+    }
+  }
+
+  async function updateWorkOrderStatusById(id: string, next: WoStatus) {
+    setOrdersError(null);
+    setDetailError(null);
+    try {
+      if (next === "completed") {
+        const checklistOk = await ensureChecklistCompleteBeforeClose(id);
+        if (!checklistOk) return;
+      }
+      await apiFetch<{ ok: true }>(`/api/work-orders/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: next }),
+      });
+      await loadWorkOrders();
+      if (selectedWorkOrderId === id) {
+        await openWorkOrder(id);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "No se pudo actualizar el estado.";
+      setOrdersError(msg);
+      if (selectedWorkOrderId === id) setDetailError(msg);
+    }
+  }
+
   async function updateStatus(status: WoStatus) {
     if (!selectedWorkOrder) return;
-    try {
-      await apiFetch<{ ok: true }>(`/api/work-orders/${selectedWorkOrder.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-      await Promise.all([loadWorkOrders(), openWorkOrder(selectedWorkOrder.id)]);
-    } catch (error) {
-      setDetailError(error instanceof Error ? error.message : "No se pudo actualizar estado.");
-    }
+    await updateWorkOrderStatusById(selectedWorkOrder.id, status);
   }
 
   async function updateChecklist(itemId: string, payload: { completed?: boolean; value?: unknown }) {
@@ -380,8 +654,7 @@ function AppContent() {
       // Even if API logout fails, clear local state.
     } finally {
       setIsLoggedIn(false);
-      setSelectedWorkOrderId(null);
-      setSelectedWorkOrder(null);
+      closeTaskDetail();
       setPassword("");
       setMe(null);
       setSelectedAssigneeId(null);
@@ -444,33 +717,6 @@ function AppContent() {
     return "Urgente";
   }
 
-  function priorityChipStyle(priority: WoPriority) {
-    if (priority === "high") return styles.priorityChipHigh;
-    if (priority === "urgent") return styles.priorityChipUrgent;
-    if (priority === "low") return styles.priorityChipLow;
-    return styles.priorityChipMedium;
-  }
-
-  function priorityChipTextStyle(priority: WoPriority) {
-    if (priority === "high") return styles.priorityChipTextHigh;
-    if (priority === "urgent") return styles.priorityChipTextUrgent;
-    if (priority === "low") return styles.priorityChipTextLow;
-    return styles.priorityChipTextMedium;
-  }
-
-  function statusChipStyle(status: WoStatus) {
-    if (status === "open") return styles.statusOpen;
-    if (status === "in_progress") return styles.statusInProgress;
-    if (status === "completed") return styles.statusCompleted;
-    return styles.statusCancelled;
-  }
-
-  const boardColumns: { key: WoStatus; title: string }[] = [
-    { key: "open", title: "Abiertas" },
-    { key: "in_progress", title: "En progreso" },
-    { key: "completed", title: "Terminadas" },
-  ];
-
   useEffect(() => {
     if (!isLoggedIn) return;
     loadWorkOrders();
@@ -502,6 +748,27 @@ function AppContent() {
     }
   }, [activeSection, isLoggedIn, me]);
 
+  useEffect(() => {
+    if (Platform.OS !== "android" || !selectedWorkOrderId) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      closeTaskDetail();
+      return true;
+    });
+    return () => sub.remove();
+  }, [selectedWorkOrderId, closeTaskDetail]);
+
+  useEffect(() => {
+    if (!isLoggedIn || selectedWorkOrderId) return;
+    if (!workOrders.some((w) => w.status === "in_progress")) return;
+    const id = setInterval(() => setTaskListTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [isLoggedIn, selectedWorkOrderId, workOrders]);
+
+  const detailCanEditChecklist = selectedWorkOrder?.status === "in_progress";
+  const detailOrderFinished =
+    selectedWorkOrder?.status === "completed" ||
+    selectedWorkOrder?.status === "cancelled";
+
   if (!isLoggedIn) {
     return (
       <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
@@ -518,6 +785,8 @@ function AppContent() {
             showsHorizontalScrollIndicator={false}
           >
             <View style={styles.loginContainer}>
+              <Text style={styles.loginBrandMark}>{BRAND_MARK}</Text>
+              <Text style={styles.loginBrandTagline}>{BRAND_TAGLINE}</Text>
               <Text style={styles.loginTitle}>Iniciar sesion</Text>
 
               <View style={styles.loginFieldBlock}>
@@ -526,7 +795,7 @@ function AppContent() {
                   value={username}
                   onChangeText={setUsername}
                   placeholder=""
-                  placeholderTextColor="#A7AEC6"
+                  placeholderTextColor={theme.zinc400}
                   autoCapitalize="none"
                   style={styles.loginInput}
                 />
@@ -538,7 +807,7 @@ function AppContent() {
                   value={password}
                   onChangeText={setPassword}
                   placeholder=""
-                  placeholderTextColor="#A7AEC6"
+                  placeholderTextColor={theme.zinc400}
                   secureTextEntry
                   autoCapitalize="none"
                   style={styles.loginInput}
@@ -558,7 +827,7 @@ function AppContent() {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
       </SafeAreaView>
     );
   }
@@ -566,13 +835,19 @@ function AppContent() {
   return (
     <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{firstName}</Text>
+        <View style={styles.topHeader}>
+          <View style={styles.headerBrandBlock}>
+            <Text style={styles.brandTitle}>{BRAND_MARK}</Text>
+            <Text style={styles.headerGreeting}>{firstName}</Text>
+          </View>
           <Pressable
             style={styles.headerAlertButton}
-            onPress={() => setActiveSection("notifications")}
+            onPress={() => {
+              closeTaskDetail();
+              setActiveSection("notifications");
+            }}
           >
-            <Ionicons name="notifications-outline" size={20} color="#C2CEEC" />
+            <Ionicons name="notifications-outline" size={20} color={theme.zinc600} />
             {unreadCount > 0 ? (
               <View style={styles.headerAlertBadge}>
                 <Text style={styles.headerAlertBadgeText}>
@@ -591,18 +866,10 @@ function AppContent() {
                 showsVerticalScrollIndicator={false}
                 showsHorizontalScrollIndicator={false}
               >
-                <View style={styles.header}>
-                  <Pressable
-                    style={styles.backIconButton}
-                    onPress={() => {
-                      setSelectedWorkOrderId(null);
-                      setSelectedWorkOrder(null);
-                      setDetailError(null);
-                    }}
-                  >
-                    <Ionicons name="arrow-back" size={20} color="#FFBF8A" />
+                <View style={styles.detailTopBar}>
+                  <Pressable style={styles.backIconButton} onPress={closeTaskDetail}>
+                    <Ionicons name="arrow-back" size={20} color={theme.zinc600} />
                   </Pressable>
-                  <Text style={styles.cardTitle}>{selectedWorkOrder?.folio ?? selectedWorkOrder?.id ?? "Orden"}</Text>
                 </View>
                 {detailLoading ? (
                   <Text style={styles.cardMeta}>Cargando detalle...</Text>
@@ -610,27 +877,143 @@ function AppContent() {
                   <Text style={styles.errorText}>{detailError}</Text>
                 ) : selectedWorkOrder ? (
                   <>
-                    <Text style={styles.detailTitle}>{selectedWorkOrder.title}</Text>
-                    {selectedWorkOrder.description ? (
-                      <Text style={styles.cardMeta}>{selectedWorkOrder.description}</Text>
-                    ) : null}
-                    <View style={styles.chipsRow}>
-                      <View style={[styles.statusChip, statusChipStyle(selectedWorkOrder.status)]}>
-                        <Text style={styles.statusChipText}>{statusLabel(selectedWorkOrder.status)}</Text>
-                      </View>
-                      <View style={[styles.priorityChip, priorityChipStyle(selectedWorkOrder.priority)]}>
-                        <Text style={[styles.priorityChipText, priorityChipTextStyle(selectedWorkOrder.priority)]}>
-                          Prioridad: {priorityLabel(selectedWorkOrder.priority)}
+                    <View style={styles.detailBreadcrumb}>
+                      <Pressable onPress={closeTaskDetail}>
+                        <Text style={styles.detailBreadcrumbLink}>Tareas</Text>
+                      </Pressable>
+                      <Text style={styles.detailBreadcrumbSep}> / </Text>
+                      <Text style={styles.detailBreadcrumbCurrent} numberOfLines={1}>
+                        {selectedWorkOrder.folio != null
+                          ? `Folio ${selectedWorkOrder.folio}`
+                          : `Ref. ${selectedWorkOrder.id.slice(0, 8)}…`}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.detailPageTitle}>{selectedWorkOrder.title}</Text>
+
+                    <View style={styles.detailPanel}>
+                      <Text style={styles.detailPanelKicker}>Estado</Text>
+                      <View
+                        style={[
+                          styles.detailStatusBanner,
+                          selectedWorkOrder.status === "open" && styles.detailStatusOpen,
+                          selectedWorkOrder.status === "in_progress" && styles.detailStatusInProgress,
+                          selectedWorkOrder.status === "completed" && styles.detailStatusCompleted,
+                          selectedWorkOrder.status === "cancelled" && styles.detailStatusCancelled,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.detailStatusBannerText,
+                            selectedWorkOrder.status === "open" && styles.detailStatusOpenText,
+                            selectedWorkOrder.status === "in_progress" && styles.detailStatusInProgressText,
+                            selectedWorkOrder.status === "completed" && styles.detailStatusCompletedText,
+                            selectedWorkOrder.status === "cancelled" && styles.detailStatusCancelledText,
+                          ]}
+                        >
+                          {statusLabel(selectedWorkOrder.status)}
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.cardMeta}>
-                      Activo:{" "}
-                      {selectedWorkOrder.asset
-                        ? `${selectedWorkOrder.asset.name} (${selectedWorkOrder.asset.assetId})`
-                        : "Sin activo"}
-                    </Text>
-                    <Text style={styles.cardMeta}>Vence: {selectedWorkOrder.dueDate ?? "—"}</Text>
+
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Text style={styles.detailCardHeaderTitle}>Detalles</Text>
+                      </View>
+                      <View style={styles.detailCardBody}>
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailRowLabel}>Tipo</Text>
+                          <View style={styles.detailRowValue}>
+                            <WorkOrderKindBadge kindRaw={selectedWorkOrder.kind} />
+                          </View>
+                        </View>
+                        <View style={styles.detailRowDivider} />
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailRowLabel}>Prioridad</Text>
+                          <View style={[styles.detailRowValue, styles.detailRowInline]}>
+                            <WorkOrderPriorityIconRN priority={selectedWorkOrder.priority} />
+                            <Text style={styles.detailRowValueText}>
+                              {priorityLabel(selectedWorkOrder.priority)}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.detailRowDivider} />
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailRowLabel}>Asignado</Text>
+                          <View style={[styles.detailRowValue, styles.detailRowInline]}>
+                            {selectedWorkOrder.assignee?.name ? (
+                              <>
+                                <AssigneeInitialsRing name={selectedWorkOrder.assignee.name} />
+                                <Text style={styles.detailRowValueText} numberOfLines={1}>
+                                  {selectedWorkOrder.assignee.name}
+                                </Text>
+                              </>
+                            ) : (
+                              <Text style={styles.detailRowMuted}>Sin asignar</Text>
+                            )}
+                          </View>
+                        </View>
+                        {selectedWorkOrder.requester ? (
+                          <>
+                            <View style={styles.detailRowDivider} />
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailRowLabel}>Solicitante</Text>
+                              <View style={[styles.detailRowValue, styles.detailRowInline]}>
+                                <AssigneeInitialsRing name={selectedWorkOrder.requester.name} />
+                                <Text style={styles.detailRowValueText} numberOfLines={1}>
+                                  {selectedWorkOrder.requester.name}
+                                </Text>
+                              </View>
+                            </View>
+                          </>
+                        ) : null}
+                        {selectedWorkOrder.asset ? (
+                          <>
+                            <View style={styles.detailRowDivider} />
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailRowLabel}>Activo</Text>
+                              <View style={styles.detailRowValue}>
+                                <Text style={styles.detailRowValueText} numberOfLines={2}>
+                                  {selectedWorkOrder.asset.name}
+                                </Text>
+                                <Text style={styles.detailRowSub}>{selectedWorkOrder.asset.assetId}</Text>
+                              </View>
+                            </View>
+                          </>
+                        ) : null}
+                        <View style={styles.detailRowDivider} />
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailRowLabel}>Vencimiento</Text>
+                          <Text style={styles.detailRowValueText}>
+                            {formatWoDetailDate(selectedWorkOrder.dueDate)}
+                          </Text>
+                        </View>
+                        {selectedWorkOrder.status === "completed" && selectedWorkOrder.completedAt ? (
+                          <>
+                            <View style={styles.detailRowDivider} />
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailRowLabel}>Completada</Text>
+                              <Text style={styles.detailRowValueText}>
+                                {formatWoDetailDate(selectedWorkOrder.completedAt)}
+                              </Text>
+                            </View>
+                          </>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Text style={styles.detailCardHeaderTitle}>Descripción</Text>
+                      </View>
+                      <View style={styles.detailCardBody}>
+                        {selectedWorkOrder.description ? (
+                          <Text style={styles.detailDescriptionText}>{selectedWorkOrder.description}</Text>
+                        ) : (
+                          <Text style={styles.detailRowMuted}>Sin descripción.</Text>
+                        )}
+                      </View>
+                    </View>
 
                     <View style={styles.actionsRow}>
                       {selectedWorkOrder.status === "open" ? (
@@ -645,70 +1028,135 @@ function AppContent() {
                       ) : null}
                     </View>
 
-                    {selectedWorkOrder.checklist.length > 0 ? (
-                      <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Checklist</Text>
-                        {selectedWorkOrder.status === "open" ? (
-                          <Text style={styles.helpText}>Haz clic en Iniciar para editar checklist.</Text>
-                        ) : null}
-                        {selectedWorkOrder.checklist.map((item) => (
-                          <View key={item.id} style={styles.checklistCard}>
-                            <View style={styles.checklistHeader}>
-                              <View
-                                style={[
-                                  styles.checkBullet,
-                                  item.completed ? styles.checkBulletDone : styles.checkBulletTodo,
-                                ]}
-                              />
-                              <Text style={styles.cardTitle}>{item.label}</Text>
-                            </View>
-                            {item.type === "step" ? (
+                    {(selectedWorkOrder.attachments?.length ?? 0) > 0 ? (
+                      <View style={styles.detailCard}>
+                        <View style={styles.detailCardHeader}>
+                          <Text style={styles.detailCardHeaderTitle}>Adjuntos</Text>
+                          <Text style={styles.detailCardHeaderSub}>Fotos y evidencias de la tarea</Text>
+                        </View>
+                        <View style={styles.detailCardBody}>
+                          <View style={styles.attachmentGrid}>
+                            {(selectedWorkOrder.attachments ?? []).map((a) => (
                               <Pressable
-                                style={styles.ghostButton}
-                                disabled={selectedWorkOrder.status !== "in_progress"}
-                                onPress={() => updateChecklist(item.id, { completed: !(item.completed ?? false) })}
+                                key={a.id}
+                                style={styles.attachmentCell}
+                                onPress={() => Linking.openURL(absoluteFileUrl(a.fileUrl))}
                               >
-                                <Text style={styles.ghostButtonText}>
-                                  {item.completed ? "Marcar pendiente" : "Marcar completado"}
+                                <Image
+                                  source={{ uri: absoluteFileUrl(a.fileUrl) }}
+                                  style={styles.attachmentThumb}
+                                  resizeMode="cover"
+                                />
+                                <Text style={styles.attachmentCaption} numberOfLines={1}>
+                                  {a.filename}
                                 </Text>
                               </Pressable>
-                            ) : (
-                              <TextInput
-                                value={item.value != null ? String(item.value) : ""}
-                                editable={selectedWorkOrder.status === "in_progress"}
-                                placeholder="Escribir valor"
-                                placeholderTextColor="#A7AEC6"
-                                style={styles.input}
-                                onEndEditing={(e) =>
-                                  updateChecklist(item.id, { value: e.nativeEvent.text ?? "" })
-                                }
-                              />
-                            )}
+                            ))}
                           </View>
-                        ))}
+                        </View>
                       </View>
                     ) : null}
 
-                    <View style={styles.section}>
-                      <Text style={styles.sectionTitle}>Comentarios</Text>
-                      <Text style={styles.helpText}>Usa @usuario para etiquetar personas.</Text>
-                      <TextInput
-                        value={newComment}
-                        onChangeText={setNewComment}
-                        placeholder="Escribe un comentario"
-                        placeholderTextColor="#A7AEC6"
-                        multiline
-                        style={styles.textarea}
-                      />
-                      <Pressable style={styles.secondaryButton} onPress={addComment}>
-                        <Text style={styles.secondaryButtonText}>Agregar comentario</Text>
-                      </Pressable>
-                      {selectedWorkOrder.notes.map((note) => (
-                        <View key={note.id} style={styles.card}>
-                          <Text style={styles.cardMeta}>{note.body}</Text>
-                          <Text style={styles.helpText}>{note.createdAt}</Text>
+                    {selectedWorkOrder.checklist.length > 0 ? (
+                      <View style={styles.detailCard}>
+                        <View style={styles.detailCardHeader}>
+                          <Text style={styles.detailCardHeaderTitle}>Checklist</Text>
                         </View>
-                      ))}
+                        <View style={styles.detailCardBody}>
+                          {selectedWorkOrder.status === "open" ? (
+                            <Text style={styles.checklistHint}>
+                              Cambia el estado a <Text style={styles.checklistHintStrong}>En curso</Text> para
+                              editar el checklist.
+                            </Text>
+                          ) : null}
+                          {selectedWorkOrder.checklist.map((item) => (
+                            <View key={item.id} style={styles.checklistCard}>
+                              <View style={styles.checklistHeader}>
+                                <View
+                                  style={[
+                                    styles.checkBullet,
+                                    item.completed ? styles.checkBulletDone : styles.checkBulletTodo,
+                                  ]}
+                                />
+                                <Text style={styles.cardTitle}>{item.label}</Text>
+                              </View>
+                              {item.type === "step" ? (
+                                detailCanEditChecklist ? (
+                                  <Pressable
+                                    style={styles.ghostButton}
+                                    onPress={() =>
+                                      updateChecklist(item.id, { completed: !(item.completed ?? false) })
+                                    }
+                                  >
+                                    <Text style={styles.ghostButtonText}>
+                                      {item.completed ? "Marcar pendiente" : "Marcar completado"}
+                                    </Text>
+                                  </Pressable>
+                                ) : null
+                              ) : detailCanEditChecklist ? (
+                                <TextInput
+                                  value={item.value != null ? String(item.value) : ""}
+                                  placeholder="Escribir valor"
+                                  placeholderTextColor={theme.zinc400}
+                                  style={styles.input}
+                                  onEndEditing={(e) =>
+                                    updateChecklist(item.id, { value: e.nativeEvent.text ?? "" })
+                                  }
+                                />
+                              ) : (
+                                <Text style={styles.checklistFieldReadOnly}>
+                                  {item.value != null && String(item.value).trim() !== ""
+                                    ? String(item.value)
+                                    : "—"}
+                                </Text>
+                              )}
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    ) : null}
+
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Text style={styles.detailCardHeaderTitle}>Actividad</Text>
+                        <Text style={styles.detailCardHeaderSub}>Comentarios</Text>
+                      </View>
+                      <View style={styles.detailCardBody}>
+                        {detailOrderFinished ? (
+                          <Text style={styles.helpText}>
+                            Esta tarea está cerrada; no se pueden agregar comentarios.
+                          </Text>
+                        ) : (
+                          <>
+                            <Text style={styles.helpText}>
+                              Puedes etiquetar con <Text style={styles.checklistHintStrong}>@usuario</Text>.
+                            </Text>
+                            <TextInput
+                              value={newComment}
+                              onChangeText={setNewComment}
+                              placeholder="Escribe un comentario... (usa @usuario para etiquetar)"
+                              placeholderTextColor={theme.zinc400}
+                              multiline
+                              style={styles.textarea}
+                            />
+                            <Pressable style={styles.secondaryButton} onPress={addComment}>
+                              <Text style={styles.secondaryButtonText}>Agregar comentario</Text>
+                            </Pressable>
+                          </>
+                        )}
+                        {selectedWorkOrder.notes.length === 0 ? (
+                          <Text style={styles.detailRowMuted}>Aún no hay comentarios.</Text>
+                        ) : (
+                          selectedWorkOrder.notes.map((note) => (
+                            <View key={note.id} style={styles.activityNote}>
+                              <Text style={styles.activityNoteBody}>{note.body}</Text>
+                              <Text style={styles.activityNoteMeta}>
+                                {formatWoDetailDate(note.createdAt)}
+                              </Text>
+                            </View>
+                          ))
+                        )}
+                      </View>
                     </View>
                   </>
                 ) : null}
@@ -773,70 +1221,177 @@ function AppContent() {
                     </Pressable>
                   ))}
                 </ScrollView>
-                {ordersLoading ? <Text style={styles.cardMeta}>Cargando ordenes...</Text> : null}
+                {ordersLoading ? <Text style={styles.cardMeta}>Cargando tareas...</Text> : null}
                 {ordersError ? <Text style={styles.errorText}>{ordersError}</Text> : null}
                 <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
+                  style={styles.dashboardScroll}
+                  contentContainerStyle={styles.dashboardScrollContent}
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.canvasContent}
+                  keyboardShouldPersistTaps="handled"
                 >
-                  {boardColumns.map((column) => {
-                    const columnItems = workOrders.filter((item) => item.status === column.key);
-                    const visibleItems =
-                      column.key === "completed"
-                        ? columnItems.slice(0, completedVisibleCount)
-                        : columnItems;
-                    return (
-                      <View key={column.key} style={styles.canvasColumn}>
-                        <View style={styles.canvasColumnHeader}>
-                          <Text style={styles.canvasColumnTitle}>{column.title}</Text>
-                          <Text style={styles.canvasColumnCount}>{columnItems.length}</Text>
-                        </View>
-                        <ScrollView
-                          nestedScrollEnabled
-                          style={styles.canvasColumnList}
-                          contentContainerStyle={styles.canvasColumnListContent}
-                          showsVerticalScrollIndicator={false}
-                          showsHorizontalScrollIndicator={false}
-                        >
-                          {visibleItems.map((item) => (
-                            <Pressable key={item.id} style={styles.card} onPress={() => openWorkOrder(item.id)}>
-                              <Text style={styles.cardTitle}>{item.folio ?? item.id}</Text>
-                              <Text style={styles.cardMeta}>{item.title}</Text>
-                              <Text style={styles.cardMeta}>
-                                {item.assetName
-                                  ? `${item.assetName}${item.assetAssetId ? ` (${item.assetAssetId})` : ""}`
-                                  : "Sin activo"}
+                  <View style={styles.dashboardSectionHeader}>
+                    <Text style={styles.dashboardSectionKicker}>TAREAS EN CURSO</Text>
+                    <View style={styles.dashboardActiveBadge}>
+                      <Text style={styles.dashboardActiveBadgeText}>
+                        {ongoingTasks.length} ACTIVA{ongoingTasks.length === 1 ? "" : "S"}
+                      </Text>
+                    </View>
+                  </View>
+                  {ongoingTasks.length === 0 ? (
+                    <Text style={styles.dashboardEmpty}>No hay tareas en curso.</Text>
+                  ) : (
+                    ongoingTasks.map((w) => {
+                      const assetKicker =
+                        w.assetAssetId != null && String(w.assetAssetId).trim() !== ""
+                          ? String(w.assetAssetId).toUpperCase()
+                          : w.assetName
+                            ? w.assetName.toUpperCase()
+                            : "SIN ACTIVO";
+                      return (
+                        <View key={w.id} style={styles.ongoingHero}>
+                          <View style={styles.ongoingHeroTop}>
+                            <View style={styles.ongoingHeroTopText}>
+                              <Text style={styles.ongoingAssetKicker}>ACTIVO: {assetKicker}</Text>
+                              <Pressable onPress={() => openWorkOrder(w.id)}>
+                                <Text style={styles.ongoingHeroTitle}>{w.title}</Text>
+                              </Pressable>
+                            </View>
+                            <WorkOrderPriorityIconRN priority={w.priority} />
+                          </View>
+                          <View style={styles.ongoingTimerStrip}>
+                            <View style={styles.ongoingTimerCol}>
+                              <Text style={styles.ongoingTimerDigits}>
+                                {formatElapsedClock(w.createdAt, taskListTick)}
                               </Text>
-                              <View style={styles.chipsRow}>
-                                <View style={[styles.statusChip, statusChipStyle(item.status)]}>
-                                  <Text style={styles.statusChipText}>{statusLabel(item.status)}</Text>
-                                </View>
-                                <View style={[styles.priorityChip, priorityChipStyle(item.priority)]}>
-                                  <Text style={[styles.priorityChipText, priorityChipTextStyle(item.priority)]}>
-                                    {priorityLabel(item.priority)}
-                                  </Text>
-                                </View>
-                              </View>
-                            </Pressable>
-                          ))}
-                          {column.key === "completed" && columnItems.length > completedVisibleCount ? (
+                              <Text style={styles.ongoingTimerHint}>desde registro</Text>
+                            </View>
+                            <View style={styles.ongoingTimerDivider} />
+                            <View style={styles.ongoingTimerCol}>
+                              <Text style={styles.ongoingTimerEstLabel}>VENCIMIENTO</Text>
+                              <Text style={styles.ongoingTimerEstValue} numberOfLines={2}>
+                                {formatDueRelative(w.dueDate)}
+                              </Text>
+                            </View>
+                          </View>
+                          <Pressable
+                            style={styles.ongoingCompleteMain}
+                            onPress={() => updateWorkOrderStatusById(w.id, "completed")}
+                          >
+                            <Text style={styles.ongoingCompleteMainText}>Completar</Text>
+                          </Pressable>
+                          <View style={styles.ongoingSecondaryRow}>
                             <Pressable
-                              style={styles.loadMoreButton}
-                              onPress={() =>
-                                setCompletedVisibleCount((count) =>
-                                  Math.min(count + 10, columnItems.length)
-                                )
-                              }
+                              style={styles.ongoingPauseBtn}
+                              onPress={() => updateWorkOrderStatusById(w.id, "open")}
                             >
-                              <Text style={styles.loadMoreButtonText}>Cargar mas</Text>
+                              <Ionicons name="pause" size={18} color={theme.zinc700} />
+                              <Text style={styles.ongoingPauseBtnText}>Pausar</Text>
                             </Pressable>
-                          ) : null}
-                        </ScrollView>
-                      </View>
-                    );
-                  })}
+                            <Pressable style={styles.ongoingMoreBtn} onPress={() => openWorkOrder(w.id)}>
+                              <Ionicons name="ellipsis-horizontal" size={22} color={theme.zinc600} />
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+
+                  <View style={[styles.dashboardSectionHeader, styles.dashboardSectionHeaderSpaced]}>
+                    <Text style={styles.dashboardSectionKicker}>COLA PENDIENTE</Text>
+                    <Pressable onPress={() => setPendingSortByPriority((v) => !v)} hitSlop={8}>
+                      <Text style={styles.dashboardSortLink}>
+                        {pendingSortByPriority ? "Orden del tablero" : "Ordenar por prioridad"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  {pendingTasksSorted.length === 0 ? (
+                    <Text style={styles.dashboardEmpty}>No hay tareas pendientes.</Text>
+                  ) : (
+                    pendingTasksSorted.map((item) => {
+                      const accent = pendingPriorityBorderColor(item.priority);
+                      const badge = pendingPriorityBadgeTheme(item.priority);
+                      const kind = parseWorkOrderKind(item.kind);
+                      const kindLabel = workOrderKindLabel(kind);
+                      const kindIcon =
+                        kind === "routine" ? ("calendar-outline" as const) : ("construct-outline" as const);
+                      const assetLine =
+                        item.assetName != null
+                          ? `${item.assetName}${item.assetAssetId ? ` · ${item.assetAssetId}` : ""}`
+                          : "Sin activo";
+                      return (
+                        <Pressable
+                          key={item.id}
+                          style={[styles.pendingCard, { borderLeftColor: accent }]}
+                          onPress={() => openWorkOrder(item.id)}
+                        >
+                          <View style={styles.pendingCardTop}>
+                            <View style={[styles.pendingPriorityPill, { backgroundColor: badge.bg }]}>
+                              <Text style={[styles.pendingPriorityPillText, { color: badge.fg }]}>
+                                {badge.label}
+                              </Text>
+                            </View>
+                            <View style={styles.pendingDurationPill}>
+                              <Text style={styles.pendingDurationPillText}>
+                                {formatDurationUntilDueShort(item.dueDate)}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={styles.pendingCardTitle} numberOfLines={2}>
+                            {item.title}
+                          </Text>
+                          <View style={styles.pendingMetaRow}>
+                            <Ionicons name="business-outline" size={16} color={theme.zinc500} />
+                            <Text style={styles.pendingMetaText} numberOfLines={1}>
+                              {assetLine}
+                            </Text>
+                          </View>
+                          <View style={styles.pendingMetaRow}>
+                            <Ionicons name={kindIcon} size={16} color={theme.zinc500} />
+                            <Text style={styles.pendingMetaText} numberOfLines={1}>
+                              {kindLabel}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                  )}
+
+                  <View style={[styles.dashboardSectionHeader, styles.dashboardSectionHeaderSpaced]}>
+                    <Text style={styles.dashboardSectionKicker}>TERMINADAS</Text>
+                    <Text style={styles.dashboardSectionCount}>{completedTasks.length}</Text>
+                  </View>
+                  {completedTasks.length === 0 ? (
+                    <Text style={styles.dashboardEmpty}>Sin tareas terminadas en esta vista.</Text>
+                  ) : (
+                    <>
+                      {completedTasksVisible.map((item) => (
+                        <Pressable
+                          key={item.id}
+                          style={styles.completedRowCard}
+                          onPress={() => openWorkOrder(item.id)}
+                        >
+                          <Text style={styles.completedRowTitle} numberOfLines={1}>
+                            {item.title}
+                          </Text>
+                          <Text style={styles.completedRowMeta}>
+                            {item.folio != null ? `Folio ${item.folio}` : item.id.slice(0, 8)}
+                          </Text>
+                        </Pressable>
+                      ))}
+                      {completedTasks.length > completedVisibleCount ? (
+                        <Pressable
+                          style={styles.loadMoreButton}
+                          onPress={() =>
+                            setCompletedVisibleCount((count) =>
+                              Math.min(count + COMPLETED_LOAD_MORE_STEP, completedTasks.length)
+                            )
+                          }
+                        >
+                          <Text style={styles.loadMoreButtonText}>Cargar más</Text>
+                        </Pressable>
+                      ) : null}
+                    </>
+                  )}
                 </ScrollView>
               </View>
             )
@@ -846,7 +1401,7 @@ function AppContent() {
                 value={kbQuery}
                 onChangeText={setKbQuery}
                 placeholder="Buscar articulo..."
-                placeholderTextColor="#A7AEC6"
+                placeholderTextColor={theme.zinc400}
                 style={styles.input}
               />
               {kbLoading ? <Text style={styles.cardMeta}>Cargando base de conocimiento...</Text> : null}
@@ -889,11 +1444,13 @@ function AppContent() {
             </View>
           ) : activeSection === "notifications" ? (
             <View style={styles.kbContainer}>
-              <View style={styles.header}>
+              <View style={styles.headerRow}>
                 <Text style={styles.sectionTitle}>Notificaciones</Text>
-                <Pressable style={styles.ghostButton} onPress={markAllNotificationsRead}>
-                  <Text style={styles.ghostButtonText}>Marcar todo leido</Text>
-                </Pressable>
+                {unreadCount > 0 ? (
+                  <Pressable style={styles.ghostButton} onPress={markAllNotificationsRead}>
+                    <Text style={styles.ghostButtonText}>Marcar todo leido</Text>
+                  </Pressable>
+                ) : null}
               </View>
               {notificationsLoading ? <Text style={styles.cardMeta}>Cargando notificaciones...</Text> : null}
               {notificationsError ? <Text style={styles.errorText}>{notificationsError}</Text> : null}
@@ -943,7 +1500,7 @@ function AppContent() {
                   value={currentPassword}
                   onChangeText={setCurrentPassword}
                   placeholder="Contrasena actual"
-                  placeholderTextColor="#A7AEC6"
+                  placeholderTextColor={theme.zinc400}
                   secureTextEntry
                   style={styles.input}
                 />
@@ -951,7 +1508,7 @@ function AppContent() {
                   value={newPassword}
                   onChangeText={setNewPassword}
                   placeholder="Nueva contrasena"
-                  placeholderTextColor="#A7AEC6"
+                  placeholderTextColor={theme.zinc400}
                   secureTextEntry
                   style={styles.input}
                 />
@@ -959,7 +1516,7 @@ function AppContent() {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   placeholder="Confirmar nueva contrasena"
-                  placeholderTextColor="#A7AEC6"
+                  placeholderTextColor={theme.zinc400}
                   secureTextEntry
                   style={styles.input}
                 />
@@ -983,39 +1540,48 @@ function AppContent() {
 
         <View style={[styles.bottomNav, { paddingBottom: insets.bottom > 0 ? insets.bottom : 10 }]}>
           <Pressable
-            style={[styles.bottomNavItem, activeSection === "workOrders" && styles.bottomNavItemActive]}
-            onPress={() => setActiveSection("workOrders")}
+            style={styles.bottomNavItem}
+            onPress={() => {
+              closeTaskDetail();
+              setActiveSection("workOrders");
+            }}
           >
             <Ionicons
               name="clipboard-outline"
-              size={16}
-              color={activeSection === "workOrders" ? "#FFFFFF" : "#C2CEEC"}
+              size={22}
+              color={activeSection === "workOrders" ? theme.accent : theme.zinc500}
             />
             <Text style={[styles.bottomNavText, activeSection === "workOrders" && styles.bottomNavTextActive]}>
-              Ordenes
+              Tareas
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.bottomNavItem, activeSection === "knowledgeBase" && styles.bottomNavItemActive]}
-            onPress={() => setActiveSection("knowledgeBase")}
+            style={styles.bottomNavItem}
+            onPress={() => {
+              closeTaskDetail();
+              setActiveSection("knowledgeBase");
+            }}
           >
             <Ionicons
               name="library-outline"
-              size={16}
-              color={activeSection === "knowledgeBase" ? "#FFFFFF" : "#C2CEEC"}
+              size={22}
+              color={activeSection === "knowledgeBase" ? theme.accent : theme.zinc500}
             />
             <Text style={[styles.bottomNavText, activeSection === "knowledgeBase" && styles.bottomNavTextActive]}>
               Base
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.bottomNavItem, activeSection === "profile" && styles.bottomNavItemActive]}
-            onPress={() => setActiveSection("profile")}
+            style={styles.bottomNavItem}
+            onPress={() => {
+              closeTaskDetail();
+              setActiveSection("profile");
+            }}
           >
             <Ionicons
               name="person-outline"
-              size={16}
-              color={activeSection === "profile" ? "#FFFFFF" : "#C2CEEC"}
+              size={22}
+              color={activeSection === "profile" ? theme.accent : theme.zinc500}
             />
             <Text style={[styles.bottomNavText, activeSection === "profile" && styles.bottomNavTextActive]}>
               Perfil
@@ -1023,62 +1589,103 @@ function AppContent() {
           </Pressable>
         </View>
       </View>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#121826" },
-  container: { flex: 1, padding: 14 },
+  safeArea: { flex: 1, backgroundColor: theme.surface },
+  container: { flex: 1 },
   loginContainer: {
     justifyContent: "center",
     padding: 20,
     gap: 14,
-    backgroundColor: "#232B3F",
+    width: "100%",
+    maxWidth: 400,
+    alignSelf: "center",
+  },
+  loginBrandMark: {
+    color: theme.accent,
+    fontSize: 32,
+    fontWeight: "800",
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  loginBrandTagline: {
+    marginTop: 6,
+    marginBottom: 20,
+    color: theme.zinc600,
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
   },
   loginTitle: {
-    color: "#FFFFFF",
+    color: theme.zinc900,
     fontSize: 22,
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 12,
   },
   loginFieldBlock: { gap: 8 },
-  loginLabel: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
+  loginLabel: { color: theme.zinc700, fontSize: 14, fontWeight: "600" },
   loginInput: {
-    backgroundColor: "#07152A",
+    backgroundColor: theme.white,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
-    borderRadius: 6,
+    borderColor: theme.zinc300,
+    borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: "#FFFFFF",
+    color: theme.zinc900,
     fontSize: 15,
   },
   loginButton: {
-    backgroundColor: "#A93A12",
-    borderRadius: 6,
+    backgroundColor: theme.primary,
+    borderRadius: 12,
     paddingVertical: 13,
     alignItems: "center",
     marginTop: 8,
   },
-  loginKeyboardAvoid: { flex: 1, backgroundColor: "#232B3F" },
-  loginScroll: { backgroundColor: "#232B3F" },
+  loginKeyboardAvoid: { flex: 1, backgroundColor: theme.surface },
+  loginScroll: { backgroundColor: theme.surface },
   loginScrollContent: { flexGrow: 1, justifyContent: "center" },
-  header: {
+  topHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: theme.white,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.zinc200,
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 8,
+  },
+  headerBrandBlock: { flex: 1, marginRight: 8 },
+  brandTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: theme.accent,
+    letterSpacing: -0.5,
+  },
+  headerGreeting: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "500",
+    color: theme.zinc500,
   },
   headerAlertButton: {
     width: 40,
     height: 40,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
-    backgroundColor: "#31394B",
+    borderColor: theme.zinc200,
+    backgroundColor: theme.white,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1089,36 +1696,36 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 999,
-    backgroundColor: "#F14C03",
+    backgroundColor: theme.accent,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
   },
-  headerAlertBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "700" },
+  headerAlertBadgeText: { color: theme.white, fontSize: 10, fontWeight: "700" },
   backIconButton: {
     width: 34,
     height: 34,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
+    borderColor: theme.zinc200,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#31394B",
+    backgroundColor: theme.white,
   },
-  title: { fontSize: 22, fontWeight: "700", color: "#FFFFFF" },
-  subtitle: { fontSize: 14, color: "#A7AEC6", marginBottom: 8 },
-  logout: { color: "#FFBF8A", fontWeight: "600" },
+  title: { fontSize: 22, fontWeight: "700", color: theme.zinc900 },
+  subtitle: { fontSize: 14, color: theme.zinc600, marginBottom: 8 },
+  logout: { color: theme.primary, fontWeight: "600" },
   input: {
-    backgroundColor: "#0F1E33",
+    backgroundColor: theme.white,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
+    borderColor: theme.zinc300,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#FFFFFF",
+    color: theme.zinc900,
   },
   primaryButton: {
-    backgroundColor: "#F14C03",
+    backgroundColor: theme.accent,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#c43d02",
@@ -1126,244 +1733,460 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8,
   },
-  primaryButtonDisabled: { backgroundColor: "#8B532F" },
-  primaryButtonText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
-  errorText: { color: "#FF9B9B", fontSize: 13 },
-  contentArea: { flex: 1 },
+  primaryButtonDisabled: { opacity: 0.55 },
+  primaryButtonText: { color: theme.white, fontSize: 16, fontWeight: "700" },
+  errorText: { color: theme.red600, fontSize: 13 },
+  contentArea: { flex: 1, paddingHorizontal: 16, paddingTop: 12, backgroundColor: theme.pageBg },
   profileContainer: { gap: 10, paddingBottom: 26 },
   kbContainer: { flex: 1, gap: 10 },
-  detailContent: { gap: 12, paddingBottom: 30 },
-  detailTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "700" },
-  chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
-  statusChip: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
-  statusChipText: { fontWeight: "700", fontSize: 12 },
-  statusOpen: { backgroundColor: "#FEF1E9" },
-  statusInProgress: { backgroundColor: "#DDE5F7" },
-  statusCompleted: { backgroundColor: "#D7F3D7" },
-  statusCancelled: { backgroundColor: "#E6E6E6" },
-  priorityChip: {
+  detailContent: { gap: 20, paddingBottom: 36 },
+  detailTopBar: { marginBottom: 4 },
+  detailBreadcrumb: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 4,
+    marginBottom: 12,
+  },
+  detailBreadcrumbLink: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.accent,
+  },
+  detailBreadcrumbSep: { fontSize: 14, color: theme.zinc400 },
+  detailBreadcrumbCurrent: { fontSize: 14, color: theme.zinc600, flex: 1, minWidth: 0 },
+  detailPageTitle: {
+    color: theme.zinc900,
+    fontSize: 24,
+    fontWeight: "600",
+    letterSpacing: -0.3,
+    marginBottom: 16,
+  },
+  detailPanel: { marginBottom: 4 },
+  detailPanelKicker: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: theme.zinc500,
+    marginBottom: 8,
+  },
+  detailStatusBanner: {
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+  },
+  detailStatusBannerText: { fontSize: 15, fontWeight: "700" },
+  detailStatusOpen: { backgroundColor: "#FEF3C7" },
+  detailStatusOpenText: { color: "#92400E" },
+  detailStatusInProgress: { backgroundColor: "#DBEAFE" },
+  detailStatusInProgressText: { color: "#1E40AF" },
+  detailStatusCompleted: { backgroundColor: "#D1FAE5" },
+  detailStatusCompletedText: { color: "#065F46" },
+  detailStatusCancelled: { backgroundColor: theme.zinc100 },
+  detailStatusCancelledText: { color: theme.zinc600 },
+  detailCard: {
+    backgroundColor: theme.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    overflow: "hidden",
+    marginBottom: 4,
+  },
+  detailCardHeader: {
+    borderBottomWidth: 1,
+    borderBottomColor: theme.zinc100,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  detailCardHeaderTitle: { fontSize: 14, fontWeight: "700", color: theme.zinc900 },
+  detailCardHeaderSub: { marginTop: 4, fontSize: 12, fontWeight: "500", color: theme.zinc500 },
+  detailCardBody: { paddingHorizontal: 16, paddingVertical: 14, gap: 0 },
+  detailRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingVertical: 12,
+  },
+  detailRowLabel: {
+    width: "38%",
+    maxWidth: 140,
+    fontSize: 14,
+    color: theme.zinc500,
+  },
+  detailRowValue: { flex: 1, minWidth: 0 },
+  detailRowInline: { flexDirection: "row", alignItems: "center", gap: 10 },
+  detailRowValueText: { fontSize: 14, fontWeight: "600", color: theme.zinc900 },
+  detailRowSub: { fontSize: 12, fontWeight: "400", color: theme.zinc500, marginTop: 2 },
+  detailRowMuted: { fontSize: 14, color: theme.zinc400 },
+  detailRowDivider: { height: 1, backgroundColor: theme.zinc100, marginLeft: 0 },
+  detailDescriptionText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: theme.zinc800,
+  },
+  checklistHint: { fontSize: 12, color: "#B45309", marginBottom: 12 },
+  checklistHintStrong: { fontWeight: "700" },
+  attachmentGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  attachmentCell: {
+    width: "47%",
+    maxWidth: 160,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    overflow: "hidden",
+    backgroundColor: theme.zinc50,
+  },
+  attachmentThumb: { width: "100%", aspectRatio: 1, backgroundColor: theme.zinc100 },
+  attachmentCaption: { fontSize: 11, color: theme.zinc500, paddingHorizontal: 6, paddingVertical: 4 },
+  activityNote: {
+    backgroundColor: theme.zinc50,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  activityNoteBody: { fontSize: 14, color: theme.zinc900 },
+  activityNoteMeta: { marginTop: 6, fontSize: 12, color: theme.zinc400 },
+  dashboardScroll: { flex: 1 },
+  dashboardScrollContent: { paddingBottom: 20, flexGrow: 1 },
+  dashboardSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  dashboardSectionHeaderSpaced: { marginTop: 22 },
+  dashboardSectionKicker: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    color: theme.zinc500,
+  },
+  dashboardSectionCount: { fontSize: 13, fontWeight: "700", color: theme.zinc600 },
+  dashboardActiveBadge: {
+    backgroundColor: "#DBEAFE",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  dashboardActiveBadgeText: { fontSize: 11, fontWeight: "800", color: "#1E40AF" },
+  dashboardSortLink: { fontSize: 13, fontWeight: "700", color: theme.primary },
+  dashboardEmpty: { fontSize: 14, color: theme.zinc500, marginBottom: 12 },
+  ongoingHero: {
+    backgroundColor: theme.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    shadowColor: "#000",
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  ongoingHeroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
+  ongoingHeroTopText: { flex: 1, minWidth: 0 },
+  ongoingAssetKicker: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    color: theme.zinc400,
+    marginBottom: 6,
+  },
+  ongoingHeroTitle: { fontSize: 18, fontWeight: "700", color: theme.zinc900, lineHeight: 24 },
+  ongoingTimerStrip: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    backgroundColor: theme.zinc100,
+    borderRadius: 12,
+    marginTop: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  ongoingTimerCol: { flex: 1, justifyContent: "center" },
+  ongoingTimerDigits: { fontSize: 26, fontWeight: "800", color: theme.zinc900 },
+  ongoingTimerHint: { fontSize: 11, color: theme.zinc500, marginTop: 2 },
+  ongoingTimerDivider: { width: 1, backgroundColor: theme.zinc300, marginHorizontal: 10 },
+  ongoingTimerEstLabel: { fontSize: 10, fontWeight: "700", color: theme.zinc400, letterSpacing: 0.5 },
+  ongoingTimerEstValue: { fontSize: 13, fontWeight: "700", color: theme.zinc800, marginTop: 4 },
+  ongoingCompleteMain: {
+    backgroundColor: theme.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 14,
+  },
+  ongoingCompleteMainText: { color: theme.white, fontSize: 16, fontWeight: "700" },
+  ongoingSecondaryRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
+  ongoingPauseBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
+  },
+  ongoingPauseBtnText: { fontSize: 15, fontWeight: "700", color: theme.zinc700 },
+  ongoingMoreBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pendingCard: {
+    backgroundColor: theme.white,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    borderLeftWidth: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  pendingCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  pendingPriorityPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  pendingPriorityPillText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
+  pendingDurationPill: {
+    backgroundColor: theme.zinc100,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  pendingDurationPillText: { fontSize: 12, fontWeight: "700", color: theme.zinc600 },
+  pendingCardTitle: { fontSize: 16, fontWeight: "700", color: theme.zinc900, marginBottom: 10 },
+  pendingMetaRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
+  pendingMetaText: { flex: 1, fontSize: 13, color: theme.zinc600 },
+  completedRowCard: {
+    backgroundColor: theme.white,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    padding: 12,
+    marginBottom: 8,
+  },
+  completedRowTitle: { fontSize: 14, fontWeight: "600", color: theme.zinc800 },
+  completedRowMeta: { fontSize: 12, color: theme.zinc500, marginTop: 4 },
+  assigneeRing: {
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    backgroundColor: theme.zinc200,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  assigneeRingText: { fontSize: 9, fontWeight: "800", color: theme.zinc700 },
+  kindBadge: {
+    alignSelf: "flex-start",
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    backgroundColor: "#31394B",
+    maxWidth: "100%",
   },
-  priorityChipText: { color: "#C2CEEC", fontSize: 12, fontWeight: "700" },
-  priorityChipLow: { backgroundColor: "#31394B" },
-  priorityChipMedium: { backgroundColor: "#31394B" },
-  priorityChipHigh: { backgroundColor: "#4A3417" },
-  priorityChipUrgent: { backgroundColor: "#4A1D22" },
-  priorityChipTextLow: { color: "#A7AEC6" },
-  priorityChipTextMedium: { color: "#C2CEEC" },
-  priorityChipTextHigh: { color: "#F7C57A" },
-  priorityChipTextUrgent: { color: "#FF9B9B" },
+  kindBadgeRoutine: {
+    backgroundColor: theme.primary,
+    borderWidth: 1,
+    borderColor: "#011752",
+  },
+  kindBadgeOnDemand: {
+    backgroundColor: theme.accent,
+    borderWidth: 1,
+    borderColor: "#c43d06",
+  },
+  kindBadgeText: {
+    color: theme.white,
+    fontSize: 11,
+    fontWeight: "700",
+  },
   section: {
     gap: 8,
     marginTop: 8,
-    backgroundColor: "#232B3F",
-    borderRadius: 8,
+    backgroundColor: theme.white,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
+    borderColor: theme.zinc200,
     padding: 14,
   },
-  sectionTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
-  helpText: { color: "#A7AEC6", fontSize: 12 },
+  sectionTitle: { color: theme.zinc900, fontSize: 16, fontWeight: "700" },
+  helpText: { color: theme.zinc500, fontSize: 12 },
   actionsRow: { flexDirection: "row", gap: 8, marginVertical: 8 },
   secondaryButton: {
-    backgroundColor: "#02257D",
-    borderRadius: 8,
+    backgroundColor: theme.primary,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#3355AA",
+    borderColor: theme.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  secondaryButtonText: { color: "#FFFFFF", fontWeight: "700" },
+  secondaryButtonText: { color: theme.white, fontWeight: "700" },
   ghostButton: {
     borderWidth: 1,
-    borderColor: "#3355AA",
-    borderRadius: 8,
+    borderColor: theme.zinc300,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
     alignSelf: "flex-start",
+    backgroundColor: theme.white,
   },
-  ghostButtonText: { color: "#C2CEEC", fontWeight: "600" },
+  ghostButtonText: { color: theme.primary, fontWeight: "600" },
   logoutButton: {
-    backgroundColor: "#F14C03",
-    borderRadius: 8,
+    backgroundColor: theme.white,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#c43d02",
+    borderColor: theme.zinc300,
     paddingHorizontal: 12,
     paddingVertical: 10,
     alignItems: "center",
   },
-  logoutButtonText: { color: "#FFFFFF", fontWeight: "700" },
+  logoutButtonText: { color: theme.zinc700, fontWeight: "700" },
   checklistCard: {
-    backgroundColor: "#25324C",
-    borderRadius: 8,
+    backgroundColor: theme.zinc50,
+    borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
+    borderColor: theme.zinc200,
     gap: 8,
+    marginBottom: 10,
   },
   checklistHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  checklistFieldReadOnly: {
+    fontSize: 15,
+    color: theme.zinc700,
+    paddingVertical: 4,
+  },
   checkBullet: { width: 12, height: 12, borderRadius: 999 },
   checkBulletDone: { backgroundColor: "#6FAF6F" },
-  checkBulletTodo: { backgroundColor: "#FFBF8A" },
+  checkBulletTodo: { backgroundColor: theme.accent },
   textarea: {
     minHeight: 90,
     textAlignVertical: "top",
-    backgroundColor: "#31394B",
+    backgroundColor: theme.white,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
+    borderColor: theme.zinc300,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#FFFFFF",
+    color: theme.zinc900,
   },
   canvasShell: {
     flex: 1,
-    backgroundColor: "#232B3F",
-    borderRadius: 8,
+    backgroundColor: theme.white,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
+    borderColor: theme.zinc200,
     padding: 12,
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   filterTag: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#31394B",
+    backgroundColor: theme.primary50,
     borderWidth: 1,
-    borderColor: "#3355AA",
-    borderRadius: 8,
+    borderColor: theme.primary200,
+    borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  filterTagText: { color: "#FFFFFF", fontWeight: "600", fontSize: 12 },
-  filterTagRemove: { color: "#FFBF8A", fontWeight: "700", fontSize: 12 },
+  filterTagText: { color: theme.zinc900, fontWeight: "600", fontSize: 12 },
+  filterTagRemove: { color: theme.accent, fontWeight: "700", fontSize: 12 },
   filterUsersScroll: { flexGrow: 0, maxHeight: 44 },
   filterUsersRow: { gap: 8, alignItems: "center", paddingRight: 8 },
   userFilterChip: {
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#31394B",
-    backgroundColor: "#25324C",
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
     paddingHorizontal: 10,
     paddingVertical: 6,
     alignSelf: "center",
   },
   userFilterChipActive: {
-    backgroundColor: "#F14C03",
-    borderColor: "#F14C03",
+    backgroundColor: theme.primary,
+    borderColor: "#1E4A96",
   },
-  userFilterChipText: { color: "#C2CEEC", fontSize: 12, fontWeight: "600" },
-  userFilterChipTextActive: { color: "#FFFFFF" },
-  canvasContent: {
-    gap: 12,
-    paddingRight: 12,
-    flexGrow: 1,
-    alignItems: "stretch",
-  },
-  canvasColumn: {
-    width: 290,
-    backgroundColor: "#25324C",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#2A3E5A",
-    padding: 10,
-    gap: 10,
-    alignSelf: "stretch",
-  },
-  canvasColumnList: {
-    flex: 1,
-  },
-  canvasColumnListContent: {
-    gap: 10,
-    paddingBottom: 6,
-  },
-  canvasColumnHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 2,
-  },
-  canvasColumnTitle: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
-  canvasColumnCount: {
-    color: "#C2CEEC",
-    backgroundColor: "#31394B",
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    fontSize: 12,
-    fontWeight: "700",
-  },
+  userFilterChipText: { color: theme.zinc700, fontSize: 12, fontWeight: "600" },
+  userFilterChipTextActive: { color: theme.white },
   bottomNav: {
     flexDirection: "row",
-    gap: 8,
+    gap: 4,
     borderTopWidth: 1,
-    borderTopColor: "#25324C",
-    paddingTop: 6,
-    paddingHorizontal: 14,
-    marginHorizontal: -14,
-    marginBottom: -14,
-    backgroundColor: "#232B3F",
+    borderTopColor: theme.zinc200,
+    paddingTop: 8,
+    paddingBottom: 4,
+    paddingHorizontal: 8,
+    backgroundColor: theme.white,
   },
   bottomNavItem: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#2A3E5A",
-    gap: 4,
+    gap: 2,
     paddingVertical: 6,
-    backgroundColor: "#31394B",
-  },
-  bottomNavItemActive: {
-    backgroundColor: "#F14C03",
+    backgroundColor: "transparent",
   },
   bottomNavText: {
-    color: "#C2CEEC",
-    fontWeight: "700",
-    fontSize: 12,
+    color: theme.zinc500,
+    fontWeight: "600",
+    fontSize: 11,
   },
   bottomNavTextActive: {
-    color: "#FFFFFF",
+    color: theme.accent,
   },
   listContent: { gap: 10, paddingBottom: 24 },
   card: {
-    backgroundColor: "#0F1E33",
-    borderRadius: 6,
+    backgroundColor: theme.white,
+    borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#2A3E5A",
+    borderColor: theme.zinc200,
     gap: 4,
-    shadowColor: "#102137",
-    shadowOpacity: 0.45,
-    shadowRadius: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    elevation: 2,
   },
   notificationUnreadCard: {
-    borderColor: "#3355AA",
-    backgroundColor: "#102137",
+    borderColor: theme.primary200,
+    backgroundColor: theme.primary50,
   },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: "#FFFFFF", marginBottom: 4 },
-  cardMeta: { color: "#A7AEC6", fontSize: 13 },
-  emptyText: { color: "#A7AEC6", textAlign: "center", marginTop: 12 },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: theme.zinc900, marginBottom: 4 },
+  cardMeta: { color: theme.zinc600, fontSize: 13 },
+  emptyText: { color: theme.zinc500, textAlign: "center", marginTop: 12 },
   loadMoreButton: {
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#3355AA",
-    backgroundColor: "#25324C",
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
     paddingVertical: 10,
   },
   loadMoreButtonText: {
-    color: "#C2CEEC",
+    color: theme.primary,
     fontWeight: "700",
     fontSize: 12,
   },

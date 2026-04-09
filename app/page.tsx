@@ -7,10 +7,10 @@ export default async function HomePage() {
   if (session) redirect("/tareas");
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-surface">
-      <h1 className="text-2xl font-semibold mb-1 text-[rgb(var(--color-text-strong))]">
+      <h1 className="text-2xl font-semibold mb-1 text-zinc-900">
         MSA
       </h1>
-      <p className="mb-8 text-center text-[rgb(var(--color-text))]">
+      <p className="mb-8 text-center text-zinc-600">
         Maintenance Software Assistant
       </p>
       <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -22,7 +22,7 @@ export default async function HomePage() {
         </Link>
         <Link
           href="/solicitud"
-          className="rounded-xl border border-zinc-300 dark:border-slate-600 py-3 px-4 text-center font-medium tap-target text-[rgb(var(--color-text))]"
+          className="rounded-xl border border-zinc-300 py-3 px-4 text-center font-medium tap-target text-zinc-700"
         >
           Abrir solicitud
         </Link>

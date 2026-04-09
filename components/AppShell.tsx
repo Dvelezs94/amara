@@ -250,7 +250,7 @@ export function AppShell({
       MSA
      </Link>
      <p className="mt-1 text-xs uppercase tracking-[0.15em] text-neutral-400">
-      Maintenance Support Assistant
+      Maintenance Software Assistant
      </p>
     </div>
     <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
@@ -434,8 +434,8 @@ export function AppShell({
        <ArrowLeft className="h-5 w-5 text-zinc-600" />
       </button>
      )}
-     <Link href="/tareas" className="font-semibold text-[#F14C03] md:hidden">
-      AmiMaint
+     <Link href="/tareas" className="text-lg font-extrabold uppercase tracking-tight text-[#F14C03] md:hidden">
+      MSA
      </Link>
      <div className="ml-auto flex items-center gap-2">
       <div className="hidden min-w-[260px] items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 md:flex">

@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUp,
+  Clock,
   Equal,
 } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -17,6 +18,10 @@ import {
   workOrderKindBadgeClass,
   workOrderKindLabel,
 } from "@/lib/work-order-kind";
+import {
+  formatWorkOrderElapsedCompact,
+  formatWorkOrderElapsedLabel,
+} from "@/lib/work-order-duration";
 
 const statusColors: Record<string, string> = {
   open: "bg-amber-100 text-amber-800",
@@ -66,6 +71,7 @@ export function WorkOrderDetail({
     priority: string;
     kind?: string | null;
     dueDate: string | Date | null;
+    createdAt: string | Date;
     completedAt: string | Date | null;
     asset: { id: string; name: string; assetId: string } | null;
     assignee: { id: string; name: string; avatarUrl?: string | null } | null;
@@ -104,6 +110,15 @@ export function WorkOrderDetail({
   const isCompleted = initial.status === "completed";
   const checklistUnlocked = initial.status === "in_progress";
   const kind = parseWorkOrderKind(initial.kind);
+  const [durationTick, setDurationTick] = useState(0);
+
+  const needsLiveDuration = initial.status === "in_progress";
+
+  useEffect(() => {
+    if (!needsLiveDuration) return;
+    const id = window.setInterval(() => setDurationTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [needsLiveDuration]);
 
   useEffect(() => {
     let cancelled = false;
@@ -953,6 +968,50 @@ export function WorkOrderDetail({
                   {formatDate(initial.dueDate)}
                 </span>
               </div>
+
+              {initial.status !== "open" ? (
+                (() => {
+                  void durationTick;
+                  const nowMs = Date.now();
+                  const compact = formatWorkOrderElapsedCompact(
+                    initial.createdAt,
+                    initial.status,
+                    initial.completedAt,
+                    nowMs
+                  );
+                  const verbose = formatWorkOrderElapsedLabel(
+                    initial.createdAt,
+                    initial.status,
+                    initial.completedAt,
+                    nowMs
+                  );
+                  const label =
+                    initial.status === "completed"
+                      ? "Tiempo total"
+                      : "Tiempo transcurrido";
+                  return (
+                    <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                      <span className="flex items-center gap-1.5 text-zinc-500">
+                        <Clock className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
+                        {label}
+                      </span>
+                      <div className="min-w-0 text-zinc-900">
+                        <span
+                          className="block tabular-nums tracking-tight"
+                          title={verbose}
+                        >
+                          {compact}
+                        </span>
+                        {initial.status === "in_progress" ? (
+                          <span className="mt-1 block text-xs text-zinc-400">
+                            Desde el alta. Actualización cada minuto.
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : null}
 
               {initial.status === "completed" && initial.completedAt ? (
                 <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
