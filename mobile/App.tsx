@@ -3,12 +3,14 @@ import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import {
+  ActivityIndicator,
   Alert,
   BackHandler,
   FlatList,
   Image,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -19,6 +21,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
 
 type AppSection = "workOrders" | "knowledgeBase" | "notifications" | "profile";
 type WoStatus = "open" | "in_progress" | "completed" | "cancelled";
@@ -293,6 +296,42 @@ function absoluteFileUrl(path: string) {
   return `${API_HOST}${path}`;
 }
 
+function looksLikePdf(filename: string | null | undefined, urlOrPath: string): boolean {
+  const name = (filename ?? "").trim().toLowerCase();
+  if (name.endsWith(".pdf")) return true;
+  const pathOnly = urlOrPath.split("?")[0]?.split("#")[0]?.toLowerCase() ?? "";
+  return pathOnly.endsWith(".pdf");
+}
+
+/** Avatar on task list cards: photo when `avatarUrl` exists (same paths as web), else initials ring. */
+function TaskCardAssigneeAvatar({
+  name,
+  avatarUrl,
+}: {
+  name: string | null | undefined;
+  avatarUrl?: string | null;
+}) {
+  const displayName = (name ?? "").trim();
+  const label = displayName || "Asignado";
+  const raw = avatarUrl != null ? String(avatarUrl).trim() : "";
+  const uri = raw !== "" ? absoluteFileUrl(raw) : null;
+  if (uri) {
+    return (
+      <View style={styles.taskCardAvatarWrap} accessibilityLabel={label}>
+        <Image source={{ uri }} style={styles.taskCardAvatarImage} resizeMode="cover" />
+      </View>
+    );
+  }
+  if (displayName) {
+    return (
+      <View style={styles.taskCardAvatarWrap} accessibilityLabel={displayName}>
+        <AssigneeInitialsRing name={displayName} />
+      </View>
+    );
+  }
+  return null;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(path), {
     ...init,
@@ -358,6 +397,7 @@ function AppContent() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
+  const [inlinePdf, setInlinePdf] = useState<{ uri: string; title: string } | null>(null);
 
   const canLogin = username.trim().length > 0 && password.trim().length > 0;
   const firstName = useMemo(() => {
@@ -452,9 +492,13 @@ function AppContent() {
     }
   }
 
-  async function openKnowledgeFile(file: KnowledgeItem) {
+  function openKnowledgeFile(file: KnowledgeItem) {
     const url = absoluteFileUrl(file.fileUrl);
-    await Linking.openURL(url);
+    if (looksLikePdf(file.filename, file.fileUrl)) {
+      setInlinePdf({ uri: url, title: file.filename?.trim() || "PDF" });
+    } else {
+      void Linking.openURL(url);
+    }
   }
 
   async function downloadKnowledgeFile(file: KnowledgeItem) {
@@ -466,9 +510,22 @@ function AppContent() {
       }
       const target = `${baseDir}${Date.now()}-${file.filename}`;
       const result = await FileSystem.downloadAsync(url, target);
-      await Linking.openURL(result.uri);
+      if (looksLikePdf(file.filename, file.fileUrl)) {
+        setInlinePdf({ uri: result.uri, title: file.filename?.trim() || "PDF" });
+      } else {
+        await Linking.openURL(result.uri);
+      }
     } catch (error) {
       setKbError(error instanceof Error ? error.message : "No se pudo descargar el archivo.");
+    }
+  }
+
+  function openAttachmentUrl(fileUrl: string, filename: string) {
+    const url = absoluteFileUrl(fileUrl);
+    if (looksLikePdf(filename, fileUrl)) {
+      setInlinePdf({ uri: url, title: filename.trim() || "PDF" });
+    } else {
+      void Linking.openURL(url);
     }
   }
 
@@ -723,7 +780,7 @@ function AppContent() {
   }, [isLoggedIn, selectedAssigneeId]);
 
   useEffect(() => {
-    setCompletedVisibleCount(10);
+    setCompletedVisibleCount(COMPLETED_INITIAL_VISIBLE);
   }, [selectedAssigneeId, isLoggedIn]);
 
   useEffect(() => {
@@ -749,13 +806,20 @@ function AppContent() {
   }, [activeSection, isLoggedIn, me]);
 
   useEffect(() => {
-    if (Platform.OS !== "android" || !selectedWorkOrderId) return;
+    if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      closeTaskDetail();
-      return true;
+      if (inlinePdf) {
+        setInlinePdf(null);
+        return true;
+      }
+      if (selectedWorkOrderId) {
+        closeTaskDetail();
+        return true;
+      }
+      return false;
     });
     return () => sub.remove();
-  }, [selectedWorkOrderId, closeTaskDetail]);
+  }, [inlinePdf, selectedWorkOrderId, closeTaskDetail]);
 
   useEffect(() => {
     if (!isLoggedIn || selectedWorkOrderId) return;
@@ -1036,13 +1100,19 @@ function AppContent() {
                               <Pressable
                                 key={a.id}
                                 style={styles.attachmentCell}
-                                onPress={() => Linking.openURL(absoluteFileUrl(a.fileUrl))}
+                                onPress={() => openAttachmentUrl(a.fileUrl, a.filename)}
                               >
-                                <Image
-                                  source={{ uri: absoluteFileUrl(a.fileUrl) }}
-                                  style={styles.attachmentThumb}
-                                  resizeMode="cover"
-                                />
+                                {looksLikePdf(a.filename, a.fileUrl) ? (
+                                  <View style={[styles.attachmentThumb, styles.attachmentPdfThumb]}>
+                                    <Ionicons name="document-text" size={32} color={theme.primary} />
+                                  </View>
+                                ) : (
+                                  <Image
+                                    source={{ uri: absoluteFileUrl(a.fileUrl) }}
+                                    style={styles.attachmentThumb}
+                                    resizeMode="cover"
+                                  />
+                                )}
                                 <Text style={styles.attachmentCaption} numberOfLines={1}>
                                   {a.filename}
                                 </Text>
@@ -1252,7 +1322,13 @@ function AppContent() {
                                 <Text style={styles.ongoingHeroTitle}>{w.title}</Text>
                               </Pressable>
                             </View>
-                            <WorkOrderPriorityIconRN priority={w.priority} />
+                            <View style={styles.taskCardAvatarPriorityRow}>
+                              <TaskCardAssigneeAvatar
+                                name={w.assigneeName}
+                                avatarUrl={w.assigneeAvatarUrl}
+                              />
+                              <WorkOrderPriorityIconRN priority={w.priority} />
+                            </View>
                           </View>
                           <View style={styles.ongoingTimerStrip}>
                             <View style={styles.ongoingTimerCol}>
@@ -1347,6 +1423,13 @@ function AppContent() {
                               {kindLabel}
                             </Text>
                           </View>
+                          <View style={styles.pendingCardFooter}>
+                            <TaskCardAssigneeAvatar
+                              name={item.assigneeName}
+                              avatarUrl={item.assigneeAvatarUrl}
+                            />
+                            <WorkOrderPriorityIconRN priority={item.priority} />
+                          </View>
                         </Pressable>
                       );
                     })
@@ -1366,12 +1449,23 @@ function AppContent() {
                           style={styles.completedRowCard}
                           onPress={() => openWorkOrder(item.id)}
                         >
-                          <Text style={styles.completedRowTitle} numberOfLines={1}>
-                            {item.title}
-                          </Text>
-                          <Text style={styles.completedRowMeta}>
-                            {item.folio != null ? `Folio ${item.folio}` : item.id.slice(0, 8)}
-                          </Text>
+                          <View style={styles.completedRowInner}>
+                            <View style={styles.completedRowTextCol}>
+                              <Text style={styles.completedRowTitle} numberOfLines={1}>
+                                {item.title}
+                              </Text>
+                              <Text style={styles.completedRowMeta}>
+                                {item.folio != null ? `Folio ${item.folio}` : item.id.slice(0, 8)}
+                              </Text>
+                            </View>
+                            <View style={styles.taskCardAvatarPriorityRow}>
+                              <TaskCardAssigneeAvatar
+                                name={item.assigneeName}
+                                avatarUrl={item.assigneeAvatarUrl}
+                              />
+                              <WorkOrderPriorityIconRN priority={item.priority} />
+                            </View>
+                          </View>
                         </Pressable>
                       ))}
                       {completedTasks.length > completedVisibleCount ? (
@@ -1597,6 +1691,53 @@ function AppContent() {
           </Pressable>
         </View>
       </View>
+
+      <Modal
+        visible={inlinePdf != null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setInlinePdf(null)}
+      >
+        <View style={[styles.pdfModalRoot, { paddingTop: insets.top }]}>
+          <View style={styles.pdfModalToolbar}>
+            <Pressable
+              onPress={() => setInlinePdf(null)}
+              hitSlop={12}
+              style={styles.pdfModalClose}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar documento"
+            >
+              <Ionicons name="close" size={28} color={theme.zinc700} />
+            </Pressable>
+            <Text style={styles.pdfModalTitle} numberOfLines={1}>
+              {inlinePdf?.title ?? ""}
+            </Text>
+            <View style={styles.pdfModalClose} />
+          </View>
+          {inlinePdf ? (
+            <WebView
+              source={{ uri: inlinePdf.uri }}
+              style={styles.pdfModalWeb}
+              startInLoadingState
+              originWhitelist={["*"]}
+              {...(Platform.OS === "android" ? { mixedContentMode: "always" as const } : {})}
+              renderLoading={() => (
+                <View style={styles.pdfModalLoading}>
+                  <ActivityIndicator size="large" color={theme.primary} />
+                  <Text style={styles.pdfModalLoadingText}>Abriendo PDF…</Text>
+                </View>
+              )}
+              onError={() => {
+                Alert.alert(
+                  "No se pudo mostrar el PDF",
+                  "Prueba Descargar desde la base de conocimiento o abre el enlace en el navegador."
+                );
+              }}
+            />
+          ) : null}
+        </View>
+      </Modal>
+
       <StatusBar style="dark" />
     </SafeAreaView>
   );
@@ -1866,6 +2007,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.zinc50,
   },
   attachmentThumb: { width: "100%", aspectRatio: 1, backgroundColor: theme.zinc100 },
+  attachmentPdfThumb: { alignItems: "center", justifyContent: "center" },
   attachmentCaption: { fontSize: 11, color: theme.zinc500, paddingHorizontal: 6, paddingVertical: 4 },
   activityNote: {
     paddingVertical: 12,
@@ -1914,6 +2056,24 @@ const styles = StyleSheet.create({
   },
   ongoingHeroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
   ongoingHeroTopText: { flex: 1, minWidth: 0 },
+  taskCardAvatarPriorityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingTop: 2,
+  },
+  taskCardAvatarWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: theme.zinc100,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  taskCardAvatarImage: { width: 28, height: 28 },
   ongoingAssetKicker: {
     fontSize: 10,
     fontWeight: "700",
@@ -1994,6 +2154,13 @@ const styles = StyleSheet.create({
   pendingCardTitle: { fontSize: 16, fontWeight: "700", color: theme.zinc900, marginBottom: 10 },
   pendingMetaRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
   pendingMetaText: { flex: 1, fontSize: 13, color: theme.zinc600 },
+  pendingCardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 10,
+  },
   completedRowCard: {
     backgroundColor: theme.white,
     borderRadius: 0,
@@ -2003,6 +2170,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 0,
   },
+  completedRowInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  completedRowTextCol: { flex: 1, minWidth: 0 },
   completedRowTitle: { fontSize: 14, fontWeight: "600", color: theme.zinc800 },
   completedRowMeta: { fontSize: 12, color: theme.zinc500, marginTop: 4 },
   assigneeRing: {
@@ -2218,4 +2391,34 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 12,
   },
+  pdfModalRoot: { flex: 1, backgroundColor: theme.white },
+  pdfModalToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.zinc200,
+    backgroundColor: theme.white,
+  },
+  pdfModalClose: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pdfModalTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "600",
+    color: theme.zinc900,
+    textAlign: "center",
+    marginHorizontal: 4,
+  },
+  pdfModalWeb: { flex: 1, backgroundColor: theme.zinc100 },
+  pdfModalLoading: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: theme.white,
+  },
+  pdfModalLoadingText: { marginTop: 14, fontSize: 14, color: theme.zinc500 },
 });
