@@ -33,6 +33,17 @@ if (!hasRequestPriorityColumn) {
     )
     .run();
 }
+const userColumns = sqlite
+  .prepare("PRAGMA table_info('users')")
+  .all() as Array<{ name?: string }>;
+const hasAvatarBackgroundColorColumn = userColumns.some(
+  (col) => col.name === "avatar_background_color"
+);
+if (!hasAvatarBackgroundColorColumn) {
+  sqlite
+    .prepare("ALTER TABLE users ADD COLUMN avatar_background_color TEXT")
+    .run();
+}
 const workOrderColumns = sqlite
   .prepare("PRAGMA table_info('work_orders')")
   .all() as Array<{ name?: string }>;

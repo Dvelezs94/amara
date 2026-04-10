@@ -1,4 +1,4 @@
-import { userInitials, avatarBackgroundForUserId } from "@/lib/avatar-helpers";
+import { userInitials, resolveAvatarBackgroundColor } from "@/lib/avatar-helpers";
 
 const sizes = {
   sm: "h-8 w-8 text-[10px]",
@@ -10,12 +10,15 @@ export function UserAvatar({
   userId,
   name,
   avatarUrl,
+  avatarBackgroundColor,
   size = "md",
   className = "",
 }: {
   userId: string;
   name: string;
   avatarUrl?: string | null;
+  /** Color de fondo con iniciales (#RRGGBB), desde BD; si falta se deriva del id */
+  avatarBackgroundColor?: string | null;
   size?: keyof typeof sizes;
   className?: string;
 }) {
@@ -33,7 +36,7 @@ export function UserAvatar({
     );
   }
 
-  const bg = avatarBackgroundForUserId(userId);
+  const bg = resolveAvatarBackgroundColor(userId, avatarBackgroundColor);
   return (
     <div
       className={`${sz} ${round} flex items-center justify-center font-bold text-white ${className}`}

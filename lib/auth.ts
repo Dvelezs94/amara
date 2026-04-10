@@ -6,6 +6,7 @@ import { users } from "@/lib/db/schema";
 import { eq, or } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import type { SessionUser, UserRole } from "./auth-shared";
+import { avatarBackgroundForUserId } from "./avatar-helpers";
 
 export type { SessionUser, UserRole } from "./auth-shared";
 export { AVAILABLE_USER_ROLES } from "./auth-shared";
@@ -35,6 +36,7 @@ export async function getSession(): Promise<SessionUser | null> {
         name: true,
         role: true,
         avatarUrl: true,
+        avatarBackgroundColor: true,
       },
     });
     if (!user) return null;
@@ -45,6 +47,7 @@ export async function getSession(): Promise<SessionUser | null> {
       name: user.name,
       role: normalizeRole(user.role),
       avatarUrl: user.avatarUrl ?? null,
+      avatarBackgroundColor: user.avatarBackgroundColor ?? null,
     };
   } catch {
     return null;
@@ -100,6 +103,7 @@ export async function verifyPassword(
     name: user.name,
     role: normalizeRole(user.role),
     avatarUrl: user.avatarUrl ?? null,
+    avatarBackgroundColor: user.avatarBackgroundColor ?? null,
   };
 }
 
@@ -112,6 +116,7 @@ export async function createUser(params: {
 }): Promise<SessionUser> {
   const id = createId();
   const passwordHash = await bcrypt.hash(params.password, 10);
+  const avatarBackgroundColor = avatarBackgroundForUserId(id);
   await db.insert(users).values({
     id,
     username: params.username,
@@ -119,6 +124,7 @@ export async function createUser(params: {
     name: params.name,
     passwordHash,
     role: params.role ?? "operator",
+    avatarBackgroundColor,
   });
   return {
     id,
@@ -127,5 +133,6 @@ export async function createUser(params: {
     name: params.name,
     role: params.role ?? "operator",
     avatarUrl: null,
+    avatarBackgroundColor,
   };
 }

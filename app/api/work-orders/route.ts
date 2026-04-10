@@ -44,6 +44,7 @@ export async function GET(req: Request) {
       assetAssetId: assets.assetId,
       assigneeName: users.name,
       assigneeAvatarUrl: users.avatarUrl,
+      assigneeAvatarBackgroundColor: users.avatarBackgroundColor,
     })
     .from(workOrders)
     .leftJoin(assets, eq(workOrders.assetId, assets.id))
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
     await createNotification({
       userId: body.assigneeId,
       type: "assignment",
-      title: "Nueva orden asignada",
+      title: "Nueva tarea asignada",
       body: title,
       workOrderId: id,
     });

@@ -1,15 +1,27 @@
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
 import { writeUserAvatarImageFile } from "@/lib/user-avatar-file";
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id: targetId } = await params;
+  const target = await db.query.users.findFirst({
+    where: eq(users.id, targetId),
+    columns: { id: true, username: true },
+  });
+  if (!target) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   let formData: FormData;
@@ -40,21 +52,22 @@ export async function POST(req: Request) {
   }
 
   const before = await db.query.users.findFirst({
-    where: eq(users.id, session.id),
+    where: eq(users.id, targetId),
     columns: { avatarUrl: true },
   });
 
   await db
     .update(users)
     .set({ avatarUrl: fileUrl })
-    .where(eq(users.id, session.id));
+    .where(eq(users.id, targetId));
 
   await recordAuditLog({
     entityType: "user",
-    entityId: session.id,
-    action: "avatar_updated",
+    entityId: targetId,
+    action: "avatar_updated_by_admin",
     userId: session.id,
     metadata: {
+      targetUsername: target.username,
       before: before?.avatarUrl ?? null,
       after: fileUrl,
     },

@@ -9,7 +9,13 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const list = await db
-    .select({ id: users.id, name: users.name, username: users.username })
+    .select({
+      id: users.id,
+      name: users.name,
+      username: users.username,
+      avatarUrl: users.avatarUrl,
+      avatarBackgroundColor: users.avatarBackgroundColor,
+    })
     .from(users)
     .orderBy(users.name);
   return NextResponse.json(list);

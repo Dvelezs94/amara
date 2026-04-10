@@ -19,6 +19,8 @@ export async function GET() {
       email: users.email,
       role: users.role,
       createdAt: users.createdAt,
+      avatarUrl: users.avatarUrl,
+      avatarBackgroundColor: users.avatarBackgroundColor,
     })
     .from(users)
     .orderBy(desc(users.createdAt));

@@ -15,6 +15,8 @@ export const users = sqliteTable("users", {
     .notNull()
     .default("operator"),
   avatarUrl: text("avatar_url"),
+  /** Fondo del avatar con iniciales (#RRGGBB); null = derivar de id en cliente */
+  avatarBackgroundColor: text("avatar_background_color"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

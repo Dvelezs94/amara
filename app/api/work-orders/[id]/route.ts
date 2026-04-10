@@ -5,7 +5,6 @@ import { workOrders } from "@/lib/db/schema";
 import { workOrderChecklist } from "@/lib/db/schema";
 import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
-import { notes } from "@/lib/db/schema";
 import { attachments } from "@/lib/db/schema";
 import { eq, desc, max } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
@@ -33,22 +32,30 @@ export async function GET(
     wo.assigneeId
       ? db.query.users.findFirst({
           where: eq(users.id, wo.assigneeId!),
-          columns: { id: true, name: true, email: true, avatarUrl: true },
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+            avatarBackgroundColor: true,
+          },
         })
       : null,
     wo.requesterId
       ? db.query.users.findFirst({
           where: eq(users.id, wo.requesterId),
-          columns: { id: true, name: true, avatarUrl: true },
+          columns: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            avatarBackgroundColor: true,
+          },
         })
       : null,
   ]);
   const checklist = await db.query.workOrderChecklist.findMany({
     where: eq(workOrderChecklist.workOrderId, id),
     orderBy: (items, { asc }) => [asc(items.sortOrder)],
-  });
-  const noteList = await db.query.notes.findMany({
-    where: eq(notes.workOrderId, id),
   });
   const attachmentList = await db.query.attachments.findMany({
     where: eq(attachments.workOrderId, id),
@@ -62,7 +69,6 @@ export async function GET(
     assignee: assignee ?? null,
     requester: requester ?? null,
     checklist,
-    notes: noteList,
     attachments: attachmentList,
   });
 }
@@ -133,7 +139,7 @@ export async function PATCH(
     await createNotification({
       userId: nextAssigneeId,
       type: "assignment",
-      title: "Nueva orden asignada",
+      title: "Nueva tarea asignada",
       body: wo.title,
       workOrderId: id,
     });

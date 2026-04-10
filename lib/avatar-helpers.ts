@@ -33,3 +33,15 @@ export function avatarBackgroundForUserId(userId: string): string {
   const idx = Math.abs(hash) % AVATAR_PALETTE.length;
   return AVATAR_PALETTE[idx]!;
 }
+
+const HEX_BG = /^#[0-9a-fA-F]{6}$/;
+
+/** Usa color guardado en BD si es hex válido; si no, el color derivado del id. */
+export function resolveAvatarBackgroundColor(
+  userId: string,
+  stored: string | null | undefined
+): string {
+  const t = typeof stored === "string" ? stored.trim() : "";
+  if (t && HEX_BG.test(t)) return t;
+  return avatarBackgroundForUserId(userId);
+}

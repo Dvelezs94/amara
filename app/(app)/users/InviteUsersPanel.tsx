@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AVAILABLE_USER_ROLES, type UserRole } from "@/lib/auth-shared";
+import { UserAvatar } from "@/components/UserAvatar";
 
 type AdminUser = {
   id: string;
@@ -10,6 +11,8 @@ type AdminUser = {
   email: string | null;
   role: UserRole;
   createdAt: string;
+  avatarUrl: string | null;
+  avatarBackgroundColor: string | null;
 };
 
 const roleLabel: Record<UserRole, string> = {
@@ -35,6 +38,9 @@ export function InviteUsersPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [password, setPassword] = useState(() => generatePassword());
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  const [uploadingAvatarUserId, setUploadingAvatarUserId] = useState<string | null>(
+    null
+  );
   const [resetModalUser, setResetModalUser] = useState<AdminUser | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
 
@@ -131,6 +137,35 @@ export function InviteUsersPanel() {
       setError("No se pudo resetear la contrasena");
     } finally {
       setResettingUserId(null);
+    }
+  }
+
+  async function uploadAvatarForUser(user: AdminUser, file: File) {
+    setError(null);
+    setSuccess(null);
+    setUploadingAvatarUserId(user.id);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/admin/users/${user.id}/avatar`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo subir la foto");
+        return;
+      }
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === user.id ? { ...u, avatarUrl: data.avatarUrl ?? null } : u
+        )
+      );
+      setSuccess(`Foto de ${user.name} actualizada.`);
+    } catch {
+      setError("No se pudo subir la foto");
+    } finally {
+      setUploadingAvatarUserId(null);
     }
   }
 
@@ -252,16 +287,27 @@ export function InviteUsersPanel() {
         <ul className="mt-3 divide-y divide-zinc-100">
           {users.map((user) => (
             <li key={user.id} className="py-2">
-              <p className="text-sm font-medium text-zinc-900">{user.name}</p>
-              <p className="text-xs text-zinc-500">@{user.username}</p>
-              {user.email ? (
-                <p className="text-xs text-zinc-500">{user.email}</p>
-              ) : null}
-              <p className="text-xs text-zinc-600">
-                Rol: {roleLabel[user.role]} - Alta:{" "}
-                {new Date(user.createdAt).toLocaleDateString()}
-              </p>
-              <div className="mt-2">
+              <div className="flex items-start gap-3">
+                <UserAvatar
+                  userId={user.id}
+                  name={user.name}
+                  avatarUrl={user.avatarUrl}
+                  avatarBackgroundColor={user.avatarBackgroundColor}
+                  size="md"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-zinc-900">{user.name}</p>
+                  <p className="text-xs text-zinc-500">@{user.username}</p>
+                  {user.email ? (
+                    <p className="text-xs text-zinc-500">{user.email}</p>
+                  ) : null}
+                  <p className="text-xs text-zinc-600">
+                    Rol: {roleLabel[user.role]} - Alta:{" "}
+                    {new Date(user.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -275,6 +321,23 @@ export function InviteUsersPanel() {
                     ? "Reseteando..."
                     : "Resetear contrasena"}
                 </button>
+                <label className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                  {uploadingAvatarUserId === user.id
+                    ? "Subiendo foto..."
+                    : "Subir foto"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingAvatarUserId === user.id}
+                    onChange={async (e) => {
+                      const file = e.currentTarget.files?.[0];
+                      e.currentTarget.value = "";
+                      if (!file) return;
+                      await uploadAvatarForUser(user, file);
+                    }}
+                  />
+                </label>
               </div>
             </li>
           ))}

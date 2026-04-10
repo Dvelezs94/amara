@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   Check,
@@ -11,6 +11,7 @@ import {
   ChevronsUp,
   Clock,
   Equal,
+  X,
 } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
 import {
@@ -59,6 +60,43 @@ type ChecklistItem = {
   options?: string[] | null | unknown;
 };
 
+/** Stored file paths from the app (work-order uploads live under `public/uploads/...`). */
+function isWorkOrderStoredUploadPath(s: string): boolean {
+  const p = s.trim();
+  return p.startsWith("/uploads/");
+}
+
+/**
+ * Adjuntos table + checklist photo fields (mobile uploads via `/attachments` and/or saves URL on checklist).
+ */
+function mergeAttachmentsWithChecklistPhotos(
+  attachmentRows: { id: string; fileUrl: string; filename: string }[],
+  checklistItems: ChecklistItem[]
+): { id: string; fileUrl: string; filename: string }[] {
+  const seen = new Set<string>();
+  const out: { id: string; fileUrl: string; filename: string }[] = [];
+  for (const a of attachmentRows) {
+    const url = a.fileUrl.trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({ id: a.id, fileUrl: url, filename: a.filename });
+  }
+  for (const item of checklistItems) {
+    if (item.fieldType !== "photo") continue;
+    const v = item.value;
+    if (typeof v !== "string" || !isWorkOrderStoredUploadPath(v)) continue;
+    const url = v.trim();
+    if (seen.has(url)) continue;
+    seen.add(url);
+    out.push({
+      id: `checklist-photo-${item.id}`,
+      fileUrl: url,
+      filename: item.label ? `${item.label} (checklist)` : "Evidencia checklist",
+    });
+  }
+  return out;
+}
+
 export function WorkOrderDetail({
   initial,
   canEditAssignee = false,
@@ -79,7 +117,6 @@ export function WorkOrderDetail({
     assignee: { id: string; name: string; avatarUrl?: string | null } | null;
     requester: { id: string; name: string; avatarUrl?: string | null } | null;
     checklist: ChecklistItem[];
-    notes: { id: string; body: string; createdAt: string | Date }[];
     attachments: {
       id: string;
       fileUrl: string;
@@ -91,24 +128,15 @@ export function WorkOrderDetail({
 }) {
   const [checklist, setChecklist] = useState(initial.checklist);
   const [attachments, setAttachments] = useState(initial.attachments);
-  const [noteList, setNoteList] = useState(initial.notes);
   const [assigneeId, setAssigneeId] = useState(initial.assignee?.id ?? "");
   const [assigneeUsers, setAssigneeUsers] = useState<Array<{ id: string; name: string }>>([]);
   const [assigneeSaving, setAssigneeSaving] = useState(false);
-  const [newComment, setNewComment] = useState("");
-  const [commentSaving, setCommentSaving] = useState(false);
-  const [commentError, setCommentError] = useState<string | null>(null);
-  const [users, setUsers] = useState<
-    Array<{ id: string; name: string; username: string }>
-  >([]);
-  const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionStart, setMentionStart] = useState<number | null>(null);
-  const [mentionQuery, setMentionQuery] = useState("");
-  const [mentionIndex, setMentionIndex] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [imageLightbox, setImageLightbox] = useState<{ src: string; alt: string } | null>(
+    null
+  );
   const woPhotoInputRef = useRef<HTMLInputElement>(null);
-  const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const isCompleted = initial.status === "completed";
   const checklistUnlocked = initial.status === "in_progress";
   const kind = parseWorkOrderKind(initial.kind);
@@ -121,21 +149,6 @@ export function WorkOrderDetail({
     const id = window.setInterval(() => setDurationTick((t) => t + 1), 60_000);
     return () => clearInterval(id);
   }, [needsLiveDuration]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/users")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) setUsers(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (!cancelled) setUsers([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!canEditAssignee) return;
@@ -156,62 +169,19 @@ export function WorkOrderDetail({
     };
   }, [canEditAssignee]);
 
-  const mentionCandidates = useMemo(() => {
-    if (!mentionOpen) return [];
-    const query = mentionQuery.trim().toLowerCase();
-    const list = users;
-    if (!query) return list.slice(0, 8);
-    return list
-      .filter(
-        (u) =>
-          u.username.toLowerCase().includes(query) ||
-          u.name.toLowerCase().includes(query)
-      )
-      .slice(0, 8);
-  }, [mentionOpen, mentionQuery, users]);
-
-  function closeMentions() {
-    setMentionOpen(false);
-    setMentionStart(null);
-    setMentionQuery("");
-    setMentionIndex(0);
-  }
-
-  function updateMentionState(text: string, caret: number) {
-    const beforeCaret = text.slice(0, caret);
-    const match = beforeCaret.match(/(^|\s)@([a-zA-Z0-9._-]*)$/);
-    if (!match) {
-      closeMentions();
-      return;
+  useEffect(() => {
+    if (!imageLightbox) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setImageLightbox(null);
     }
-    const typed = match[2] ?? "";
-    const atIndex = beforeCaret.lastIndexOf("@");
-    if (atIndex < 0) {
-      closeMentions();
-      return;
-    }
-    setMentionOpen(true);
-    setMentionStart(atIndex);
-    setMentionQuery(typed);
-    setMentionIndex(0);
-  }
-
-  function applyMention(username: string) {
-    if (mentionStart == null) return;
-    const el = commentInputRef.current;
-    if (!el) return;
-    const caret = el.selectionStart ?? newComment.length;
-    const before = newComment.slice(0, mentionStart);
-    const after = newComment.slice(caret);
-    const next = `${before}@${username} ${after}`;
-    setNewComment(next);
-    closeMentions();
-    requestAnimationFrame(() => {
-      const pos = before.length + username.length + 2;
-      el.focus();
-      el.setSelectionRange(pos, pos);
-    });
-  }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [imageLightbox]);
 
   async function uploadWorkOrderPhoto(file: File) {
     const fd = new FormData();
@@ -265,6 +235,18 @@ export function WorkOrderDetail({
     setUploading(true);
     try {
       const row = await uploadWorkOrderPhoto(file);
+      setAttachments((prev) => {
+        if (prev.some((p) => p.fileUrl === row.fileUrl)) return prev;
+        return [
+          {
+            id: row.id,
+            fileUrl: row.fileUrl,
+            filename: row.filename,
+            createdAt: row.createdAt,
+          },
+          ...prev,
+        ];
+      });
       setChecklist((prev) =>
         prev.map((i) =>
           i.id === itemId ? { ...i, value: row.fileUrl } : i
@@ -316,41 +298,6 @@ export function WorkOrderDetail({
     window.location.reload();
   }
 
-  async function addComment(e: React.FormEvent) {
-    e.preventDefault();
-    const body = newComment.trim();
-    if (!body) return;
-    setCommentSaving(true);
-    setCommentError(null);
-    try {
-      const res = await fetch(`/api/work-orders/${initial.id}/notes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setCommentError(
-          typeof data.error === "string" ? data.error : "No se pudo guardar el comentario"
-        );
-        return;
-      }
-      setNoteList((prev) => [
-        {
-          id: data.id,
-          body: data.body ?? body,
-          createdAt: data.createdAt ?? new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-      setNewComment("");
-    } catch {
-      setCommentError("No se pudo guardar el comentario");
-    } finally {
-      setCommentSaving(false);
-    }
-  }
-
   async function updateAssignee(nextAssigneeId: string) {
     if (!canEditAssignee || isCompleted) return;
     const previous = assigneeId;
@@ -394,6 +341,11 @@ export function WorkOrderDetail({
           : initial.status === "cancelled"
             ? "Cancelada"
             : initial.status.replace("_", " ");
+
+  const adjuntosDisplay = useMemo(
+    () => mergeAttachmentsWithChecklistPhotos(attachments, checklist),
+    [attachments, checklist]
+  );
 
   return (
     <div className="space-y-6">
@@ -492,25 +444,25 @@ export function WorkOrderDetail({
             </p>
           </div>
         )}
-        {attachments.length === 0 ? (
+        {adjuntosDisplay.length === 0 ? (
           <p className="text-sm text-zinc-500">Aún no hay fotos adjuntas.</p>
         ) : (
           <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {attachments.map((a) => (
+            {adjuntosDisplay.map((a) => (
               <li key={a.id} className="overflow-hidden rounded-lg border border-zinc-200">
-                <a
-                  href={a.fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block aspect-square bg-zinc-100"
+                <button
+                  type="button"
+                  onClick={() => setImageLightbox({ src: a.fileUrl, alt: a.filename })}
+                  className="tap-target block aspect-square w-full bg-zinc-100 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  aria-label={`Ampliar: ${a.filename}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={a.fileUrl}
-                    alt={a.filename}
-                    className="h-full w-full object-cover"
+                    alt=""
+                    className="pointer-events-none h-full w-full object-cover"
                   />
-                </a>
+                </button>
                 <p title={a.filename} className="truncate px-1 py-1 text-xs text-zinc-500">
                   {a.filename}
                 </p>
@@ -585,19 +537,24 @@ export function WorkOrderDetail({
                         : item.fieldType === "photo" &&
                           typeof item.value === "string" &&
                           item.value.startsWith("/") ? (
-                          <a
-                            href={item.value}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block max-w-xs"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setImageLightbox({
+                                src: item.value as string,
+                                alt: item.label || "Evidencia",
+                              })
+                            }
+                            className="tap-target block max-w-xs rounded-lg border border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                            aria-label={`Ampliar evidencia: ${item.label}`}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={item.value}
-                              alt="Evidencia"
-                              className="max-h-48 rounded-lg border border-zinc-200"
+                              alt=""
+                              className="pointer-events-none max-h-48 rounded-lg border border-zinc-200"
                             />
-                          </a>
+                          </button>
                         ) : item.value != null ? (
                           String(item.value)
                         ) : (
@@ -662,19 +619,24 @@ export function WorkOrderDetail({
                         <div className="space-y-2">
                           {typeof item.value === "string" &&
                             item.value.startsWith("/") && (
-                              <a
-                                href={item.value}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block max-w-xs"
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setImageLightbox({
+                                    src: item.value as string,
+                                    alt: item.label || "Previsualización",
+                                  })
+                                }
+                                className="tap-target block max-w-xs rounded-lg border border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                                aria-label={`Ampliar: ${item.label}`}
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                   src={item.value}
-                                  alt="Previsualización"
-                                  className="max-h-40 rounded-lg border border-zinc-200"
+                                  alt=""
+                                  className="pointer-events-none max-h-40 rounded-lg border border-zinc-200"
                                 />
-                              </a>
+                              </button>
                             )}
                           <input
                             type="file"
@@ -709,102 +671,6 @@ export function WorkOrderDetail({
           )}
         </section>
       )}
-
-      <section className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
-        <div className="border-b border-zinc-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-zinc-900">Actividad</h2>
-          <p className="mt-0.5 text-xs font-medium text-zinc-500">Comentarios</p>
-        </div>
-        <div className="p-4">
-        <form onSubmit={addComment} className="mb-3 space-y-2">
-          <textarea
-            ref={commentInputRef}
-            value={newComment}
-            onChange={(e) => {
-              const next = e.target.value;
-              setNewComment(next);
-              updateMentionState(next, e.target.selectionStart ?? next.length);
-            }}
-            onKeyDown={(e) => {
-              if (!mentionOpen || mentionCandidates.length === 0) return;
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setMentionIndex((prev) => (prev + 1) % mentionCandidates.length);
-                return;
-              }
-              if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setMentionIndex((prev) =>
-                  prev === 0 ? mentionCandidates.length - 1 : prev - 1
-                );
-                return;
-              }
-              if (e.key === "Enter" || e.key === "Tab") {
-                e.preventDefault();
-                const picked = mentionCandidates[mentionIndex];
-                if (picked) applyMention(picked.username);
-                return;
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                closeMentions();
-              }
-            }}
-            rows={3}
-            placeholder="Escribe un comentario... (usa @usuario para etiquetar)"
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          />
-          {mentionOpen && mentionCandidates.length > 0 && (
-            <div className="rounded-md border border-zinc-300 bg-white shadow-sm">
-              <ul className="max-h-48 overflow-y-auto py-1">
-                {mentionCandidates.map((u, idx) => (
-                  <li key={u.id}>
-                    <button
-                      type="button"
-                      onClick={() => applyMention(u.username)}
-                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
-                        idx === mentionIndex ? "bg-zinc-100" : "hover:bg-zinc-50"
-                      }`}
-                    >
-                      <span className="text-zinc-900">{u.name}</span>
-                      <span className="text-zinc-500">@{u.username}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <p className="text-xs text-zinc-500">
-            Puedes etiquetar con <span className="font-semibold">@usuario</span>.
-          </p>
-          {commentError ? <p className="text-xs text-red-600">{commentError}</p> : null}
-          <button
-            type="submit"
-            disabled={commentSaving || !newComment.trim()}
-            className="rounded-lg bg-primary-600 text-white py-2 px-3 text-sm font-medium disabled:opacity-50"
-          >
-            {commentSaving ? "Guardando..." : "Agregar comentario"}
-          </button>
-        </form>
-        {noteList.length === 0 ? (
-          <p className="text-sm text-zinc-500">Aún no hay comentarios.</p>
-        ) : (
-          <ul className="space-y-2">
-            {noteList.map((n) => (
-              <li
-                key={n.id}
-                className="rounded-lg bg-zinc-50 p-3 text-sm text-zinc-900"
-              >
-                {n.body}
-                <p className="mt-1 text-xs text-zinc-400">
-                  {formatDate(n.createdAt)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-        </div>
-      </section>
 
         </div>
 
@@ -1027,6 +893,43 @@ export function WorkOrderDetail({
           </div>
         </aside>
       </div>
+
+      {imageLightbox ? (
+        <div
+          className="fixed inset-0 z-[200] flex flex-col bg-zinc-950/95"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Vista ampliada"
+        >
+          <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-3 sm:px-4">
+            <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">
+              {imageLightbox.alt}
+            </p>
+            <button
+              type="button"
+              onClick={() => setImageLightbox(null)}
+              className="tap-target shrink-0 rounded-lg p-2 text-white hover:bg-white/10"
+              aria-label="Cerrar"
+            >
+              <X className="h-6 w-6" aria-hidden />
+            </button>
+          </div>
+          <button
+            type="button"
+            className="flex min-h-0 flex-1 items-center justify-center p-4 pt-0"
+            onClick={() => setImageLightbox(null)}
+            aria-label="Cerrar vista ampliada"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageLightbox.src}
+              alt={imageLightbox.alt}
+              className="max-h-full max-w-full object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

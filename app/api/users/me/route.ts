@@ -18,6 +18,7 @@ export async function GET() {
     email: session.email,
     role: session.role,
     avatarUrl: session.avatarUrl,
+    avatarBackgroundColor: session.avatarBackgroundColor,
   });
 }
 

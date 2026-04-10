@@ -33,7 +33,10 @@ export async function PATCH(
     email: string | null;
     role: UserRole;
     passwordHash: string;
+    avatarBackgroundColor: string | null;
   }> = {};
+
+  const hexAvatarBg = /^#[0-9a-fA-F]{6}$/;
 
   if (body.name !== undefined) {
     const name = String(body.name).trim();
@@ -74,6 +77,21 @@ export async function PATCH(
       );
     }
     updates.passwordHash = await bcrypt.hash(password, 10);
+  }
+  if (body.avatarBackgroundColor !== undefined) {
+    const raw = body.avatarBackgroundColor;
+    if (raw === null || raw === "") {
+      updates.avatarBackgroundColor = null;
+    } else {
+      const s = String(raw).trim();
+      if (!hexAvatarBg.test(s)) {
+        return NextResponse.json(
+          { error: "Color de avatar invalido (use #RRGGBB)" },
+          { status: 400 }
+        );
+      }
+      updates.avatarBackgroundColor = s;
+    }
   }
 
   if (Object.keys(updates).length === 0) {

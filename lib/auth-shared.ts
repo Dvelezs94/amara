@@ -13,4 +13,5 @@ export type SessionUser = {
   name: string;
   role: UserRole;
   avatarUrl: string | null;
+  avatarBackgroundColor: string | null;
 };

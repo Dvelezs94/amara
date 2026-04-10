@@ -1,7 +1,9 @@
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -13,9 +15,11 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -41,7 +45,10 @@ type WorkOrderListItem = {
   assigneeId: string | null;
   assigneeName: string | null;
   assigneeAvatarUrl?: string | null;
+  assigneeAvatarBackgroundColor?: string | null;
   createdAt?: string;
+  /** When status is completed; used to sort completed list (newest first). */
+  completedAt?: string | null;
   boardSortOrder?: number;
 };
 
@@ -52,6 +59,7 @@ type ChecklistItem = {
   completed: boolean | null;
   value: unknown;
   fieldType: string | null;
+  options?: string[] | null | unknown;
 };
 
 /** All steps done; all fields answered (aligned with web checklist semantics). */
@@ -78,6 +86,46 @@ function isChecklistFullyComplete(checklist: ChecklistItem[]): boolean {
   return true;
 }
 
+function checklistDropdownOptions(item: { options?: unknown }): string[] {
+  const raw = item.options;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === "string");
+}
+
+function parseChecklistDateValue(value: unknown): Date {
+  const fallback = new Date();
+  fallback.setHours(12, 0, 0, 0);
+  if (value == null) return fallback;
+  const s = String(value).trim();
+  if (s.length >= 10) {
+    const iso = s.slice(0, 10);
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (m) {
+      const y = Number(m[1]);
+      const mo = Number(m[2]) - 1;
+      const d = Number(m[3]);
+      const dt = new Date(y, mo, d);
+      if (!Number.isNaN(dt.getTime())) return dt;
+    }
+  }
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)) return new Date(t);
+  return fallback;
+}
+
+function formatDateToChecklistIso(d: Date): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
+}
+
+function formatChecklistDateDisplay(value: unknown): string {
+  if (value == null || String(value).trim() === "") return "";
+  const d = parseChecklistDateValue(value);
+  return d.toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" });
+}
+
 type WorkOrderDetail = {
   id: string;
   folio?: string | number | null;
@@ -89,10 +137,19 @@ type WorkOrderDetail = {
   dueDate: string | null;
   completedAt?: string | null;
   asset: { id: string; name: string; assetId: string } | null;
-  assignee?: { id: string; name: string; avatarUrl?: string | null } | null;
-  requester?: { id: string; name: string; avatarUrl?: string | null } | null;
+  assignee?: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    avatarBackgroundColor?: string | null;
+  } | null;
+  requester?: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    avatarBackgroundColor?: string | null;
+  } | null;
   checklist: ChecklistItem[];
-  notes: { id: string; body: string; createdAt: string }[];
   attachments?: { id: string; fileUrl: string; filename: string; createdAt: string }[];
 };
 
@@ -112,6 +169,7 @@ type CurrentUser = {
   email: string | null;
   role: string;
   avatarUrl: string | null;
+  avatarBackgroundColor?: string | null;
 };
 
 type NotificationItem = {
@@ -128,6 +186,7 @@ type NotificationItem = {
 type UserOption = {
   id: string;
   name: string;
+  username?: string;
 };
 
 const API_HOST = (process.env.EXPO_PUBLIC_API_HOST ?? "").trim().replace(/\/$/, "");
@@ -160,6 +219,40 @@ const theme = {
   red50: "#FEF2F2",
   red600: "#DC2626",
 } as const;
+
+const AVATAR_PALETTE = [
+  "#02257D",
+  "#0D3170",
+  "#3355AA",
+  "#011A5C",
+  "#F14C03",
+  "#C43D02",
+  "#9E9F9F",
+  "#000000",
+  "#6FAF6F",
+  "#E85A0A",
+] as const;
+const HEX_BG = /^#[0-9a-fA-F]{6}$/;
+
+function avatarBackgroundFromSeed(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % AVATAR_PALETTE.length;
+  return AVATAR_PALETTE[idx]!;
+}
+
+function resolveAvatarBackgroundColor(
+  userId: string | null | undefined,
+  name: string,
+  stored: string | null | undefined
+): string {
+  const t = typeof stored === "string" ? stored.trim() : "";
+  if (t !== "" && HEX_BG.test(t)) return t;
+  const seed = (userId ?? "").trim() || name.trim() || "unknown";
+  return avatarBackgroundFromSeed(seed);
+}
 
 type WorkOrderKind = "routine" | "on_demand";
 
@@ -278,14 +371,23 @@ function pendingPriorityBadgeTheme(priority: WoPriority) {
   return { bg: theme.zinc100, fg: theme.zinc600, label: "BAJA" };
 }
 
-function AssigneeInitialsRing({ name }: { name: string }) {
+function AssigneeInitialsRing({
+  name,
+  userId,
+  avatarBackgroundColor,
+}: {
+  name: string;
+  userId?: string | null;
+  avatarBackgroundColor?: string | null;
+}) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const initials =
     parts.length >= 2
       ? `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase()
       : (parts[0]?.slice(0, 2).toUpperCase() ?? "?");
+  const bg = resolveAvatarBackgroundColor(userId, name, avatarBackgroundColor);
   return (
-    <View style={styles.assigneeRing} accessibilityLabel={name}>
+    <View style={[styles.assigneeRing, { backgroundColor: bg, borderColor: bg }]} accessibilityLabel={name}>
       <Text style={styles.assigneeRingText}>{initials}</Text>
     </View>
   );
@@ -303,13 +405,42 @@ function looksLikePdf(filename: string | null | undefined, urlOrPath: string): b
   return pathOnly.endsWith(".pdf");
 }
 
+function looksLikeImageFilename(filename: string): boolean {
+  return /\.(jpe?g|png|gif|webp|bmp)$/i.test(filename.trim());
+}
+
+type KnowledgeFileKind = "pdf" | "image" | "other";
+
+function knowledgeFileKind(filename: string, fileUrl: string): KnowledgeFileKind {
+  if (looksLikePdf(filename, fileUrl)) return "pdf";
+  if (looksLikeImageFilename(filename)) return "image";
+  return "other";
+}
+
+function kbFileIonIcon(kind: KnowledgeFileKind): ComponentProps<typeof Ionicons>["name"] {
+  if (kind === "pdf") return "document-text";
+  if (kind === "image") return "image-outline";
+  return "document-attach-outline";
+}
+
+const KB_CACHE_SUBDIR = "kb-cache";
+
+function kbSafeLocalName(filename: string): string {
+  const base = filename.trim() || "archivo";
+  return base.replace(/[/\\?%*:|"<>]/g, "_").replace(/\s+/g, "_").slice(0, 120);
+}
+
 /** Avatar on task list cards: photo when `avatarUrl` exists (same paths as web), else initials ring. */
 function TaskCardAssigneeAvatar({
   name,
+  userId,
   avatarUrl,
+  avatarBackgroundColor,
 }: {
   name: string | null | undefined;
+  userId?: string | null;
   avatarUrl?: string | null;
+  avatarBackgroundColor?: string | null;
 }) {
   const displayName = (name ?? "").trim();
   const label = displayName || "Asignado";
@@ -325,7 +456,11 @@ function TaskCardAssigneeAvatar({
   if (displayName) {
     return (
       <View style={styles.taskCardAvatarWrap} accessibilityLabel={displayName}>
-        <AssigneeInitialsRing name={displayName} />
+        <AssigneeInitialsRing
+          name={displayName}
+          userId={userId}
+          avatarBackgroundColor={avatarBackgroundColor}
+        />
       </View>
     );
   }
@@ -346,6 +481,76 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(typeof data?.error === "string" ? data.error : "API error");
   }
   return data as T;
+}
+
+type WorkOrderAttachmentUploadResponse = {
+  id: string;
+  fileUrl: string;
+  filename: string;
+  createdAt: string;
+};
+
+function sanitizeUploadFilename(name: string): string {
+  const n = name.trim().replace(/[/\\?%*:|"<>]/g, "_").replace(/^\.+/, "").slice(0, 120);
+  return n || "foto.jpg";
+}
+
+/**
+ * ImagePicker often returns `content://` (Android) or non-file URIs that React Native's
+ * `fetch`+FormData cannot read — that surfaces as "Network request failed". Copy to a
+ * real `file://` path first; then use expo-file-system multipart upload (reliable on device).
+ */
+async function prepareImageFileForUpload(fileUri: string, filename: string): Promise<{
+  localUri: string;
+  removeAfter: boolean;
+}> {
+  const safeName = sanitizeUploadFilename(filename);
+  if (fileUri.startsWith("file://")) {
+    return { localUri: fileUri, removeAfter: false };
+  }
+  const base = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+  if (!base) {
+    throw new Error("No hay carpeta temporal para preparar la foto.");
+  }
+  const dest = `${base}wo-upload-${Date.now()}-${safeName}`;
+  await FileSystem.copyAsync({ from: fileUri, to: dest });
+  return { localUri: dest, removeAfter: true };
+}
+
+async function apiUploadWorkOrderImage(
+  workOrderId: string,
+  fileUri: string,
+  filename: string,
+  mimeType: string
+): Promise<WorkOrderAttachmentUploadResponse> {
+  const safeName = sanitizeUploadFilename(filename);
+  const mime = mimeType?.trim() || "image/jpeg";
+  const url = apiUrl(`/api/work-orders/${workOrderId}/attachments`);
+
+  const { localUri, removeAfter } = await prepareImageFileForUpload(fileUri, safeName);
+  try {
+    const form = new FormData();
+    form.append(
+      "file",
+      { uri: localUri, name: safeName, type: mime } as unknown as Blob
+    );
+    const res = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        typeof data?.error === "string" ? data.error : "No se pudo subir la imagen"
+      );
+    }
+    return data as WorkOrderAttachmentUploadResponse;
+  } finally {
+    if (removeAfter) {
+      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => undefined);
+    }
+  }
 }
 
 export default function App() {
@@ -380,7 +585,21 @@ function AppContent() {
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [newComment, setNewComment] = useState("");
+  const [workOrdersRefreshing, setWorkOrdersRefreshing] = useState(false);
+  const [detailRefreshing, setDetailRefreshing] = useState(false);
+  const [notificationsRefreshing, setNotificationsRefreshing] = useState(false);
+  /** Draft strings for number fields while editing (allows "12." before blur). */
+  const [checklistNumberDraft, setChecklistNumberDraft] = useState<Record<string, string>>({});
+  const [checklistDropdownModal, setChecklistDropdownModal] = useState<{
+    itemId: string;
+    label: string;
+    options: string[];
+  } | null>(null);
+  const [checklistPhotoUploadingId, setChecklistPhotoUploadingId] = useState<string | null>(null);
+  const [checklistDatePicker, setChecklistDatePicker] = useState<{
+    itemId: string;
+    draft: Date;
+  } | null>(null);
 
   const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
   const [kbLoading, setKbLoading] = useState(false);
@@ -398,6 +617,8 @@ function AppContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const [inlinePdf, setInlinePdf] = useState<{ uri: string; title: string } | null>(null);
+  const [inlineImage, setInlineImage] = useState<{ uri: string; title: string } | null>(null);
+  const [kbOpeningId, setKbOpeningId] = useState<string | null>(null);
 
   const canLogin = username.trim().length > 0 && password.trim().length > 0;
   const firstName = useMemo(() => {
@@ -441,10 +662,21 @@ function AppContent() {
     return list;
   }, [pendingOpenTasks, pendingSortByPriority]);
 
-  const completedTasks = useMemo(
-    () => workOrders.filter((w) => w.status === "completed"),
-    [workOrders]
-  );
+  const completedTasks = useMemo(() => {
+    const list = workOrders.filter((w) => w.status === "completed");
+    function sortTime(w: WorkOrderListItem): number {
+      if (w.completedAt) {
+        const t = new Date(w.completedAt).getTime();
+        if (!Number.isNaN(t)) return t;
+      }
+      if (w.createdAt) {
+        const t = new Date(w.createdAt).getTime();
+        if (!Number.isNaN(t)) return t;
+      }
+      return 0;
+    }
+    return [...list].sort((a, b) => sortTime(b) - sortTime(a));
+  }, [workOrders]);
   const completedTasksVisible = useMemo(
     () => completedTasks.slice(0, completedVisibleCount),
     [completedTasks, completedVisibleCount]
@@ -485,45 +717,58 @@ function AppContent() {
       const data = await apiFetch<KnowledgeItem[]>("/api/knowledge-base");
       setKnowledge(Array.isArray(data) ? data : []);
     } catch (error) {
-      setKbError(error instanceof Error ? error.message : "No se pudo cargar base de conocimiento.");
+      setKbError(error instanceof Error ? error.message : "No se pudo cargar la biblioteca.");
       setKnowledge([]);
     } finally {
       setKbLoading(false);
     }
   }
 
-  function openKnowledgeFile(file: KnowledgeItem) {
-    const url = absoluteFileUrl(file.fileUrl);
-    if (looksLikePdf(file.filename, file.fileUrl)) {
-      setInlinePdf({ uri: url, title: file.filename?.trim() || "PDF" });
-    } else {
-      void Linking.openURL(url);
-    }
-  }
-
-  async function downloadKnowledgeFile(file: KnowledgeItem) {
+  async function openKnowledgeItem(item: KnowledgeItem) {
+    setKbError(null);
+    setKbOpeningId(item.id);
     try {
-      const url = absoluteFileUrl(file.fileUrl);
-      const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+      const remoteUrl = absoluteFileUrl(item.fileUrl);
+      const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
       if (!baseDir) {
         throw new Error("No hay almacenamiento disponible en el dispositivo.");
       }
-      const target = `${baseDir}${Date.now()}-${file.filename}`;
-      const result = await FileSystem.downloadAsync(url, target);
-      if (looksLikePdf(file.filename, file.fileUrl)) {
-        setInlinePdf({ uri: result.uri, title: file.filename?.trim() || "PDF" });
+      const dir = `${baseDir}${KB_CACHE_SUBDIR}/`;
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
+      const localPath = `${dir}${item.id}_${kbSafeLocalName(item.filename)}`;
+      const info = await FileSystem.getInfoAsync(localPath);
+      let localUri = localPath;
+      if (!info.exists) {
+        const result = await FileSystem.downloadAsync(remoteUrl, localPath);
+        localUri = result.uri;
+      }
+      const kind = knowledgeFileKind(item.filename, item.fileUrl);
+      const title = item.filename?.trim() || "Documento";
+      if (kind === "image") {
+        setInlineImage({ uri: localUri, title });
       } else {
-        await Linking.openURL(result.uri);
+        setInlinePdf({ uri: localUri, title });
       }
     } catch (error) {
-      setKbError(error instanceof Error ? error.message : "No se pudo descargar el archivo.");
+      setKbError(error instanceof Error ? error.message : "No se pudo abrir el archivo.");
+    } finally {
+      setKbOpeningId(null);
     }
+  }
+
+  function openWorkOrderImageLightbox(fileUrl: string, title: string) {
+    setInlineImage({
+      uri: absoluteFileUrl(fileUrl),
+      title: title.trim() || "Imagen",
+    });
   }
 
   function openAttachmentUrl(fileUrl: string, filename: string) {
     const url = absoluteFileUrl(fileUrl);
     if (looksLikePdf(filename, fileUrl)) {
       setInlinePdf({ uri: url, title: filename.trim() || "PDF" });
+    } else if (looksLikeImageFilename(filename) || /\.(jpe?g|png|gif|webp|bmp)(\?|$)/i.test(fileUrl)) {
+      openWorkOrderImageLightbox(fileUrl, filename);
     } else {
       void Linking.openURL(url);
     }
@@ -557,6 +802,34 @@ function AppContent() {
       setUnreadCount(0);
     } finally {
       setNotificationsLoading(false);
+    }
+  }
+
+  async function refreshWorkOrdersFeed() {
+    setWorkOrdersRefreshing(true);
+    try {
+      await Promise.all([loadWorkOrders(), loadUsers()]);
+    } finally {
+      setWorkOrdersRefreshing(false);
+    }
+  }
+
+  async function refreshSelectedWorkOrderDetail() {
+    if (!selectedWorkOrderId) return;
+    setDetailRefreshing(true);
+    try {
+      await openWorkOrder(selectedWorkOrderId);
+    } finally {
+      setDetailRefreshing(false);
+    }
+  }
+
+  async function refreshNotificationsFeed() {
+    setNotificationsRefreshing(true);
+    try {
+      await loadNotifications();
+    } finally {
+      setNotificationsRefreshing(false);
     }
   }
 
@@ -649,31 +922,92 @@ function AppContent() {
 
   async function updateChecklist(itemId: string, payload: { completed?: boolean; value?: unknown }) {
     if (!selectedWorkOrder) return;
+    const woId = selectedWorkOrder.id;
+    const snapshot = selectedWorkOrder;
+    setSelectedWorkOrder((wo) => {
+      if (!wo) return wo;
+      return {
+        ...wo,
+        checklist: wo.checklist.map((i) => {
+          if (i.id !== itemId) return i;
+          return {
+            ...i,
+            ...(payload.completed !== undefined ? { completed: payload.completed } : {}),
+            ...(payload.value !== undefined ? { value: payload.value } : {}),
+          };
+        }),
+      };
+    });
     try {
-      await apiFetch<{ ok: true }>(`/api/work-orders/${selectedWorkOrder.id}/checklist`, {
+      await apiFetch<{ ok: true }>(`/api/work-orders/${woId}/checklist`, {
         method: "PATCH",
         body: JSON.stringify({ itemId, ...payload }),
       });
-      await openWorkOrder(selectedWorkOrder.id);
     } catch (error) {
+      setSelectedWorkOrder(snapshot);
       setDetailError(error instanceof Error ? error.message : "No se pudo actualizar checklist.");
     }
   }
 
-  async function addComment() {
-    if (!selectedWorkOrder) return;
-    const body = newComment.trim();
-    if (!body) return;
+  async function finalizeChecklistPhotoFromPicker(
+    itemId: string,
+    result: ImagePicker.ImagePickerResult
+  ) {
+    if (result.canceled || !result.assets?.[0]) return;
+    const wo = selectedWorkOrder;
+    if (!wo) return;
+    const asset = result.assets[0];
+    setChecklistPhotoUploadingId(itemId);
+    setDetailError(null);
     try {
-      await apiFetch<{ id: string }>(`/api/work-orders/${selectedWorkOrder.id}/notes`, {
-        method: "POST",
-        body: JSON.stringify({ body }),
-      });
-      setNewComment("");
-      await openWorkOrder(selectedWorkOrder.id);
+      const mime = asset.mimeType ?? "image/jpeg";
+      let filename =
+        asset.fileName?.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "").slice(0, 120) ?? "";
+      if (!filename) {
+        const ext = mime.includes("png") ? ".png" : mime.includes("webp") ? ".webp" : ".jpg";
+        filename = `evidencia${ext}`;
+      }
+      const uploaded = await apiUploadWorkOrderImage(wo.id, asset.uri, filename, mime);
+      await updateChecklist(itemId, { value: uploaded.fileUrl });
     } catch (error) {
-      setDetailError(error instanceof Error ? error.message : "No se pudo agregar comentario.");
+      setDetailError(error instanceof Error ? error.message : "No se pudo subir la foto.");
+    } finally {
+      setChecklistPhotoUploadingId(null);
     }
+  }
+
+  async function pickChecklistPhotoFromCamera(itemId: string) {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permiso", "Se necesita acceso a la camara para tomar la foto.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images"],
+      quality: 0.85,
+    });
+    await finalizeChecklistPhotoFromPicker(itemId, result);
+  }
+
+  async function pickChecklistPhotoFromLibrary(itemId: string) {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permiso", "Se necesita acceso a la galeria para elegir una foto.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.85,
+    });
+    await finalizeChecklistPhotoFromPicker(itemId, result);
+  }
+
+  function openChecklistPhotoSourcePicker(itemId: string) {
+    Alert.alert("Evidencia", "Elige el origen de la foto", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Camara", onPress: () => void pickChecklistPhotoFromCamera(itemId) },
+      { text: "Galeria", onPress: () => void pickChecklistPhotoFromLibrary(itemId) },
+    ]);
   }
 
   async function updateMyPassword() {
@@ -808,6 +1142,10 @@ function AppContent() {
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (inlineImage) {
+        setInlineImage(null);
+        return true;
+      }
       if (inlinePdf) {
         setInlinePdf(null);
         return true;
@@ -819,7 +1157,7 @@ function AppContent() {
       return false;
     });
     return () => sub.remove();
-  }, [inlinePdf, selectedWorkOrderId, closeTaskDetail]);
+  }, [inlineImage, inlinePdf, selectedWorkOrderId, closeTaskDetail]);
 
   useEffect(() => {
     if (!isLoggedIn || selectedWorkOrderId) return;
@@ -828,10 +1166,17 @@ function AppContent() {
     return () => clearInterval(id);
   }, [isLoggedIn, selectedWorkOrderId, workOrders]);
 
+  useEffect(() => {
+    setChecklistNumberDraft({});
+  }, [selectedWorkOrderId]);
+
+  useEffect(() => {
+    setChecklistDropdownModal(null);
+    setChecklistPhotoUploadingId(null);
+    setChecklistDatePicker(null);
+  }, [selectedWorkOrderId]);
+
   const detailCanEditChecklist = selectedWorkOrder?.status === "in_progress";
-  const detailOrderFinished =
-    selectedWorkOrder?.status === "completed" ||
-    selectedWorkOrder?.status === "cancelled";
 
   if (!isLoggedIn) {
     return (
@@ -925,20 +1270,32 @@ function AppContent() {
         <View style={styles.contentArea}>
           {activeSection === "workOrders" ? (
             selectedWorkOrderId ? (
-              <ScrollView
-                contentContainerStyle={styles.detailContent}
-                showsVerticalScrollIndicator={false}
-                showsHorizontalScrollIndicator={false}
-              >
+              <View style={styles.detailKeyboardAvoid}>
+                <ScrollView
+                  style={styles.detailScroll}
+                  contentContainerStyle={styles.detailContent}
+                  showsVerticalScrollIndicator={false}
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="interactive"
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={detailRefreshing}
+                      onRefresh={() => {
+                        void refreshSelectedWorkOrderDetail();
+                      }}
+                    />
+                  }
+                >
                 <View style={styles.detailTopBar}>
                   <Pressable style={styles.backIconButton} onPress={closeTaskDetail}>
                     <Ionicons name="arrow-back" size={20} color={theme.zinc600} />
                   </Pressable>
                 </View>
                 {detailLoading ? (
-                  <Text style={[styles.cardMeta, styles.screenPadH]}>Cargando detalle...</Text>
+                  <Text style={styles.cardMeta}>Cargando detalle...</Text>
                 ) : detailError ? (
-                  <Text style={[styles.errorText, styles.screenPadH]}>{detailError}</Text>
+                  <Text style={styles.errorText}>{detailError}</Text>
                 ) : selectedWorkOrder ? (
                   <>
                     <View style={styles.detailBreadcrumb}>
@@ -980,9 +1337,11 @@ function AppContent() {
                       </View>
                     </View>
 
-                    <View style={styles.detailSection}>
-                      <Text style={styles.detailSectionTitle}>Detalles</Text>
-                      <View style={styles.detailSectionBody}>
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Text style={styles.detailCardHeaderTitle}>Detalles</Text>
+                      </View>
+                      <View style={styles.detailCardBody}>
                         <View style={styles.detailRow}>
                           <Text style={styles.detailRowLabel}>Tipo</Text>
                           <View style={styles.detailRowValue}>
@@ -1064,9 +1423,11 @@ function AppContent() {
                       </View>
                     </View>
 
-                    <View style={styles.detailSection}>
-                      <Text style={styles.detailSectionTitle}>Descripción</Text>
-                      <View style={styles.detailSectionBody}>
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Text style={styles.detailCardHeaderTitle}>Descripción</Text>
+                      </View>
+                      <View style={styles.detailCardBody}>
                         {selectedWorkOrder.description ? (
                           <Text style={styles.detailDescriptionText}>{selectedWorkOrder.description}</Text>
                         ) : (
@@ -1081,7 +1442,8 @@ function AppContent() {
                           <Text style={styles.secondaryButtonText}>Iniciar</Text>
                         </Pressable>
                       ) : null}
-                      {selectedWorkOrder.status === "in_progress" ? (
+                      {selectedWorkOrder.status === "in_progress" &&
+                      selectedWorkOrder.checklist.length === 0 ? (
                         <Pressable style={styles.secondaryButton} onPress={() => updateStatus("completed")}>
                           <Text style={styles.secondaryButtonText}>Completar</Text>
                         </Pressable>
@@ -1089,12 +1451,14 @@ function AppContent() {
                     </View>
 
                     {(selectedWorkOrder.attachments?.length ?? 0) > 0 ? (
-                      <View style={styles.detailSection}>
-                        <Text style={styles.detailSectionTitle}>Adjuntos</Text>
-                        <Text style={styles.detailSectionSubtitle}>
-                          Fotos y evidencias de la tarea
-                        </Text>
-                        <View style={styles.detailSectionBody}>
+                      <View style={styles.detailCard}>
+                        <View style={styles.detailCardHeader}>
+                          <Text style={styles.detailCardHeaderTitle}>Adjuntos</Text>
+                          <Text style={styles.detailCardHeaderSub}>
+                            Fotos y evidencias de la tarea
+                          </Text>
+                        </View>
+                        <View style={styles.detailCardBody}>
                           <View style={styles.attachmentGrid}>
                             {(selectedWorkOrder.attachments ?? []).map((a) => (
                               <Pressable
@@ -1124,105 +1488,427 @@ function AppContent() {
                     ) : null}
 
                     {selectedWorkOrder.checklist.length > 0 ? (
-                      <View style={styles.detailSection}>
-                        <Text style={styles.detailSectionTitle}>Checklist</Text>
-                        <View style={styles.detailSectionBody}>
+                      <View style={styles.detailCard}>
+                        <View style={styles.detailCardHeader}>
+                          <Text style={styles.detailCardHeaderTitle}>Checklist</Text>
+                        </View>
+                        <View style={styles.detailCardBody}>
                           {selectedWorkOrder.status === "open" ? (
                             <Text style={styles.checklistHint}>
                               Cambia el estado a <Text style={styles.checklistHintStrong}>En curso</Text> para
                               editar el checklist.
                             </Text>
                           ) : null}
-                          {selectedWorkOrder.checklist.map((item) => (
-                            <View key={item.id} style={styles.checklistCard}>
-                              <View style={styles.checklistHeader}>
-                                <View
-                                  style={[
-                                    styles.checkBullet,
-                                    item.completed ? styles.checkBulletDone : styles.checkBulletTodo,
-                                  ]}
-                                />
-                                <Text style={styles.cardTitle}>{item.label}</Text>
-                              </View>
-                              {item.type === "step" ? (
-                                detailCanEditChecklist ? (
+                          {selectedWorkOrder.checklist.map((item) =>
+                            item.type === "step" ? (
+                              <Pressable
+                                key={item.id}
+                                style={[
+                                  styles.checklistCard,
+                                  !detailCanEditChecklist && styles.checklistCardDisabled,
+                                ]}
+                                onPress={() =>
+                                  detailCanEditChecklist &&
+                                  void updateChecklist(item.id, {
+                                    completed: !(item.completed ?? false),
+                                  })
+                                }
+                                disabled={!detailCanEditChecklist}
+                                accessibilityRole="checkbox"
+                                accessibilityState={{ checked: item.completed === true, disabled: !detailCanEditChecklist }}
+                                accessibilityLabel={item.label}
+                              >
+                                <View style={styles.checklistStepRow}>
+                                  <View
+                                    style={[
+                                      styles.checklistStepBox,
+                                      item.completed ? styles.checklistStepBoxOn : styles.checklistStepBoxOff,
+                                    ]}
+                                  >
+                                    {item.completed ? (
+                                      <Ionicons name="checkmark" size={16} color={theme.white} />
+                                    ) : null}
+                                  </View>
+                                  <Text
+                                    style={[
+                                      styles.checklistStepLabel,
+                                      item.completed ? styles.checklistStepLabelDone : null,
+                                    ]}
+                                  >
+                                    {item.label}
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            ) : (
+                              <View key={item.id} style={styles.checklistCard}>
+                                <Text style={styles.checklistFieldLabel}>{item.label}</Text>
+                                {!detailCanEditChecklist ? (
+                                  item.fieldType === "photo" &&
+                                  typeof item.value === "string" &&
+                                  item.value.startsWith("/") ? (
+                                    <Pressable
+                                      onPress={() =>
+                                        openWorkOrderImageLightbox(item.value as string, item.label)
+                                      }
+                                      accessibilityRole="button"
+                                      accessibilityLabel={`Ampliar foto: ${item.label}`}
+                                    >
+                                      <Image
+                                        source={{ uri: absoluteFileUrl(item.value) }}
+                                        style={styles.checklistPhotoPreview}
+                                        resizeMode="cover"
+                                      />
+                                    </Pressable>
+                                  ) : (
+                                    <Text style={styles.checklistFieldReadOnly}>
+                                      {item.fieldType === "checkbox"
+                                        ? item.value === true
+                                          ? "Sí"
+                                          : "No"
+                                        : item.value != null && String(item.value).trim() !== ""
+                                          ? String(item.value)
+                                          : "—"}
+                                    </Text>
+                                  )
+                                ) : item.fieldType === "checkbox" ? (
+                                  <View style={styles.checklistCheckboxRow}>
+                                    <Switch
+                                      value={item.value === true}
+                                      onValueChange={(v) => void updateChecklist(item.id, { value: v })}
+                                      trackColor={{ false: theme.zinc200, true: theme.primary100 }}
+                                      thumbColor={item.value === true ? theme.primary : theme.zinc400}
+                                    />
+                                    <Text style={styles.checklistCheckboxHint}>Marcar si aplica</Text>
+                                  </View>
+                                ) : item.fieldType === "number" ? (
+                                  <TextInput
+                                    value={
+                                      checklistNumberDraft[item.id] !== undefined
+                                        ? checklistNumberDraft[item.id]!
+                                        : item.value != null && item.value !== ""
+                                          ? String(item.value)
+                                          : ""
+                                    }
+                                    onFocus={() =>
+                                      setChecklistNumberDraft((d) => ({
+                                        ...d,
+                                        [item.id]:
+                                          item.value != null && item.value !== ""
+                                            ? String(item.value)
+                                            : "",
+                                      }))
+                                    }
+                                    onChangeText={(text) => {
+                                      setChecklistNumberDraft((d) => ({ ...d, [item.id]: text }));
+                                    }}
+                                    onBlur={() => {
+                                      const text = checklistNumberDraft[item.id] ?? "";
+                                      setChecklistNumberDraft((d) => {
+                                        const next = { ...d };
+                                        delete next[item.id];
+                                        return next;
+                                      });
+                                      const trimmed = text.trim();
+                                      if (trimmed === "") {
+                                        void updateChecklist(item.id, { value: null });
+                                        return;
+                                      }
+                                      const n = Number(trimmed.replace(",", "."));
+                                      void updateChecklist(item.id, {
+                                        value: Number.isFinite(n) ? n : null,
+                                      });
+                                    }}
+                                    placeholder="Número"
+                                    placeholderTextColor={theme.zinc400}
+                                    keyboardType="decimal-pad"
+                                    style={styles.input}
+                                  />
+                                ) : item.fieldType === "date" ? (
                                   <Pressable
-                                    style={styles.ghostButton}
+                                    style={styles.checklistDropdownTrigger}
                                     onPress={() =>
-                                      updateChecklist(item.id, { completed: !(item.completed ?? false) })
+                                      setChecklistDatePicker({
+                                        itemId: item.id,
+                                        draft: parseChecklistDateValue(item.value),
+                                      })
                                     }
                                   >
-                                    <Text style={styles.ghostButtonText}>
-                                      {item.completed ? "Marcar pendiente" : "Marcar completado"}
+                                    <Ionicons name="calendar-outline" size={22} color={theme.zinc600} />
+                                    <Text
+                                      style={[
+                                        styles.checklistDropdownTriggerText,
+                                        (!item.value || String(item.value).trim() === "") && {
+                                          color: theme.zinc400,
+                                        },
+                                      ]}
+                                      numberOfLines={1}
+                                    >
+                                      {formatChecklistDateDisplay(item.value) || "Seleccionar fecha"}
                                     </Text>
+                                    <Ionicons name="chevron-down" size={20} color={theme.zinc600} />
                                   </Pressable>
-                                ) : null
-                              ) : detailCanEditChecklist ? (
-                                <TextInput
-                                  value={item.value != null ? String(item.value) : ""}
-                                  placeholder="Escribir valor"
-                                  placeholderTextColor={theme.zinc400}
-                                  style={styles.input}
-                                  onEndEditing={(e) =>
-                                    updateChecklist(item.id, { value: e.nativeEvent.text ?? "" })
-                                  }
-                                />
-                              ) : (
-                                <Text style={styles.checklistFieldReadOnly}>
-                                  {item.value != null && String(item.value).trim() !== ""
-                                    ? String(item.value)
-                                    : "—"}
-                                </Text>
-                              )}
-                            </View>
-                          ))}
+                                ) : item.fieldType === "dropdown" ? (
+                                  checklistDropdownOptions(item).length === 0 ? (
+                                    <Text style={styles.detailRowMuted}>Sin opciones configuradas.</Text>
+                                  ) : (
+                                    <Pressable
+                                      style={styles.checklistDropdownTrigger}
+                                      onPress={() =>
+                                        setChecklistDropdownModal({
+                                          itemId: item.id,
+                                          label: item.label,
+                                          options: checklistDropdownOptions(item),
+                                        })
+                                      }
+                                    >
+                                      <Text
+                                        style={styles.checklistDropdownTriggerText}
+                                        numberOfLines={1}
+                                      >
+                                        {item.value != null && String(item.value).trim() !== ""
+                                          ? String(item.value)
+                                          : "Seleccionar…"}
+                                      </Text>
+                                      <Ionicons name="chevron-down" size={22} color={theme.zinc600} />
+                                    </Pressable>
+                                  )
+                                ) : item.fieldType === "photo" ? (
+                                  <View style={styles.checklistPhotoEditor}>
+                                    {checklistPhotoUploadingId === item.id ? (
+                                      <View style={styles.checklistPhotoUploading}>
+                                        <ActivityIndicator color={theme.primary} />
+                                        <Text style={styles.helpText}>Subiendo…</Text>
+                                      </View>
+                                    ) : (
+                                      <>
+                                        {typeof item.value === "string" &&
+                                        item.value.startsWith("/") ? (
+                                          <Pressable
+                                            onPress={() =>
+                                              openWorkOrderImageLightbox(item.value as string, item.label)
+                                            }
+                                            accessibilityRole="button"
+                                            accessibilityLabel={`Ampliar foto: ${item.label}`}
+                                          >
+                                            <Image
+                                              source={{ uri: absoluteFileUrl(item.value) }}
+                                              style={styles.checklistPhotoPreview}
+                                              resizeMode="cover"
+                                            />
+                                          </Pressable>
+                                        ) : null}
+                                        <Pressable
+                                          style={styles.checklistPhotoActionBtn}
+                                          onPress={() => openChecklistPhotoSourcePicker(item.id)}
+                                        >
+                                          <Ionicons name="camera-outline" size={20} color={theme.primary} />
+                                          <Text style={styles.checklistPhotoActionText}>
+                                            {typeof item.value === "string" && item.value.startsWith("/")
+                                              ? "Cambiar foto (camara o galeria)"
+                                              : "Tomar o elegir foto"}
+                                          </Text>
+                                        </Pressable>
+                                      </>
+                                    )}
+                                  </View>
+                                ) : (
+                                  <TextInput
+                                    value={item.value != null ? String(item.value) : ""}
+                                    onChangeText={(text) =>
+                                      void updateChecklist(item.id, { value: text })
+                                    }
+                                    placeholder="Escribir valor"
+                                    placeholderTextColor={theme.zinc400}
+                                    style={styles.input}
+                                  />
+                                )}
+                              </View>
+                            )
+                          )}
+                          {detailCanEditChecklist ? (
+                            <Pressable
+                              style={styles.checklistCompleteTaskButton}
+                              onPress={() => updateStatus("completed")}
+                              accessibilityRole="button"
+                              accessibilityLabel="Completar tarea"
+                            >
+                              <Text style={styles.checklistCompleteTaskButtonText}>Completar tarea</Text>
+                            </Pressable>
+                          ) : null}
                         </View>
                       </View>
                     ) : null}
-
-                    <View style={styles.detailSection}>
-                      <Text style={styles.detailSectionTitle}>Actividad</Text>
-                      <Text style={styles.detailSectionSubtitle}>Comentarios</Text>
-                      <View style={styles.detailSectionBody}>
-                        {detailOrderFinished ? (
-                          <Text style={styles.helpText}>
-                            Esta tarea está cerrada; no se pueden agregar comentarios.
-                          </Text>
-                        ) : (
-                          <>
-                            <Text style={styles.helpText}>
-                              Puedes etiquetar con <Text style={styles.checklistHintStrong}>@usuario</Text>.
-                            </Text>
-                            <TextInput
-                              value={newComment}
-                              onChangeText={setNewComment}
-                              placeholder="Escribe un comentario... (usa @usuario para etiquetar)"
-                              placeholderTextColor={theme.zinc400}
-                              multiline
-                              style={styles.textarea}
-                            />
-                            <Pressable style={styles.secondaryButton} onPress={addComment}>
-                              <Text style={styles.secondaryButtonText}>Agregar comentario</Text>
-                            </Pressable>
-                          </>
-                        )}
-                        {selectedWorkOrder.notes.length === 0 ? (
-                          <Text style={styles.detailRowMuted}>Aún no hay comentarios.</Text>
-                        ) : (
-                          selectedWorkOrder.notes.map((note) => (
-                            <View key={note.id} style={styles.activityNote}>
-                              <Text style={styles.activityNoteBody}>{note.body}</Text>
-                              <Text style={styles.activityNoteMeta}>
-                                {formatWoDetailDate(note.createdAt)}
-                              </Text>
-                            </View>
-                          ))
-                        )}
-                      </View>
-                    </View>
                   </>
                 ) : null}
-              </ScrollView>
+                </ScrollView>
+
+                <Modal
+                  visible={checklistDropdownModal != null}
+                  transparent
+                  animationType="fade"
+                  onRequestClose={() => setChecklistDropdownModal(null)}
+                >
+                  <View style={styles.checklistDropdownModalRoot}>
+                    <Pressable
+                      style={styles.checklistDropdownBackdrop}
+                      onPress={() => setChecklistDropdownModal(null)}
+                    />
+                    <View
+                      style={[
+                        styles.checklistDropdownSheet,
+                        { paddingBottom: Math.max(insets.bottom, 16) },
+                      ]}
+                    >
+                      <Text style={styles.checklistDropdownSheetTitle} numberOfLines={2}>
+                        {checklistDropdownModal?.label ?? ""}
+                      </Text>
+                      <ScrollView
+                        style={styles.checklistDropdownScroll}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator
+                      >
+                        {checklistDropdownModal ? (
+                          <>
+                            <Pressable
+                              style={styles.checklistDropdownOption}
+                              onPress={() => {
+                                void updateChecklist(checklistDropdownModal.itemId, { value: null });
+                                setChecklistDropdownModal(null);
+                              }}
+                            >
+                              <Text style={styles.checklistDropdownOptionTextMuted}>
+                                (Sin seleccion)
+                              </Text>
+                            </Pressable>
+                            {checklistDropdownModal.options.map((opt) => {
+                              const m = selectedWorkOrder?.checklist.find(
+                                (i) => i.id === checklistDropdownModal.itemId
+                              );
+                              const selected = String(m?.value ?? "") === opt;
+                              return (
+                                <Pressable
+                                  key={opt}
+                                  style={[
+                                    styles.checklistDropdownOption,
+                                    selected && styles.checklistDropdownOptionSelected,
+                                  ]}
+                                  onPress={() => {
+                                    void updateChecklist(checklistDropdownModal.itemId, {
+                                      value: opt,
+                                    });
+                                    setChecklistDropdownModal(null);
+                                  }}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.checklistDropdownOptionText,
+                                      selected && styles.checklistDropdownOptionTextSelected,
+                                    ]}
+                                    numberOfLines={3}
+                                  >
+                                    {opt}
+                                  </Text>
+                                  {selected ? (
+                                    <Ionicons name="checkmark" size={20} color={theme.primary} />
+                                  ) : null}
+                                </Pressable>
+                              );
+                            })}
+                          </>
+                        ) : null}
+                      </ScrollView>
+                      <Pressable
+                        style={styles.checklistDropdownCloseBtn}
+                        onPress={() => setChecklistDropdownModal(null)}
+                      >
+                        <Text style={styles.checklistDropdownCloseBtnText}>Cerrar</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </Modal>
+
+                {checklistDatePicker != null && Platform.OS === "android" ? (
+                  <DateTimePicker
+                    value={checklistDatePicker.draft}
+                    mode="date"
+                    display="calendar"
+                    onChange={(event, date) => {
+                      const snap = checklistDatePicker;
+                      setChecklistDatePicker(null);
+                      if (event.type === "dismissed" || !snap) return;
+                      if (event.type === "set" && date) {
+                        void updateChecklist(snap.itemId, {
+                          value: formatDateToChecklistIso(date),
+                        });
+                      }
+                    }}
+                  />
+                ) : null}
+
+                <Modal
+                  visible={checklistDatePicker != null && Platform.OS === "ios"}
+                  transparent
+                  animationType="slide"
+                  onRequestClose={() => setChecklistDatePicker(null)}
+                >
+                  <View style={styles.checklistDropdownModalRoot}>
+                    <Pressable
+                      style={styles.checklistDropdownBackdrop}
+                      onPress={() => setChecklistDatePicker(null)}
+                    />
+                    <View
+                      style={[
+                        styles.checklistDropdownSheet,
+                        { paddingBottom: Math.max(insets.bottom, 16) },
+                      ]}
+                    >
+                      <View style={styles.checklistDateModalToolbar}>
+                        <Pressable onPress={() => setChecklistDatePicker(null)}>
+                          <Text style={styles.checklistDateModalToolbarBtn}>Cancelar</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            const snap = checklistDatePicker;
+                            setChecklistDatePicker(null);
+                            if (snap) void updateChecklist(snap.itemId, { value: null });
+                          }}
+                        >
+                          <Text style={styles.checklistDateModalToolbarBtnMuted}>Quitar</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            const snap = checklistDatePicker;
+                            setChecklistDatePicker(null);
+                            if (snap) {
+                              void updateChecklist(snap.itemId, {
+                                value: formatDateToChecklistIso(snap.draft),
+                              });
+                            }
+                          }}
+                        >
+                          <Text style={styles.checklistDateModalToolbarBtnPrimary}>Guardar</Text>
+                        </Pressable>
+                      </View>
+                      {checklistDatePicker ? (
+                        <DateTimePicker
+                          value={checklistDatePicker.draft}
+                          mode="date"
+                          display="inline"
+                          locale="es-ES"
+                          themeVariant="light"
+                          onChange={(_, d) => {
+                            if (d) {
+                              setChecklistDatePicker((prev) =>
+                                prev ? { ...prev, draft: d } : null
+                              );
+                            }
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                  </View>
+                </Modal>
+              </View>
             ) : (
               <View style={styles.canvasShell}>
                 <View style={styles.filterRow}>
@@ -1283,17 +1969,21 @@ function AppContent() {
                     </Pressable>
                   ))}
                 </ScrollView>
-                {ordersLoading ? (
-                  <Text style={[styles.cardMeta, styles.screenPadH]}>Cargando tareas...</Text>
-                ) : null}
-                {ordersError ? (
-                  <Text style={[styles.errorText, styles.screenPadH]}>{ordersError}</Text>
-                ) : null}
+                {ordersLoading ? <Text style={styles.cardMeta}>Cargando tareas...</Text> : null}
+                {ordersError ? <Text style={styles.errorText}>{ordersError}</Text> : null}
                 <ScrollView
                   style={styles.dashboardScroll}
                   contentContainerStyle={styles.dashboardScrollContent}
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={workOrdersRefreshing}
+                      onRefresh={() => {
+                        void refreshWorkOrdersFeed();
+                      }}
+                    />
+                  }
                 >
                   <View style={styles.dashboardSectionHeader}>
                     <Text style={styles.dashboardSectionKicker}>TAREAS EN CURSO</Text>
@@ -1314,7 +2004,7 @@ function AppContent() {
                             ? w.assetName.toUpperCase()
                             : "SIN ACTIVO";
                       return (
-                        <View key={w.id} style={styles.ongoingHero}>
+                        <View key={w.id} style={[styles.surfaceCard, styles.ongoingHero]}>
                           <View style={styles.ongoingHeroTop}>
                             <View style={styles.ongoingHeroTopText}>
                               <Text style={styles.ongoingAssetKicker}>ACTIVO: {assetKicker}</Text>
@@ -1325,7 +2015,9 @@ function AppContent() {
                             <View style={styles.taskCardAvatarPriorityRow}>
                               <TaskCardAssigneeAvatar
                                 name={w.assigneeName}
+                                userId={w.assigneeId}
                                 avatarUrl={w.assigneeAvatarUrl}
+                                avatarBackgroundColor={w.assigneeAvatarBackgroundColor}
                               />
                               <WorkOrderPriorityIconRN priority={w.priority} />
                             </View>
@@ -1393,7 +2085,7 @@ function AppContent() {
                       return (
                         <Pressable
                           key={item.id}
-                          style={[styles.pendingCard, { borderLeftColor: accent }]}
+                          style={[styles.surfaceCard, styles.pendingCard, { borderLeftColor: accent }]}
                           onPress={() => openWorkOrder(item.id)}
                         >
                           <View style={styles.pendingCardTop}>
@@ -1426,7 +2118,9 @@ function AppContent() {
                           <View style={styles.pendingCardFooter}>
                             <TaskCardAssigneeAvatar
                               name={item.assigneeName}
+                              userId={item.assigneeId}
                               avatarUrl={item.assigneeAvatarUrl}
+                              avatarBackgroundColor={item.assigneeAvatarBackgroundColor}
                             />
                             <WorkOrderPriorityIconRN priority={item.priority} />
                           </View>
@@ -1446,7 +2140,7 @@ function AppContent() {
                       {completedTasksVisible.map((item) => (
                         <Pressable
                           key={item.id}
-                          style={styles.completedRowCard}
+                          style={[styles.surfaceCard, styles.completedRowCard]}
                           onPress={() => openWorkOrder(item.id)}
                         >
                           <View style={styles.completedRowInner}>
@@ -1461,7 +2155,9 @@ function AppContent() {
                             <View style={styles.taskCardAvatarPriorityRow}>
                               <TaskCardAssigneeAvatar
                                 name={item.assigneeName}
+                                userId={item.assigneeId}
                                 avatarUrl={item.assigneeAvatarUrl}
+                                avatarBackgroundColor={item.assigneeAvatarBackgroundColor}
                               />
                               <WorkOrderPriorityIconRN priority={item.priority} />
                             </View>
@@ -1487,58 +2183,60 @@ function AppContent() {
             )
           ) : activeSection === "knowledgeBase" ? (
             <View style={styles.kbContainer}>
-              <View style={[styles.screenPadH, { paddingTop: 12, paddingBottom: 8 }]}>
-                <TextInput
-                  value={kbQuery}
-                  onChangeText={setKbQuery}
-                  placeholder="Buscar articulo..."
-                  placeholderTextColor={theme.zinc400}
-                  style={styles.input}
-                />
-              </View>
-              {kbLoading ? (
-                <Text style={[styles.cardMeta, styles.screenPadH]}>Cargando base de conocimiento...</Text>
-              ) : null}
-              {kbError ? <Text style={[styles.errorText, styles.screenPadH]}>{kbError}</Text> : null}
+              <TextInput
+                value={kbQuery}
+                onChangeText={setKbQuery}
+                placeholder="Buscar en biblioteca..."
+                placeholderTextColor={theme.zinc400}
+                style={styles.input}
+              />
+              {kbLoading ? <Text style={styles.cardMeta}>Cargando biblioteca...</Text> : null}
+              {kbError ? <Text style={styles.errorText}>{kbError}</Text> : null}
               <FlatList
                 data={filteredKnowledge}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
                 showsHorizontalScrollIndicator={false}
-                ListEmptyComponent={<Text style={styles.emptyText}>No se encontraron articulos.</Text>}
-                renderItem={({ item }) => (
-                  <View style={styles.card}>
-                    <Text style={styles.cardTitle}>{item.filename ?? "Documento"}</Text>
-                    <Text style={styles.cardMeta}>
-                      {item.asset ? `${item.asset.name} (${item.asset.assetId})` : "General"}
-                    </Text>
-                    <Text style={styles.helpText}>{item.category ?? "Archivo"}</Text>
-                    <View style={styles.actionsRow}>
-                      <Pressable
-                        style={styles.secondaryButton}
-                        onPress={() => {
-                          void openKnowledgeFile(item);
-                        }}
-                      >
-                        <Text style={styles.secondaryButtonText}>Ver</Text>
-                      </Pressable>
-                      <Pressable
-                        style={styles.ghostButton}
-                        onPress={() => {
-                          void downloadKnowledgeFile(item);
-                        }}
-                      >
-                        <Text style={styles.ghostButtonText}>Descargar</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
+                ListEmptyComponent={<Text style={styles.emptyText}>No hay documentos.</Text>}
+                renderItem={({ item }) => {
+                  const kind = knowledgeFileKind(item.filename, item.fileUrl);
+                  const opening = kbOpeningId === item.id;
+                  return (
+                    <Pressable
+                      style={[styles.surfaceCard, styles.kbFileCard]}
+                      onPress={() => void openKnowledgeItem(item)}
+                      disabled={opening}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Abrir ${item.filename ?? "documento"}`}
+                    >
+                      <View style={styles.kbFileCardRow}>
+                        <View style={styles.kbFileIconWrap}>
+                          <Ionicons name={kbFileIonIcon(kind)} size={26} color={theme.primary} />
+                        </View>
+                        <View style={styles.kbFileTextCol}>
+                          <Text style={styles.cardTitle} numberOfLines={2}>
+                            {item.filename ?? "Documento"}
+                          </Text>
+                          <Text style={styles.cardMeta}>
+                            {item.asset ? `${item.asset.name} (${item.asset.assetId})` : "General"}
+                          </Text>
+                          <Text style={styles.helpText}>{item.category ?? "Archivo"}</Text>
+                        </View>
+                        {opening ? (
+                          <ActivityIndicator size="small" color={theme.primary} />
+                        ) : (
+                          <Ionicons name="chevron-forward" size={20} color={theme.zinc400} />
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                }}
               />
             </View>
           ) : activeSection === "notifications" ? (
             <View style={styles.kbContainer}>
-              <View style={[styles.headerRow, styles.screenPadH, { paddingTop: 12 }]}>
+              <View style={[styles.headerRow, { paddingTop: 4 }]}>
                 <Text style={styles.sectionTitle}>Notificaciones</Text>
                 {unreadCount > 0 ? (
                   <Pressable style={styles.ghostButton} onPress={markAllNotificationsRead}>
@@ -1547,22 +2245,24 @@ function AppContent() {
                 ) : null}
               </View>
               {notificationsLoading ? (
-                <Text style={[styles.cardMeta, styles.screenPadH]}>Cargando notificaciones...</Text>
+                <Text style={styles.cardMeta}>Cargando notificaciones...</Text>
               ) : null}
-              {notificationsError ? (
-                <Text style={[styles.errorText, styles.screenPadH]}>{notificationsError}</Text>
-              ) : null}
+              {notificationsError ? <Text style={styles.errorText}>{notificationsError}</Text> : null}
               <FlatList
                 data={notifications}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
                 showsHorizontalScrollIndicator={false}
+                refreshing={notificationsRefreshing}
+                onRefresh={() => {
+                  void refreshNotificationsFeed();
+                }}
                 ListEmptyComponent={<Text style={styles.emptyText}>Sin notificaciones.</Text>}
                 renderItem={({ item }) => (
                   <Pressable
                     style={[
-                      styles.card,
+                      styles.surfaceCard,
                       !item.readAt && styles.notificationUnreadCard,
                     ]}
                     onPress={() => {
@@ -1582,13 +2282,11 @@ function AppContent() {
               showsVerticalScrollIndicator={false}
               showsHorizontalScrollIndicator={false}
             >
-              <Text style={[styles.sectionTitle, styles.screenPadH, { paddingTop: 16, paddingBottom: 8 }]}>
+              <Text style={[styles.sectionTitle, { paddingTop: 8, paddingBottom: 8 }]}>
                 Perfil del Operador
               </Text>
-              {profileError ? (
-                <Text style={[styles.errorText, styles.screenPadH]}>{profileError}</Text>
-              ) : null}
-              <View style={styles.section}>
+              {profileError ? <Text style={styles.errorText}>{profileError}</Text> : null}
+              <View style={[styles.surfaceCard, styles.sectionBlock, styles.sectionFirst]}>
                 <Text style={styles.cardMeta}>Nombre: {me?.name ?? "—"}</Text>
                 <Text style={styles.cardMeta}>Usuario: {me?.username ?? username}</Text>
                 <Text style={styles.cardMeta}>Email: {me?.email ?? "Sin email"}</Text>
@@ -1596,7 +2294,7 @@ function AppContent() {
                 <Text style={styles.cardMeta}>API Host: {API_HOST || "No configurado"}</Text>
               </View>
 
-              <View style={styles.section}>
+              <View style={[styles.surfaceCard, styles.sectionBlock]}>
                 <Text style={styles.sectionTitle}>Actualizar contrasena</Text>
                 <TextInput
                   value={currentPassword}
@@ -1630,7 +2328,7 @@ function AppContent() {
                 </Pressable>
               </View>
 
-              <View style={styles.section}>
+              <View style={[styles.surfaceCard, styles.sectionBlock]}>
                 <Text style={styles.sectionTitle}>Sesion</Text>
                 <Pressable style={styles.logoutButton} disabled={profileBusy} onPress={logout}>
                   <Text style={styles.logoutButtonText}>Cerrar sesion</Text>
@@ -1640,6 +2338,7 @@ function AppContent() {
           )}
         </View>
 
+        {!selectedWorkOrderId ? (
         <View style={[styles.bottomNav, { paddingBottom: insets.bottom > 0 ? insets.bottom : 10 }]}>
           <Pressable
             style={styles.bottomNavItem}
@@ -1670,7 +2369,7 @@ function AppContent() {
               color={activeSection === "knowledgeBase" ? theme.accent : theme.zinc500}
             />
             <Text style={[styles.bottomNavText, activeSection === "knowledgeBase" && styles.bottomNavTextActive]}>
-              Base
+              Biblioteca
             </Text>
           </Pressable>
           <Pressable
@@ -1690,6 +2389,7 @@ function AppContent() {
             </Text>
           </Pressable>
         </View>
+        ) : null}
       </View>
 
       <Modal
@@ -1729,11 +2429,51 @@ function AppContent() {
               )}
               onError={() => {
                 Alert.alert(
-                  "No se pudo mostrar el PDF",
-                  "Prueba Descargar desde la base de conocimiento o abre el enlace en el navegador."
+                  "No se pudo mostrar el archivo",
+                  "El formato podría no ser compatible con el visor integrado."
                 );
               }}
             />
+          ) : null}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={inlineImage != null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setInlineImage(null)}
+      >
+        <View style={[styles.pdfModalRoot, { paddingTop: insets.top }]}>
+          <View style={styles.pdfModalToolbar}>
+            <Pressable
+              onPress={() => setInlineImage(null)}
+              hitSlop={12}
+              style={styles.pdfModalClose}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar imagen"
+            >
+              <Ionicons name="close" size={28} color={theme.zinc700} />
+            </Pressable>
+            <Text style={styles.pdfModalTitle} numberOfLines={1}>
+              {inlineImage?.title ?? ""}
+            </Text>
+            <View style={styles.pdfModalClose} />
+          </View>
+          {inlineImage ? (
+            <Pressable
+              style={styles.imageModalBody}
+              onPress={() => setInlineImage(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar"
+            >
+              <Image
+                source={{ uri: inlineImage.uri }}
+                style={styles.imageModalImage}
+                resizeMode="contain"
+                accessibilityLabel={inlineImage.title}
+              />
+            </Pressable>
           ) : null}
         </View>
       </Modal>
@@ -1885,19 +2625,24 @@ const styles = StyleSheet.create({
   primaryButtonDisabled: { opacity: 0.55 },
   primaryButtonText: { color: theme.white, fontSize: 16, fontWeight: "700" },
   errorText: { color: theme.red600, fontSize: 13 },
-  contentArea: { flex: 1, paddingHorizontal: 0, paddingTop: 0, backgroundColor: theme.white },
-  screenPadH: { paddingHorizontal: 16 },
-  profileContainer: { gap: 0, paddingBottom: 26, paddingHorizontal: 0, backgroundColor: theme.white },
-  kbContainer: { flex: 1, gap: 0, paddingHorizontal: 0, backgroundColor: theme.white },
-  detailContent: { gap: 0, paddingBottom: 28, backgroundColor: theme.white },
-  detailTopBar: { marginBottom: 4, paddingHorizontal: 16, paddingTop: 4 },
+  contentArea: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: theme.pageBg,
+  },
+  profileContainer: { gap: 0, paddingBottom: 26, backgroundColor: "transparent" },
+  kbContainer: { flex: 1, gap: 10, backgroundColor: "transparent" },
+  detailKeyboardAvoid: { flex: 1, minHeight: 0, position: "relative" },
+  detailScroll: { flex: 1, minHeight: 0 },
+  detailContent: { gap: 0, paddingBottom: 48, flexGrow: 1, backgroundColor: "transparent" },
+  detailTopBar: { marginBottom: 4, paddingTop: 4 },
   detailBreadcrumb: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
     gap: 4,
     marginBottom: 8,
-    paddingHorizontal: 16,
   },
   detailBreadcrumbLink: {
     fontSize: 14,
@@ -1912,9 +2657,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: -0.3,
     marginBottom: 12,
-    paddingHorizontal: 16,
   },
-  detailPanel: { marginBottom: 0 },
+  detailPanel: { marginBottom: 10 },
   detailPanelKicker: {
     fontSize: 11,
     fontWeight: "700",
@@ -1922,12 +2666,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     color: theme.zinc500,
     marginBottom: 8,
-    paddingHorizontal: 16,
   },
   detailStatusBanner: {
-    borderRadius: 0,
+    borderRadius: 10,
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     alignItems: "center",
   },
   detailStatusBannerText: { fontSize: 15, fontWeight: "700" },
@@ -1939,32 +2682,40 @@ const styles = StyleSheet.create({
   detailStatusCompletedText: { color: "#065F46" },
   detailStatusCancelled: { backgroundColor: theme.zinc100 },
   detailStatusCancelledText: { color: theme.zinc600 },
-  detailSection: {
-    marginTop: 4,
-    paddingTop: 14,
-    paddingBottom: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.zinc200,
+  /** One rounded card per block (header + content share the same card — no inner “body” card). */
+  detailCard: {
     backgroundColor: theme.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    overflow: "hidden",
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
-  detailSectionTitle: {
+  detailCardHeader: {
+    borderBottomWidth: 1,
+    borderBottomColor: theme.zinc100,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  detailCardHeaderTitle: {
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0.7,
     color: theme.zinc500,
     textTransform: "uppercase",
-    paddingHorizontal: 16,
-    marginBottom: 8,
   },
-  detailSectionSubtitle: {
+  detailCardHeaderSub: {
+    marginTop: 6,
     fontSize: 12,
     fontWeight: "500",
     color: theme.zinc400,
-    paddingHorizontal: 16,
-    marginTop: -4,
-    marginBottom: 10,
   },
-  detailSectionBody: { paddingHorizontal: 16, gap: 0 },
+  detailCardBody: { paddingHorizontal: 16, paddingVertical: 14, gap: 0 },
   detailRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1999,34 +2750,23 @@ const styles = StyleSheet.create({
   attachmentCell: {
     width: "32%",
     flexGrow: 0,
-    borderRadius: 0,
-    borderWidth: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.zinc200,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
     overflow: "hidden",
     backgroundColor: theme.zinc50,
   },
   attachmentThumb: { width: "100%", aspectRatio: 1, backgroundColor: theme.zinc100 },
   attachmentPdfThumb: { alignItems: "center", justifyContent: "center" },
   attachmentCaption: { fontSize: 11, color: theme.zinc500, paddingHorizontal: 6, paddingVertical: 4 },
-  activityNote: {
-    paddingVertical: 12,
-    paddingHorizontal: 0,
-    marginTop: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.zinc100,
-  },
-  activityNoteBody: { fontSize: 14, color: theme.zinc900 },
-  activityNoteMeta: { marginTop: 6, fontSize: 12, color: theme.zinc400 },
   dashboardScroll: { flex: 1 },
-  dashboardScrollContent: { paddingBottom: 24, flexGrow: 1, paddingHorizontal: 0 },
+  dashboardScrollContent: { paddingBottom: 24, flexGrow: 1 },
   dashboardSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 6,
     marginBottom: 8,
-    paddingHorizontal: 16,
   },
   dashboardSectionHeaderSpaced: { marginTop: 16 },
   dashboardSectionKicker: {
@@ -2044,15 +2784,10 @@ const styles = StyleSheet.create({
   },
   dashboardActiveBadgeText: { fontSize: 11, fontWeight: "800", color: "#1E40AF" },
   dashboardSortLink: { fontSize: 13, fontWeight: "700", color: theme.primary },
-  dashboardEmpty: { fontSize: 14, color: theme.zinc500, marginBottom: 12, paddingHorizontal: 16 },
+  dashboardEmpty: { fontSize: 14, color: theme.zinc500, marginBottom: 12 },
   ongoingHero: {
-    backgroundColor: theme.white,
-    borderRadius: 0,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.zinc200,
+    padding: 16,
+    marginBottom: 12,
   },
   ongoingHeroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
   ongoingHeroTopText: { flex: 1, minWidth: 0 },
@@ -2130,16 +2865,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   pendingCard: {
-    backgroundColor: theme.white,
-    borderRadius: 0,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.zinc200,
+    padding: 14,
+    marginBottom: 12,
     borderLeftWidth: 4,
-    borderTopWidth: 0,
-    borderRightWidth: 0,
   },
   pendingCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   pendingPriorityPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
@@ -2162,13 +2890,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   completedRowCard: {
-    backgroundColor: theme.white,
-    borderRadius: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.zinc200,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 0,
+    padding: 12,
+    marginBottom: 8,
   },
   completedRowInner: {
     flexDirection: "row",
@@ -2188,7 +2911,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  assigneeRingText: { fontSize: 9, fontWeight: "800", color: theme.zinc700 },
+  assigneeRingText: { fontSize: 9, fontWeight: "800", color: theme.white },
   kindBadge: {
     alignSelf: "flex-start",
     borderRadius: 999,
@@ -2211,23 +2934,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
-  section: {
+  sectionBlock: {
     gap: 10,
-    marginTop: 0,
+    marginTop: 12,
     paddingTop: 16,
     paddingBottom: 16,
     paddingHorizontal: 16,
-    backgroundColor: theme.white,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.zinc200,
   },
+  sectionFirst: { marginTop: 0 },
   sectionTitle: { color: theme.zinc900, fontSize: 16, fontWeight: "700" },
   helpText: { color: theme.zinc500, fontSize: 12 },
   actionsRow: {
     flexDirection: "row",
     gap: 8,
     marginVertical: 10,
-    paddingHorizontal: 16,
   },
   secondaryButton: {
     backgroundColor: theme.primary,
@@ -2258,26 +2978,213 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoutButtonText: { color: theme.zinc700, fontWeight: "700" },
-  checklistCard: {
-    backgroundColor: "transparent",
-    borderRadius: 0,
-    paddingVertical: 12,
-    paddingHorizontal: 0,
-    borderWidth: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.zinc100,
-    gap: 8,
-    marginBottom: 0,
+  /** Same intent as web `WorkOrderDetail`: emerald CTA after checklist when en curso. */
+  checklistCompleteTaskButton: {
+    marginTop: 16,
+    alignSelf: "flex-start",
+    backgroundColor: "#059669",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
-  checklistHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  checklistCompleteTaskButtonText: {
+    color: theme.white,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  checklistCard: {
+    backgroundColor: theme.zinc50,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    gap: 8,
+    marginBottom: 10,
+  },
+  checklistCardDisabled: { opacity: 0.92 },
+  checklistStepRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  checklistStepBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checklistStepBoxOn: {
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
+  },
+  checklistStepBoxOff: {
+    borderColor: theme.zinc400,
+    backgroundColor: theme.white,
+  },
+  checklistStepLabel: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "600",
+    color: theme.zinc900,
+  },
+  checklistStepLabelDone: {
+    color: theme.zinc500,
+    textDecorationLine: "line-through",
+  },
+  checklistFieldLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.zinc700,
+    marginBottom: 4,
+  },
+  checklistCheckboxRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  checklistCheckboxHint: { flex: 1, fontSize: 14, color: theme.zinc600 },
+  checklistDropdownTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
+  },
+  checklistDropdownTriggerText: {
+    flex: 1,
+    fontSize: 15,
+    color: theme.zinc900,
+  },
+  checklistDateModalToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+    gap: 8,
+  },
+  checklistDateModalToolbarBtn: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: theme.zinc700,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  checklistDateModalToolbarBtnMuted: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: theme.zinc500,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  checklistDateModalToolbarBtnPrimary: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  checklistDropdownModalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  checklistDropdownBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  checklistDropdownSheet: {
+    backgroundColor: theme.white,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: "72%",
+    paddingTop: 16,
+    paddingHorizontal: 16,
+  },
+  checklistDropdownSheetTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.zinc900,
+    marginBottom: 12,
+  },
+  checklistDropdownScroll: { maxHeight: 320 },
+  checklistDropdownOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    marginBottom: 8,
+    backgroundColor: theme.zinc50,
+  },
+  checklistDropdownOptionSelected: {
+    borderColor: theme.primary,
+    backgroundColor: theme.primary50,
+  },
+  checklistDropdownOptionText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "600",
+    color: theme.zinc900,
+  },
+  checklistDropdownOptionTextSelected: { color: theme.primary },
+  checklistDropdownOptionTextMuted: {
+    fontSize: 15,
+    color: theme.zinc500,
+    fontStyle: "italic",
+  },
+  checklistDropdownCloseBtn: {
+    marginTop: 8,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderRadius: 12,
+    backgroundColor: theme.zinc100,
+  },
+  checklistDropdownCloseBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.zinc700,
+  },
+  checklistPhotoEditor: { gap: 12, marginTop: 4 },
+  checklistPhotoPreview: {
+    width: "100%",
+    maxWidth: 280,
+    aspectRatio: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    backgroundColor: theme.zinc100,
+    alignSelf: "flex-start",
+  },
+  checklistPhotoUploading: {
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 16,
+  },
+  checklistPhotoActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    alignSelf: "flex-start",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.primary,
+    backgroundColor: theme.primary50,
+  },
+  checklistPhotoActionText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: theme.primary,
+  },
   checklistFieldReadOnly: {
     fontSize: 15,
     color: theme.zinc700,
     paddingVertical: 4,
   },
-  checkBullet: { width: 12, height: 12, borderRadius: 999 },
-  checkBulletDone: { backgroundColor: "#6FAF6F" },
-  checkBulletTodo: { backgroundColor: theme.accent },
   textarea: {
     minHeight: 90,
     textAlignVertical: "top",
@@ -2291,16 +3198,12 @@ const styles = StyleSheet.create({
   },
   canvasShell: {
     flex: 1,
-    backgroundColor: theme.white,
-    borderRadius: 0,
-    borderWidth: 0,
-    paddingTop: 10,
+    backgroundColor: "transparent",
+    paddingTop: 4,
     paddingBottom: 0,
-    paddingHorizontal: 0,
     gap: 6,
-    marginBottom: 0,
   },
-  filterRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16 },
+  filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   filterTag: {
     flexDirection: "row",
     alignItems: "center",
@@ -2315,7 +3218,7 @@ const styles = StyleSheet.create({
   filterTagText: { color: theme.zinc900, fontWeight: "600", fontSize: 12 },
   filterTagRemove: { color: theme.accent, fontWeight: "700", fontSize: 12 },
   filterUsersScroll: { flexGrow: 0, maxHeight: 44 },
-  filterUsersRow: { gap: 8, alignItems: "center", paddingRight: 16, paddingLeft: 16 },
+  filterUsersRow: { gap: 8, alignItems: "center", paddingRight: 4 },
   userFilterChip: {
     borderRadius: 999,
     borderWidth: 1,
@@ -2357,18 +3260,42 @@ const styles = StyleSheet.create({
   bottomNavTextActive: {
     color: theme.accent,
   },
-  listContent: { gap: 0, paddingBottom: 24 },
-  card: {
+  listContent: { gap: 10, paddingBottom: 24 },
+  surfaceCard: {
     backgroundColor: theme.white,
-    borderRadius: 0,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.zinc200,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
     gap: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
+  kbFileCard: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  kbFileCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  kbFileIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: theme.primary50,
+    borderWidth: 1,
+    borderColor: theme.primary200,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  kbFileTextCol: { flex: 1, minWidth: 0, gap: 2 },
   notificationUnreadCard: {
+    borderColor: theme.primary200,
     backgroundColor: theme.primary50,
   },
   cardTitle: { fontSize: 15, fontWeight: "700", color: theme.zinc900, marginBottom: 4 },
@@ -2377,14 +3304,12 @@ const styles = StyleSheet.create({
   loadMoreButton: {
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 0,
-    borderWidth: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.zinc200,
-    backgroundColor: theme.zinc50,
-    paddingVertical: 14,
-    marginHorizontal: 0,
-    marginTop: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
+    paddingVertical: 12,
+    marginTop: 8,
   },
   loadMoreButtonText: {
     color: theme.primary,
@@ -2421,4 +3346,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.white,
   },
   pdfModalLoadingText: { marginTop: 14, fontSize: 14, color: theme.zinc500 },
+  imageModalBody: {
+    flex: 1,
+    backgroundColor: theme.zinc100,
+    justifyContent: "center",
+  },
+  imageModalImage: {
+    width: "100%",
+    flex: 1,
+    minHeight: 200,
+  },
 });
