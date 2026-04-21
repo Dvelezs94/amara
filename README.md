@@ -1,4 +1,4 @@
-# AmiMaint
+# AMS
 
 Mobile-first maintenance management (CMMS-style) with web support. UI inspired by Nimble: clear, efficient, consistent.
 
@@ -52,7 +52,7 @@ Overall, the palette conveys clarity and contrast, with a professional dark inte
    npx tsx scripts/seed.ts
    ```
 
-   Demo login: `demo@amimaint.local` / `demo1234`
+   Demo login: `demo@ams.local` / `demo1234`
 
    Or create an admin user with `./create-user.js` and follow the prompts
 

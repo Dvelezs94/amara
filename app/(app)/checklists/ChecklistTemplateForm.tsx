@@ -326,7 +326,7 @@ export function ChecklistTemplateForm({
                               type="text"
                               value={opt}
                               onChange={(e) => updateDropdownOption(index, oi, e.target.value)}
-                              className="flex-1 rounded border border-zinc-300 px-2 py-1 text-sm"
+                              className="flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 placeholder:text-zinc-400"
                             />
                             <button
                               type="button"

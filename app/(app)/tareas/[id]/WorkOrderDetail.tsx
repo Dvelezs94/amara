@@ -605,11 +605,13 @@ export function WorkOrderDetail({
                         <select
                           value={item.value != null ? String(item.value) : ""}
                           onChange={(e) => updateFieldValue(item.id, e.target.value || null)}
-                          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                         >
-                          <option value="">Seleccionar…</option>
+                          <option value="" className="bg-white text-zinc-900">
+                            Seleccionar…
+                          </option>
                           {(Array.isArray(item.options) ? item.options : []).map((opt: string) => (
-                            <option key={opt} value={opt}>
+                            <option key={opt} value={opt} className="bg-white text-zinc-900">
                               {opt}
                             </option>
                           ))}

@@ -1,4 +1,4 @@
-# Agent context — AmiMaint
+# Agent context — AMS
 
 This file is **living documentation** for coding agents and humans. **You may edit, replace, or extend this file whenever you learn something durable about the project** (new folders, env vars, auth rules, deploy steps). Keep it accurate and reasonably concise; remove stale sections rather than appending noise.
 
@@ -6,7 +6,7 @@ This file is **living documentation** for coding agents and humans. **You may ed
 
 ## What this project is
 
-**AmiMaint** (branding: **MSA** — Maintenance Software / Support Assistant) is a maintenance-management web app for AMISSA: work orders (tareas), assets, calendar, checklists, knowledge base, analytics, requests, and operator tooling. UI copy is mostly **Spanish**.
+**AMS** (branding: **MSA** — Maintenance Software / Support Assistant) is a maintenance-management web app for AMISSA: work orders (tareas), assets, calendar, checklists, knowledge base, analytics, requests, and operator tooling. UI copy is mostly **Spanish**.
 
 ---
 

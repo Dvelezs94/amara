@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import OpenAI from "openai";
 import { AI_TOOLS, runAiTool } from "@/lib/ai/tools";
 
-const systemPrompt = `Eres un asistente de mantenimiento para AmiMaint. Respondes en español.
+const systemPrompt = `Eres un asistente de mantenimiento para AMS. Respondes en español.
 Tienes acceso a herramientas para consultar:
 - Maquinas (equipos/sitios): list_assets, get_asset
 - Órdenes de trabajo: list_work_orders, get_work_order

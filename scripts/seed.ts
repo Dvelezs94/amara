@@ -29,7 +29,7 @@ async function seed() {
     {
       id: adminId,
       username: "admin",
-      email: "admin@amimaint.local",
+      email: "admin@ams.local",
       name: "Administrador Demo",
       passwordHash,
       role: "admin",
@@ -37,7 +37,7 @@ async function seed() {
     {
       id: techAId,
       username: "tecnico1",
-      email: "tecnico1@amimaint.local",
+      email: "tecnico1@ams.local",
       name: "Tecnico Uno",
       passwordHash,
       role: "operator",
@@ -45,7 +45,7 @@ async function seed() {
     {
       id: techBId,
       username: "tecnico2",
-      email: "tecnico2@amimaint.local",
+      email: "tecnico2@ams.local",
       name: "Tecnico Dos",
       passwordHash,
       role: "operator",
