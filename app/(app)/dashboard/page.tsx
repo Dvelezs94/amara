@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { GripVertical, Trash2, Plus, CircleHelp } from "lucide-react";
 import { AnalyticsChartCard } from "@/components/AnalyticsChartCard";
@@ -10,6 +10,12 @@ import {
   workOrderKindLabel,
 } from "@/lib/work-order-kind";
 import type { DashboardKpis } from "@/lib/dashboard-kpis";
+import {
+  clampRangeOrder,
+  defaultLast30DaysRange,
+  isDefaultLast30DaysRange,
+  isValidYmd,
+} from "@/lib/dashboard-date-range";
 
 type Widget = {
   id: string;
@@ -52,20 +58,42 @@ export default function DashboardPage() {
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState(() => defaultLast30DaysRange());
+  const initialFetchDone = useRef(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [widgetSizes, setWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
   const WIDGET_SIZE_KEY = "dashboard-widget-sizes-v1";
 
+  const showLists = isDefaultLast30DaysRange(range);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(WIDGET_SIZE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, "sm" | "md" | "lg">;
+        setWidgetSizes(parsed ?? {});
+      }
+    } catch {
+      setWidgetSizes({});
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    if (!initialFetchDone.current) setLoading(true);
+    const includeLists = isDefaultLast30DaysRange(range) ? "1" : "0";
+    const qs = new URLSearchParams({
+      from: range.from,
+      to: range.to,
+      includeLists,
+    });
     Promise.all([
       fetch("/api/dashboard/widgets").then(async (r) => {
         if (!r.ok) throw new Error("widgets");
         return r.json();
       }),
-      fetch("/api/dashboard/overview").then(async (r) => {
+      fetch(`/api/dashboard/overview?${qs}`).then(async (r) => {
         if (!r.ok) throw new Error("overview");
         return r.json();
       }),
@@ -89,21 +117,15 @@ export default function DashboardPage() {
         setKpis(null);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          initialFetchDone.current = true;
+          setLoading(false);
+        }
       });
-    try {
-      const raw = localStorage.getItem(WIDGET_SIZE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, "sm" | "md" | "lg">;
-        setWidgetSizes(parsed ?? {});
-      }
-    } catch {
-      setWidgetSizes({});
-    }
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [range.from, range.to]);
 
   function setWidgetSize(id: string, size: "sm" | "md" | "lg") {
     setWidgetSizes((prev) => {
@@ -194,6 +216,16 @@ export default function DashboardPage() {
     );
   }
 
+  function setFromYmd(next: string) {
+    if (!next || !isValidYmd(next)) return;
+    setRange((prev) => clampRangeOrder(next, prev.to));
+  }
+
+  function setToYmd(next: string) {
+    if (!next || !isValidYmd(next)) return;
+    setRange((prev) => clampRangeOrder(prev.from, next));
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -207,6 +239,36 @@ export default function DashboardPage() {
           <Plus className="h-4 w-4" />
           Añadir gráfico
         </Link>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-4 rounded-lg border border-zinc-200 bg-white p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Desde
+            <input
+              type="date"
+              value={range.from}
+              onChange={(e) => setFromYmd(e.target.value)}
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Hasta
+            <input
+              type="date"
+              value={range.to}
+              onChange={(e) => setToYmd(e.target.value)}
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
+            />
+          </label>
+        </div>
+        <button
+          type="button"
+          onClick={() => setRange(defaultLast30DaysRange())}
+          className="rounded-md border border-zinc-300 bg-zinc-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-700 hover:bg-zinc-100"
+        >
+          Últimos 30 días
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -262,82 +324,84 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <section className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-zinc-900">Tareas pendientes</h2>
-            <Link href="/tareas" className="text-sm font-medium text-primary-600 hover:underline">
-              Ver todas
-            </Link>
-          </div>
-          {pendingOrders.length === 0 ? (
-            <p className="text-sm text-zinc-500">No hay tareas pendientes.</p>
-          ) : (
-            <ul className="space-y-2">
-              {pendingOrders.map((order) => (
-                <li key={order.id} className="rounded-md border border-zinc-100 bg-surface p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <Link href={`/tareas/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
-                        {order.title}
-                      </Link>
+      {showLists && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <section className="rounded-lg border border-zinc-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-zinc-900">Tareas pendientes</h2>
+              <Link href="/tareas" className="text-sm font-medium text-primary-600 hover:underline">
+                Ver todas
+              </Link>
+            </div>
+            {pendingOrders.length === 0 ? (
+              <p className="text-sm text-zinc-500">No hay tareas pendientes.</p>
+            ) : (
+              <ul className="space-y-2">
+                {pendingOrders.map((order) => (
+                  <li key={order.id} className="rounded-md border border-zinc-100 bg-surface p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/tareas/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
+                          {order.title}
+                        </Link>
+                        <span
+                          className={`ml-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${workOrderKindBadgeClass(
+                            parseWorkOrderKind(order.kind)
+                          )}`}
+                        >
+                          {workOrderKindLabel(parseWorkOrderKind(order.kind))}
+                        </span>
+                      </div>
                       <span
-                        className={`ml-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${workOrderKindBadgeClass(
-                          parseWorkOrderKind(order.kind)
-                        )}`}
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                          statusColors[order.status]
+                        }`}
                       >
-                        {workOrderKindLabel(parseWorkOrderKind(order.kind))}
+                        {statusLabel(order.status)}
                       </span>
                     </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                        statusColors[order.status]
-                      }`}
-                    >
-                      {statusLabel(order.status)}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Prioridad: {order.priority} · Vence: {formatDate(order.dueDate)}
-                  </p>
-                  {order.assetName && (
-                    <p className="mt-1 text-xs text-zinc-500">Activo: {order.assetName}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Prioridad: {order.priority} · Vence: {formatDate(order.dueDate)}
+                    </p>
+                    {order.assetName && (
+                      <p className="mt-1 text-xs text-zinc-500">Activo: {order.assetName}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-        <section className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-zinc-900">Próximos eventos</h2>
-            <Link href="/calendario" className="text-sm font-medium text-primary-600 hover:underline">
-              Ver calendario
-            </Link>
-          </div>
-          {upcomingEvents.length === 0 ? (
-            <p className="text-sm text-zinc-500">No hay eventos próximos.</p>
-          ) : (
-            <ul className="space-y-2">
-              {upcomingEvents.map((event) => (
-                <li key={event.id} className="rounded-md border border-zinc-100 bg-surface p-3">
-                  <p className="font-medium text-zinc-900">{event.name}</p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Fecha: {formatDate(event.nextRunAt)}
-                  </p>
-                  {event.assetName && (
-                    <p className="mt-1 text-xs text-zinc-500">Activo: {event.assetName}</p>
-                  )}
-                  {event.assigneeName && (
-                    <p className="mt-1 text-xs text-zinc-500">Asignado: {event.assigneeName}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+          <section className="rounded-lg border border-zinc-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-zinc-900">Próximos eventos</h2>
+              <Link href="/calendario" className="text-sm font-medium text-primary-600 hover:underline">
+                Ver calendario
+              </Link>
+            </div>
+            {upcomingEvents.length === 0 ? (
+              <p className="text-sm text-zinc-500">No hay eventos próximos.</p>
+            ) : (
+              <ul className="space-y-2">
+                {upcomingEvents.map((event) => (
+                  <li key={event.id} className="rounded-md border border-zinc-100 bg-surface p-3">
+                    <p className="font-medium text-zinc-900">{event.name}</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Fecha: {formatDate(event.nextRunAt)}
+                    </p>
+                    {event.assetName && (
+                      <p className="mt-1 text-xs text-zinc-500">Activo: {event.assetName}</p>
+                    )}
+                    {event.assigneeName && (
+                      <p className="mt-1 text-xs text-zinc-500">Asignado: {event.assigneeName}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
 
       <p className="text-sm text-zinc-500">
         Arrastra las tarjetas para reordenar. Los gráficos se guardan aquí desde la página de analíticas.
@@ -415,8 +479,8 @@ export default function DashboardPage() {
                   templateId={w.templateId}
                   templateName={w.templateName}
                   fieldLabel={w.fieldLabel}
-                  dateFrom={w.dateFrom}
-                  dateTo={w.dateTo}
+                  dateFrom={range.from}
+                  dateTo={range.to}
                   size={widgetSizes[w.id] ?? "md"}
                 />
               </div>

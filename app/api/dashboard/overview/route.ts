@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { asc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -8,6 +8,14 @@ import {
   workOrders,
   users,
 } from "@/lib/db/schema";
+import {
+  clampRangeOrder,
+  defaultLast30DaysRange,
+  endOfLocalDayFromYmd,
+  inclusiveLocalDayCount,
+  isValidYmd,
+  startOfLocalDayFromYmd,
+} from "@/lib/dashboard-date-range";
 import { buildDashboardKpis } from "@/lib/dashboard-kpis";
 import { resolveNextMaintenanceDisplayDate } from "@/lib/maintenance-recurrence";
 
@@ -20,17 +28,30 @@ function isMissingAssigneeColumnError(error: unknown): boolean {
   );
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const now = new Date();
-  const periodStart = new Date(now);
-  periodStart.setDate(periodStart.getDate() - 30);
+  const { searchParams } = new URL(req.url);
+  const fromParam = searchParams.get("from");
+  const toParam = searchParams.get("to");
+  const includeLists = searchParams.get("includeLists") !== "0";
 
-  const pendingOrdersPromise = db
+  const fallback = defaultLast30DaysRange();
+  let fromYmd =
+    fromParam && isValidYmd(fromParam) ? fromParam : fallback.from;
+  let toYmd = toParam && isValidYmd(toParam) ? toParam : fallback.to;
+  ({ from: fromYmd, to: toYmd } = clampRangeOrder(fromYmd, toYmd));
+
+  const rangeStart = startOfLocalDayFromYmd(fromYmd);
+  const rangeEnd = endOfLocalDayFromYmd(toYmd);
+  const windowDays = inclusiveLocalDayCount(fromYmd, toYmd);
+  const now = new Date();
+
+  const pendingOrdersPromise = includeLists
+    ? db
     .select({
       id: workOrders.id,
       title: workOrders.title,
@@ -44,7 +65,8 @@ export async function GET() {
     .leftJoin(assets, sql`${workOrders.assetId} = ${assets.id}`)
     .where(inArray(workOrders.status, ["open", "in_progress"]))
     .orderBy(asc(workOrders.dueDate), asc(workOrders.createdAt))
-    .limit(6);
+    .limit(6)
+    : Promise.resolve([]);
 
   async function fetchScheduleRowsForUpcoming(): Promise<
     Array<{
@@ -85,14 +107,17 @@ export async function GET() {
     }
   }
 
-  const upcomingRowsPromise = fetchScheduleRowsForUpcoming();
+  const upcomingRowsPromise = includeLists
+    ? fetchScheduleRowsForUpcoming()
+    : Promise.resolve([]);
 
   const [pendingOrders, scheduleRows] = await Promise.all([
     pendingOrdersPromise,
     upcomingRowsPromise,
   ]);
 
-  const upcomingEvents = scheduleRows
+  const upcomingEvents = includeLists
+    ? scheduleRows
     .map((row) => {
       const displayNext = resolveNextMaintenanceDisplayDate(
         row.recurrence,
@@ -110,7 +135,8 @@ export async function GET() {
       nextRunAt: displayNext.toISOString(),
       assetName: row.assetName,
       assigneeName: row.assigneeName,
-    }));
+    }))
+    : [];
 
   const [recentWorkOrders, totalAssets] = await Promise.all([
     db
@@ -122,7 +148,12 @@ export async function GET() {
         completedAt: workOrders.completedAt,
       })
       .from(workOrders)
-      .where(gte(workOrders.createdAt, periodStart)),
+      .where(
+        and(
+          gte(workOrders.createdAt, rangeStart),
+          lte(workOrders.createdAt, rangeEnd)
+        )
+      ),
     db.select({ count: sql<number>`count(*)` }).from(assets),
   ]);
 
@@ -130,7 +161,7 @@ export async function GET() {
   const kpis = buildDashboardKpis({
     workOrders: recentWorkOrders,
     assetCount,
-    windowDays: 30,
+    windowDays,
   });
 
   return NextResponse.json({

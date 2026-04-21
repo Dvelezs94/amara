@@ -7,12 +7,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps 
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   BackHandler,
   FlatList,
   Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   RefreshControl,
@@ -467,6 +469,159 @@ function TaskCardAssigneeAvatar({
   return null;
 }
 
+const SLIDE_TRACK_HEIGHT = 52;
+const SLIDE_THUMB_SIZE = 46;
+const SLIDE_TRACK_PAD = 4;
+const SLIDE_THUMB_TOP = (SLIDE_TRACK_HEIGHT - SLIDE_THUMB_SIZE) / 2;
+
+type SlideToConfirmProps = {
+  label: string;
+  onConfirm: () => void | Promise<void>;
+  disabled?: boolean;
+  variant?: "primary" | "success";
+  /** Change when the underlying task changes so the thumb snaps back to the start. */
+  resetKey: string;
+};
+
+/** Horizontal slide-to-confirm control (iPhone-style unlock rail). */
+function SlideToConfirm({ label, onConfirm, disabled, variant = "primary", resetKey }: SlideToConfirmProps) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const dragOrigin = useRef(0);
+  const lastSetX = useRef(0);
+  const maxDragRef = useRef(0);
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
+  const disabledRef = useRef(!!disabled);
+  disabledRef.current = !!disabled;
+  const [trackWidth, setTrackWidth] = useState(0);
+  const maxDrag = Math.max(0, trackWidth - SLIDE_THUMB_SIZE - SLIDE_TRACK_PAD * 2);
+  maxDragRef.current = maxDrag;
+
+  useEffect(() => {
+    translateX.setValue(0);
+    lastSetX.current = 0;
+    dragOrigin.current = 0;
+  }, [resetKey, translateX]);
+
+  useEffect(() => {
+    if (maxDrag <= 0) return;
+    if (lastSetX.current > maxDrag) {
+      const clamped = maxDrag;
+      lastSetX.current = clamped;
+      translateX.setValue(clamped);
+    }
+  }, [maxDrag, translateX]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => !disabledRef.current,
+        onMoveShouldSetPanResponder: (_, g) => {
+          if (disabledRef.current) return false;
+          return Math.abs(g.dx) > 5 && Math.abs(g.dx) > Math.abs(g.dy) + 1;
+        },
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: () => {
+          dragOrigin.current = lastSetX.current;
+        },
+        onPanResponderMove: (_, g) => {
+          const m = maxDragRef.current;
+          if (disabledRef.current || m <= 0) return;
+          const nx = Math.min(m, Math.max(0, dragOrigin.current + g.dx));
+          lastSetX.current = nx;
+          translateX.setValue(nx);
+        },
+        onPanResponderRelease: (_, g) => {
+          const m = maxDragRef.current;
+          const vx = Number.isFinite(g.vx) ? g.vx : 0;
+          if (disabledRef.current || m <= 0) {
+            Animated.spring(translateX, {
+              toValue: 0,
+              friction: 7,
+              tension: 520,
+              velocity: vx,
+              useNativeDriver: true,
+            }).start(() => {
+              lastSetX.current = 0;
+            });
+            return;
+          }
+          const nx = lastSetX.current;
+          const ratio = nx / m;
+          if (ratio >= 0.78) {
+            void Promise.resolve(onConfirmRef.current());
+            Animated.spring(translateX, {
+              toValue: m,
+              friction: 7,
+              tension: 380,
+              velocity: vx,
+              restDisplacementThreshold: 0.5,
+              restSpeedThreshold: 0.5,
+              useNativeDriver: true,
+            }).start(() => {
+              translateX.setValue(0);
+              lastSetX.current = 0;
+            });
+          } else {
+            Animated.spring(translateX, {
+              toValue: 0,
+              friction: 7,
+              tension: 520,
+              velocity: vx,
+              restDisplacementThreshold: 0.5,
+              restSpeedThreshold: 0.5,
+              useNativeDriver: true,
+            }).start(() => {
+              lastSetX.current = 0;
+            });
+          }
+        },
+      }),
+    [translateX]
+  );
+
+  const trackStyles = [
+    styles.slideTrack,
+    variant === "primary" ? styles.slideTrackPrimary : styles.slideTrackSuccess,
+    disabled ? styles.slideTrackDisabled : null,
+  ];
+
+  return (
+    <View style={styles.slideToConfirmRoot}>
+      <View
+        style={trackStyles}
+        onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+      >
+        <Text
+          pointerEvents="none"
+          style={[styles.slideTrackLabel, disabled && styles.slideTrackLabelDisabled]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        <Animated.View
+          style={[
+            styles.slideThumb,
+            variant === "primary" ? styles.slideThumbPrimary : styles.slideThumbSuccess,
+            disabled && styles.slideThumbDisabled,
+            { transform: [{ translateX }] },
+          ]}
+          {...(disabled ? {} : panResponder.panHandlers)}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={{ disabled: !!disabled }}
+        >
+          <Ionicons
+            name="chevron-forward"
+            size={22}
+            color={disabled ? "#713F12" : variant === "primary" ? theme.primary : "#047857"}
+          />
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(path), {
     ...init,
@@ -839,18 +994,25 @@ function AppContent() {
     setDetailError(null);
   }, []);
 
-  async function openWorkOrder(id: string) {
+  async function openWorkOrder(id: string, opts?: { silent?: boolean }) {
+    const silent = opts?.silent === true;
     setSelectedWorkOrderId(id);
-    setDetailLoading(true);
-    setDetailError(null);
+    if (!silent) {
+      setDetailLoading(true);
+      setDetailError(null);
+    }
     try {
       const data = await apiFetch<WorkOrderDetail>(`/api/work-orders/${id}`);
       setSelectedWorkOrder(data);
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : "No se pudo cargar detalle.");
-      setSelectedWorkOrder(null);
+      if (!silent) {
+        setSelectedWorkOrder(null);
+      }
     } finally {
-      setDetailLoading(false);
+      if (!silent) {
+        setDetailLoading(false);
+      }
     }
   }
 
@@ -873,6 +1035,17 @@ function AppContent() {
   }
 
   async function ensureChecklistCompleteBeforeClose(workOrderId: string): Promise<boolean> {
+    if (selectedWorkOrderId === workOrderId && selectedWorkOrder != null) {
+      if (selectedWorkOrder.checklist.length === 0) return true;
+      if (!isChecklistFullyComplete(selectedWorkOrder.checklist)) {
+        Alert.alert(
+          "Checklist incompleto",
+          "Marca todos los pasos y completa los campos del checklist antes de cerrar la tarea."
+        );
+        return false;
+      }
+      return true;
+    }
     try {
       const detail = await apiFetch<WorkOrderDetail>(`/api/work-orders/${workOrderId}`);
       if (detail.checklist.length === 0) return true;
@@ -895,20 +1068,37 @@ function AppContent() {
   async function updateWorkOrderStatusById(id: string, next: WoStatus) {
     setOrdersError(null);
     setDetailError(null);
+    const detailSnapshot =
+      selectedWorkOrderId === id && selectedWorkOrder != null ? selectedWorkOrder : null;
     try {
       if (next === "completed") {
         const checklistOk = await ensureChecklistCompleteBeforeClose(id);
         if (!checklistOk) return;
       }
+      if (detailSnapshot != null) {
+        setSelectedWorkOrder((wo) => {
+          if (!wo || wo.id !== id) return wo;
+          if (next === "completed") {
+            return { ...wo, status: "completed", completedAt: new Date().toISOString() };
+          }
+          if (next === "in_progress") {
+            return { ...wo, status: "in_progress" };
+          }
+          return wo;
+        });
+      }
       await apiFetch<{ ok: true }>(`/api/work-orders/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: next }),
       });
-      await loadWorkOrders();
+      void loadWorkOrders();
       if (selectedWorkOrderId === id) {
-        await openWorkOrder(id);
+        void openWorkOrder(id, { silent: true });
       }
     } catch (error) {
+      if (detailSnapshot != null) {
+        setSelectedWorkOrder(detailSnapshot);
+      }
       const msg = error instanceof Error ? error.message : "No se pudo actualizar el estado.";
       setOrdersError(msg);
       if (selectedWorkOrderId === id) setDetailError(msg);
@@ -1178,6 +1368,22 @@ function AppContent() {
 
   const detailCanEditChecklist = selectedWorkOrder?.status === "in_progress";
 
+  const detailSlideDockVisible =
+    selectedWorkOrder != null &&
+    !detailLoading &&
+    !detailError &&
+    (selectedWorkOrder.status === "open" || selectedWorkOrder.status === "in_progress");
+
+  const detailSlideCompleteNeedsHint =
+    selectedWorkOrder != null &&
+    !detailLoading &&
+    !detailError &&
+    selectedWorkOrder.status === "in_progress" &&
+    selectedWorkOrder.checklist.length > 0 &&
+    !isChecklistFullyComplete(selectedWorkOrder.checklist);
+
+  const detailSlideCompleteDisabled = detailSlideCompleteNeedsHint;
+
   if (!isLoggedIn) {
     return (
       <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
@@ -1273,7 +1479,18 @@ function AppContent() {
               <View style={styles.detailKeyboardAvoid}>
                 <ScrollView
                   style={styles.detailScroll}
-                  contentContainerStyle={styles.detailContent}
+                  contentContainerStyle={[
+                    styles.detailContent,
+                    detailSlideDockVisible
+                      ? {
+                          paddingBottom:
+                            48 +
+                            86 +
+                            Math.max(insets.bottom, 14) +
+                            (detailSlideCompleteNeedsHint ? 34 : 0),
+                        }
+                      : null,
+                  ]}
                   showsVerticalScrollIndicator={false}
                   showsHorizontalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
@@ -1434,20 +1651,6 @@ function AppContent() {
                           <Text style={styles.detailRowMuted}>Sin descripción.</Text>
                         )}
                       </View>
-                    </View>
-
-                    <View style={styles.actionsRow}>
-                      {selectedWorkOrder.status === "open" ? (
-                        <Pressable style={styles.secondaryButton} onPress={() => updateStatus("in_progress")}>
-                          <Text style={styles.secondaryButtonText}>Iniciar</Text>
-                        </Pressable>
-                      ) : null}
-                      {selectedWorkOrder.status === "in_progress" &&
-                      selectedWorkOrder.checklist.length === 0 ? (
-                        <Pressable style={styles.secondaryButton} onPress={() => updateStatus("completed")}>
-                          <Text style={styles.secondaryButtonText}>Completar</Text>
-                        </Pressable>
-                      ) : null}
                     </View>
 
                     {(selectedWorkOrder.attachments?.length ?? 0) > 0 ? (
@@ -1725,22 +1928,43 @@ function AppContent() {
                               </View>
                             )
                           )}
-                          {detailCanEditChecklist ? (
-                            <Pressable
-                              style={styles.checklistCompleteTaskButton}
-                              onPress={() => updateStatus("completed")}
-                              accessibilityRole="button"
-                              accessibilityLabel="Completar tarea"
-                            >
-                              <Text style={styles.checklistCompleteTaskButtonText}>Completar tarea</Text>
-                            </Pressable>
-                          ) : null}
                         </View>
                       </View>
                     ) : null}
                   </>
                 ) : null}
                 </ScrollView>
+
+                {detailSlideDockVisible && selectedWorkOrder ? (
+                  <View
+                    style={[
+                      styles.taskSlideDock,
+                      { paddingBottom: Math.max(insets.bottom, 12) },
+                    ]}
+                  >
+                    {selectedWorkOrder.status === "in_progress" && detailSlideCompleteNeedsHint ? (
+                      <Text style={styles.taskSlideDockHint} numberOfLines={2}>
+                        Completa el checklist para cerrar la tarea.
+                      </Text>
+                    ) : null}
+                    {selectedWorkOrder.status === "open" ? (
+                      <SlideToConfirm
+                        resetKey={`${selectedWorkOrder.id}-open`}
+                        label="Desliza para iniciar"
+                        variant="primary"
+                        onConfirm={() => void updateStatus("in_progress")}
+                      />
+                    ) : (
+                      <SlideToConfirm
+                        resetKey={`${selectedWorkOrder.id}-done-${isChecklistFullyComplete(selectedWorkOrder.checklist) ? "1" : "0"}`}
+                        label="Desliza para completar"
+                        variant="success"
+                        disabled={detailSlideCompleteDisabled}
+                        onConfirm={() => void updateStatus("completed")}
+                      />
+                    )}
+                  </View>
+                ) : null}
 
                 <Modal
                   visible={checklistDropdownModal != null}
@@ -2636,6 +2860,91 @@ const styles = StyleSheet.create({
   detailKeyboardAvoid: { flex: 1, minHeight: 0, position: "relative" },
   detailScroll: { flex: 1, minHeight: 0 },
   detailContent: { gap: 0, paddingBottom: 48, flexGrow: 1, backgroundColor: "transparent" },
+  taskSlideDock: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 40,
+    backgroundColor: theme.pageBg,
+    paddingTop: 12,
+    paddingHorizontal: 0,
+  },
+  taskSlideDockHint: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: theme.zinc600,
+    textAlign: "center",
+    marginBottom: 10,
+    paddingHorizontal: 8,
+  },
+  slideToConfirmRoot: {
+    width: "100%",
+  },
+  slideTrack: {
+    height: SLIDE_TRACK_HEIGHT,
+    borderRadius: SLIDE_TRACK_HEIGHT / 2,
+    justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
+  },
+  slideTrackPrimary: {
+    backgroundColor: theme.zinc200,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+  },
+  slideTrackSuccess: {
+    backgroundColor: "#d1fae5",
+    borderWidth: 1,
+    borderColor: "#6ee7b7",
+  },
+  slideTrackDisabled: {
+    backgroundColor: "#FEF08A",
+    borderWidth: 1,
+    borderColor: "#EAB308",
+  },
+  slideTrackLabel: {
+    paddingLeft: SLIDE_THUMB_SIZE + SLIDE_TRACK_PAD * 2,
+    paddingRight: SLIDE_TRACK_PAD * 2,
+    textAlign: "center",
+    fontSize: 15,
+    fontWeight: "700",
+    color: theme.zinc600,
+    letterSpacing: -0.2,
+  },
+  slideTrackLabelDisabled: {
+    color: "#713F12",
+  },
+  slideThumb: {
+    position: "absolute",
+    left: SLIDE_TRACK_PAD,
+    top: SLIDE_THUMB_TOP,
+    width: SLIDE_THUMB_SIZE,
+    height: SLIDE_THUMB_SIZE,
+    borderRadius: SLIDE_THUMB_SIZE / 2,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  slideThumbPrimary: {
+    backgroundColor: theme.white,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+  },
+  slideThumbSuccess: {
+    backgroundColor: theme.white,
+    borderWidth: 1,
+    borderColor: "#a7f3d0",
+  },
+  slideThumbDisabled: {
+    backgroundColor: "#FDE047",
+    borderWidth: 1,
+    borderColor: "#CA8A04",
+  },
   detailTopBar: { marginBottom: 4, paddingTop: 4 },
   detailBreadcrumb: {
     flexDirection: "row",
@@ -2978,20 +3287,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoutButtonText: { color: theme.zinc700, fontWeight: "700" },
-  /** Same intent as web `WorkOrderDetail`: emerald CTA after checklist when en curso. */
-  checklistCompleteTaskButton: {
-    marginTop: 16,
-    alignSelf: "flex-start",
-    backgroundColor: "#059669",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  checklistCompleteTaskButtonText: {
-    color: theme.white,
-    fontSize: 15,
-    fontWeight: "700",
-  },
   checklistCard: {
     backgroundColor: theme.zinc50,
     borderRadius: 10,

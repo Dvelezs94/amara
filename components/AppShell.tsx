@@ -15,6 +15,8 @@ import {
  Settings,
  LogOut,
  ChevronDown,
+ ChevronLeft,
+ ChevronRight,
  Wrench,
  ArrowLeft,
  Bell,
@@ -25,6 +27,8 @@ import type { SessionUser } from "@/lib/auth-shared";
 import { UserAvatar } from "@/components/UserAvatar";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
+
+const SIDEBAR_COLLAPSED_KEY = "app-shell-sidebar-collapsed";
 
 const baseNavSections: { type: string; items: NavItem[] }[] = [
  {
@@ -149,6 +153,7 @@ export function AppShell({
    : []),
  ];
  const mainNav = navSections.flatMap((s) => s.items);
+ const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
  const [sidebarOpen, setSidebarOpen] = useState(false);
  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
  const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -176,8 +181,29 @@ export function AppShell({
  const notificationsRef = useRef<HTMLDivElement>(null);
 
  useEffect(() => {
+  try {
+   const v = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+   if (v === "1") setSidebarCollapsed(true);
+  } catch {
+   /* ignore */
+  }
+ }, []);
+
+ useEffect(() => {
   setSearchQuery(searchParams.get("q") ?? "");
  }, [searchParams]);
+
+ function toggleSidebarCollapsed() {
+  setSidebarCollapsed((prev) => {
+   const next = !prev;
+   try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+   } catch {
+    /* ignore */
+   }
+   return next;
+  });
+ }
 
  useEffect(() => {
   if (!profileMenuOpen && !notificationsOpen) return;
@@ -244,74 +270,127 @@ export function AppShell({
  return (
   <div className="min-h-screen flex flex-col md:flex-row">
    {/* Desktop sidebar */}
-   <aside className="hidden md:fixed md:inset-y-0 md:flex md:w-[260px] md:flex-col border-r border-zinc-200 bg-white">
-    <div className="flex h-24 flex-col justify-center border-b border-zinc-200 px-6">
-     <Link href="/tareas" className="text-[33px] font-bold uppercase leading-none tracking-tight text-[#F14C03]">
-      MSA
+   <aside
+    className={`hidden border-r border-zinc-200 bg-white transition-[width] duration-200 ease-out md:fixed md:inset-y-0 md:flex md:flex-col ${
+     sidebarCollapsed ? "md:w-20" : "md:w-[260px]"
+    }`}
+   >
+    <div
+     className={`relative flex shrink-0 flex-col justify-center border-b border-zinc-200 ${
+      sidebarCollapsed ? "min-h-[4.5rem] px-2 pt-9 pb-2" : "h-24 px-6"
+     }`}
+    >
+     <button
+      type="button"
+      onClick={toggleSidebarCollapsed}
+      className="absolute right-2 top-2 z-10 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+      aria-label={sidebarCollapsed ? "Expandir barra lateral" : "Contraer barra lateral"}
+      title={sidebarCollapsed ? "Expandir" : "Contraer"}
+     >
+      {sidebarCollapsed ? (
+       <ChevronRight className="h-4 w-4" aria-hidden />
+      ) : (
+       <ChevronLeft className="h-4 w-4" aria-hidden />
+      )}
+     </button>
+     <Link
+      href="/tareas"
+      className={`font-bold uppercase leading-none tracking-tight text-[#F14C03] ${
+       sidebarCollapsed
+        ? "flex justify-center text-xl"
+        : "text-[33px]"
+      }`}
+      title="MSA"
+     >
+      {sidebarCollapsed ? "M" : "MSA"}
      </Link>
-     <p className="mt-1 text-xs uppercase tracking-[0.15em] text-neutral-400">
-      Maintenance Software Assistant
-     </p>
+     {!sidebarCollapsed && (
+      <p className="mt-1 text-xs uppercase tracking-[0.15em] text-neutral-400">
+       Maintenance Software Assistant
+      </p>
+     )}
     </div>
-    <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
+    <nav className={`flex-1 space-y-6 overflow-y-auto py-4 ${sidebarCollapsed ? "px-1.5" : "px-3"}`}>
      {navSections.map((section) => (
       <div key={section.type}>
-       <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
-        {section.type}
-       </p>
+       {!sidebarCollapsed && (
+        <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
+         {section.type}
+        </p>
+       )}
        <div className="space-y-1">
         {section.items.map(({ href, label, icon: Icon }) => (
          <Link
           key={href}
           href={href}
-          className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] tap-target ${
+          title={label}
+          className={`flex items-center rounded-md text-sm font-semibold uppercase tracking-[0.08em] tap-target ${
+           sidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-3 py-2.5"
+          } ${
            pathname.startsWith(href)
             ? "bg-[#F14C03] text-white"
             : "text-zinc-700 hover:bg-primary-50"
           }`}
          >
-          <Icon className="h-4 w-4 shrink-0" />
-          {label}
+          <Icon className="h-4 w-4 shrink-0" aria-hidden />
+          {!sidebarCollapsed && <span className="truncate">{label}</span>}
          </Link>
         ))}
        </div>
       </div>
      ))}
     </nav>
-    <div className="border-t border-zinc-200 p-3" ref={profileDesktopRef}>
+    <div className="relative border-t border-zinc-200 p-3" ref={profileDesktopRef}>
      <button
       type="button"
       onClick={() => setProfileMenuOpen((o) => !o)}
-      className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-sm font-medium tap-target ${
+      className={`flex w-full items-center rounded-md text-sm font-medium tap-target ${
+       sidebarCollapsed ? "justify-center px-1 py-2" : "justify-between gap-2 px-3 py-2.5"
+      } ${
        profileAreaActive
         ? "bg-[#F14C03] text-white"
         : "text-zinc-700 hover:bg-primary-50"
       }`}
+      title="Perfil"
+      aria-expanded={profileMenuOpen}
      >
-      <span className="flex min-w-0 flex-1 items-center gap-3">
+      <span
+       className={`flex min-w-0 items-center ${sidebarCollapsed ? "justify-center" : "flex-1 gap-3"}`}
+      >
        <UserAvatar
         userId={user.id}
         name={user.name}
         avatarUrl={user.avatarUrl}
         size="sm"
        />
-       <span className="flex min-w-0 flex-col text-left leading-tight">
-        <span className="truncate">Perfil</span>
-        <span
-         className={`truncate text-xs font-normal ${
-          profileAreaActive ? "text-white/85" : "text-neutral-400"
-         }`}
-        >
-         {user.name} · {userRole}
+       {!sidebarCollapsed && (
+        <span className="flex min-w-0 flex-col text-left leading-tight">
+         <span className="truncate">Perfil</span>
+         <span
+          className={`truncate text-xs font-normal ${
+           profileAreaActive ? "text-white/85" : "text-neutral-400"
+          }`}
+         >
+          {user.name} · {userRole}
+         </span>
         </span>
-       </span>
+       )}
       </span>
-      <ChevronDown
-       className={`h-4 w-4 shrink-0 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`}
-      />
+      {!sidebarCollapsed && (
+       <ChevronDown
+        className={`h-4 w-4 shrink-0 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`}
+        aria-hidden
+       />
+      )}
      </button>
      {profileMenuOpen && (
-      <div className="mt-1 pl-2">
+      <div
+       className={
+        sidebarCollapsed
+         ? "absolute bottom-2 left-full z-50 ml-1 min-w-[180px]"
+         : "mt-1 pl-2"
+       }
+      >
        <ProfileSubmenu onClose={() => setProfileMenuOpen(false)} />
       </div>
      )}
@@ -414,7 +493,11 @@ export function AppShell({
    </aside>
 
    {/* Main content */}
-   <div className="flex min-h-screen flex-1 flex-col !bg-zinc-200 md:pl-[260px]">
+   <div
+    className={`flex min-h-screen flex-1 flex-col !bg-zinc-200 transition-[padding] duration-200 ease-out ${
+     sidebarCollapsed ? "md:pl-20" : "md:pl-[260px]"
+    }`}
+   >
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-zinc-200 bg-white/95 px-4 backdrop-blur">
      <button
       type="button"

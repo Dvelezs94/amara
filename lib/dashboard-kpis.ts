@@ -53,7 +53,7 @@ export function buildDashboardKpis({
       ? Number(((plannedCount / totalPlanned) * 100).toFixed(1))
       : null;
 
-  const periodHours = windowDays * 24;
+  const periodHours = Math.max(1, windowDays) * 24;
   let oee: number | null = null;
   if (assetCount > 0) {
     const availability = Math.max(
