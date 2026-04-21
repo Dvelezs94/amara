@@ -2,20 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { GripVertical, Trash2, Plus, CircleHelp } from "lucide-react";
+import { GripVertical, Trash2, Plus, CircleHelp, CalendarDays } from "lucide-react";
 import { AnalyticsChartCard } from "@/components/AnalyticsChartCard";
+import {
+  DashboardDateRangeModal,
+  formatDashboardRangeTrigger,
+} from "@/components/DashboardDateRangeModal";
 import {
   parseWorkOrderKind,
   workOrderKindBadgeClass,
   workOrderKindLabel,
 } from "@/lib/work-order-kind";
 import type { DashboardKpis } from "@/lib/dashboard-kpis";
-import {
-  clampRangeOrder,
-  defaultLast30DaysRange,
-  isDefaultLast30DaysRange,
-  isValidYmd,
-} from "@/lib/dashboard-date-range";
+import { defaultLast30DaysRange, isDefaultLast30DaysRange } from "@/lib/dashboard-date-range";
 
 type Widget = {
   id: string;
@@ -64,6 +63,7 @@ export default function DashboardPage() {
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [widgetSizes, setWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
   const WIDGET_SIZE_KEY = "dashboard-widget-sizes-v1";
+  const [rangeModalOpen, setRangeModalOpen] = useState(false);
 
   const showLists = isDefaultLast30DaysRange(range);
 
@@ -216,60 +216,39 @@ export default function DashboardPage() {
     );
   }
 
-  function setFromYmd(next: string) {
-    if (!next || !isValidYmd(next)) return;
-    setRange((prev) => clampRangeOrder(next, prev.to));
-  }
-
-  function setToYmd(next: string) {
-    if (!next || !isValidYmd(next)) return;
-    setRange((prev) => clampRangeOrder(prev.from, next));
-  }
-
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-4xl font-bold uppercase leading-none text-zinc-900">Dashboard</h1>
         </div>
-        <Link
-          href="/analytics"
-          className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 px-4 text-sm font-semibold uppercase tracking-[0.08em] text-white shadow-sm hover:bg-primary-700"
-        >
-          <Plus className="h-4 w-4" />
-          Añadir gráfico
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRangeModalOpen(true)}
+            className="inline-flex max-w-full items-center gap-2 rounded-md border border-zinc-300 bg-white py-2.5 pl-3 pr-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 sm:pr-4"
+            aria-label="Cambiar rango de fechas"
+          >
+            <CalendarDays className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden />
+            <span className="hidden truncate sm:inline">{formatDashboardRangeTrigger(range)}</span>
+            <span className="sm:hidden">Fechas</span>
+          </button>
+          <Link
+            href="/analytics"
+            className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 px-4 text-sm font-semibold uppercase tracking-[0.08em] text-white shadow-sm hover:bg-primary-700"
+          >
+            <Plus className="h-4 w-4" />
+            Añadir gráfico
+          </Link>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4 rounded-lg border border-zinc-200 bg-white p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Desde
-            <input
-              type="date"
-              value={range.from}
-              onChange={(e) => setFromYmd(e.target.value)}
-              className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Hasta
-            <input
-              type="date"
-              value={range.to}
-              onChange={(e) => setToYmd(e.target.value)}
-              className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
-            />
-          </label>
-        </div>
-        <button
-          type="button"
-          onClick={() => setRange(defaultLast30DaysRange())}
-          className="rounded-md border border-zinc-300 bg-zinc-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-700 hover:bg-zinc-100"
-        >
-          Últimos 30 días
-        </button>
-      </div>
+      <DashboardDateRangeModal
+        open={rangeModalOpen}
+        onOpenChange={setRangeModalOpen}
+        value={range}
+        onApply={setRange}
+      />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <section className="rounded-lg border border-zinc-200 bg-white p-4">
