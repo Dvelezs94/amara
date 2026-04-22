@@ -95,6 +95,20 @@ export async function PATCH(
     );
   }
   const body = await req.json().catch(() => ({}));
+  if (body.status === "open") body.status = "pending";
+  const allowedStatus = new Set([
+    "pending",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ]);
+  if (
+    body.status !== undefined &&
+    typeof body.status === "string" &&
+    !allowedStatus.has(body.status)
+  ) {
+    return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
+  }
   if (body.assigneeId !== undefined && session.role !== "admin") {
     return NextResponse.json(
       { error: "Solo administradores pueden cambiar el asignado" },

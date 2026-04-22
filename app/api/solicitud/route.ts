@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     folio,
     title: titulo,
     description: finalDescription,
-    status: "open",
+    status: "pending",
     priority: prioridad,
     kind: "on_demand",
     requesterId: null,

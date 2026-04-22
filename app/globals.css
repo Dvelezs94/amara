@@ -263,9 +263,9 @@ body {
 }
 
 .wo-kind-on-demand {
-  background-color: #f14c03 !important;
-  color: #ffffff !important;
-  border: 1px solid #c43d06 !important;
+  background-color: #ffedd5 !important;
+  color: #9a3412 !important;
+  border: 1px solid #fdba74 !important;
 }
 
 .wo-kind-emphasis {
@@ -279,9 +279,9 @@ body {
 }
 
 .hmi .wo-kind-on-demand {
-  background-color: #f14c03 !important;
-  color: #ffffff !important;
-  border-color: #c43d06 !important;
+  background-color: #ffedd5 !important;
+  color: #9a3412 !important;
+  border-color: #fdba74 !important;
 }
 
 .hmi .wo-kind-emphasis {

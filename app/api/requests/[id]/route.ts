@@ -75,7 +75,7 @@ export async function POST(
       folio,
       title: r.description.slice(0, 200),
       description: r.description,
-      status: "open",
+      status: "pending",
       priority: r.priority ?? "medium",
       kind: "on_demand",
       assetId: r.assetId,

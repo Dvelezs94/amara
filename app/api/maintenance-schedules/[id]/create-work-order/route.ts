@@ -69,7 +69,7 @@ export async function POST(
     folio,
     title: schedule.name,
     description: `Generada desde calendario de mantenimiento (${schedule.id}).`,
-    status: "open",
+    status: "pending",
     priority: "medium",
     kind: "routine",
     assetId: schedule.assetId ?? null,

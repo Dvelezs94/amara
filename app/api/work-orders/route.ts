@@ -18,11 +18,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { searchParams } = new URL(req.url);
-  const status = searchParams.get("status");
+  const statusRaw = searchParams.get("status");
+  const status = statusRaw === "open" ? "pending" : statusRaw;
   const assigneeId = searchParams.get("assigneeId");
 
   const conditions = [];
-  if (status) conditions.push(eq(workOrders.status, status as "open" | "in_progress" | "completed" | "cancelled"));
+  if (status) conditions.push(eq(workOrders.status, status as "pending" | "in_progress" | "completed" | "cancelled"));
   if (assigneeId) conditions.push(eq(workOrders.assigneeId, assigneeId));
 
   const base = db
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
     folio,
     title,
     description: body.description?.trim() || null,
-    status: "open",
+    status: "pending",
     priority: body.priority ?? "medium",
     kind: "on_demand",
     assetId: body.assetId || null,
@@ -122,7 +123,7 @@ export async function POST(req: Request) {
     userId: session.id,
     metadata: {
       title,
-      status: "open",
+      status: "pending",
       priority: body.priority ?? "medium",
       assetId: body.assetId || null,
       assigneeId: body.assigneeId || null,

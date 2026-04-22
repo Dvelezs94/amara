@@ -26,7 +26,7 @@ import {
 } from "@/lib/work-order-duration";
 
 const statusColors: Record<string, string> = {
-  open: "bg-amber-100 text-amber-800",
+  pending: "bg-amber-100 text-amber-800",
   in_progress: "bg-blue-100 text-blue-800",
   completed: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-zinc-100 text-zinc-600",
@@ -332,8 +332,8 @@ export function WorkOrderDetail({
         (initial.assignee?.id === assigneeId ? initial.assignee.name : null);
 
   const statusLabel =
-    initial.status === "open"
-      ? "Abierta"
+    initial.status === "pending"
+      ? "Pendiente"
       : initial.status === "in_progress"
         ? "En curso"
         : initial.status === "completed"
@@ -475,7 +475,7 @@ export function WorkOrderDetail({
       {checklist.length > 0 && (
         <section className="max-w-none rounded-xl border border-zinc-200 bg-white p-4">
           <h2 className="text-sm font-semibold text-zinc-900">Checklist</h2>
-          {!checklistUnlocked && initial.status === "open" && (
+          {!checklistUnlocked && initial.status === "pending" && (
             <p className="mb-2 mt-1 text-xs text-amber-700">
               Cambia el estado a <strong>En curso</strong> en el panel derecho para
               editar el checklist.
@@ -699,7 +699,7 @@ export function WorkOrderDetail({
                 onChange={(e) => updateStatus(e.target.value)}
                 className="w-full cursor-pointer rounded-lg border-2 border-[#F14C03] bg-[#FFF5F0] py-2.5 pl-3 pr-8 text-sm font-semibold text-zinc-900 shadow-sm focus:border-[#F14C03] focus:outline-none focus:ring-2 focus:ring-[#F14C03]/25"
               >
-                <option value="open">Abierta</option>
+                <option value="pending">Pendiente</option>
                 <option value="in_progress">En curso</option>
                 <option value="completed">Completada</option>
                 <option value="cancelled">Cancelada</option>

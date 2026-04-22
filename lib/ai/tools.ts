@@ -39,11 +39,15 @@ export const AI_TOOLS = [
     type: "function" as const,
     function: {
       name: "list_work_orders",
-      description: "List work orders. Filter by status: open, in_progress, completed, cancelled.",
+      description: "List work orders. Filter by status: pending, in_progress, completed, cancelled.",
       parameters: {
         type: "object",
         properties: {
-          status: { type: "string", enum: ["open", "in_progress", "completed", "cancelled"], description: "Filter by status" },
+          status: {
+            type: "string",
+            enum: ["pending", "open", "in_progress", "completed", "cancelled"],
+            description: "Filter by status (open is treated as pending)",
+          },
           limit: { type: "number", description: "Max number to return (default 20)" },
         },
       },
@@ -157,18 +161,19 @@ export async function runAiTool(
       }
       case "list_work_orders": {
         const statusRaw = args.status as string | undefined;
+        const statusNorm = statusRaw === "open" ? "pending" : statusRaw;
         const limit = Math.min(Number(args.limit) || 20, 50);
         const validStatuses = new Set([
-          "open",
+          "pending",
           "in_progress",
           "completed",
           "cancelled",
         ]);
         const statusFilter =
-          statusRaw && validStatuses.has(statusRaw)
+          statusNorm && validStatuses.has(statusNorm)
             ? eq(
                 workOrders.status,
-                statusRaw as "open" | "in_progress" | "completed" | "cancelled"
+                statusNorm as "pending" | "in_progress" | "completed" | "cancelled"
               )
             : undefined;
         const list = await db

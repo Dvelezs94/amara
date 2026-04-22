@@ -107,6 +107,9 @@ if (!hasBoardSortOrderColumn) {
     .run();
 }
 
+/** Legacy status value renamed to `pending` (see work_orders.status enum). */
+sqlite.prepare(`UPDATE work_orders SET status = 'pending' WHERE status = 'open'`).run();
+
 sqlite
   .prepare(
     `

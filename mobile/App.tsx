@@ -30,7 +30,23 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import { WebView } from "react-native-webview";
 
 type AppSection = "workOrders" | "knowledgeBase" | "notifications" | "profile";
-type WoStatus = "open" | "in_progress" | "completed" | "cancelled";
+type WoStatus = "pending" | "in_progress" | "completed" | "cancelled";
+
+/** API + DB use `pending`; legacy rows or clients may still send `open`. */
+function normalizeWoStatus(raw: unknown): WoStatus {
+  if (raw === "open") return "pending";
+  if (raw === "pending" || raw === "in_progress" || raw === "completed" || raw === "cancelled") {
+    return raw;
+  }
+  return "pending";
+}
+
+function statusLabel(status: WoStatus): string {
+  if (status === "pending") return "Pendiente";
+  if (status === "in_progress") return "En progreso";
+  if (status === "completed") return "Completada";
+  return "Cancelada";
+}
 type WoPriority = "low" | "medium" | "high" | "urgent";
 
 type WorkOrderListItem = {
@@ -258,6 +274,11 @@ function resolveAvatarBackgroundColor(
 
 type WorkOrderKind = "routine" | "on_demand";
 
+/** Main task list: one status bucket at a time. */
+type TaskListTab = "pending" | "in_progress" | "completed";
+
+type TaskListKindFilter = "all" | WorkOrderKind;
+
 /** Mirrors `lib/work-order-kind.ts` on the web app */
 function parseWorkOrderKind(raw: unknown): WorkOrderKind {
   if (raw === "routine") return "routine";
@@ -272,7 +293,35 @@ function WorkOrderKindBadge({ kindRaw }: { kindRaw: unknown }) {
   const k = parseWorkOrderKind(kindRaw);
   return (
     <View style={[styles.kindBadge, k === "routine" ? styles.kindBadgeRoutine : styles.kindBadgeOnDemand]}>
-      <Text style={styles.kindBadgeText}>{workOrderKindLabel(k)}</Text>
+      <Text style={[styles.kindBadgeText, k === "routine" ? styles.kindBadgeTextRoutine : styles.kindBadgeTextOnDemand]}>
+        {workOrderKindLabel(k)}
+      </Text>
+    </View>
+  );
+}
+
+function WorkOrderStatusBadge({ status }: { status: WoStatus }) {
+  const pill =
+    status === "pending"
+      ? styles.woStatusBadgePending
+      : status === "in_progress"
+        ? styles.woStatusBadgeInProgress
+        : status === "completed"
+          ? styles.woStatusBadgeCompleted
+          : styles.woStatusBadgeCancelled;
+  const pillText =
+    status === "pending"
+      ? styles.woStatusBadgePendingText
+      : status === "in_progress"
+        ? styles.woStatusBadgeInProgressText
+        : status === "completed"
+          ? styles.woStatusBadgeCompletedText
+          : styles.woStatusBadgeCancelledText;
+  return (
+    <View style={[styles.woStatusBadge, pill]} accessibilityRole="text">
+      <Text style={[styles.woStatusBadgeLabel, pillText]} numberOfLines={1}>
+        {statusLabel(status)}
+      </Text>
     </View>
   );
 }
@@ -469,10 +518,27 @@ function TaskCardAssigneeAvatar({
   return null;
 }
 
-const SLIDE_TRACK_HEIGHT = 52;
-const SLIDE_THUMB_SIZE = 46;
-const SLIDE_TRACK_PAD = 4;
-const SLIDE_THUMB_TOP = (SLIDE_TRACK_HEIGHT - SLIDE_THUMB_SIZE) / 2;
+/** Rail and thumb: larger targets for gloves / factory floor use. */
+const SLIDE_TRACK_HEIGHT = 60;
+/** Rounded rectangle track (not a stadium / oval). */
+const SLIDE_TRACK_RADIUS = 12;
+const SLIDE_THUMB_WIDTH = 84;
+const SLIDE_THUMB_HEIGHT = 52;
+/** Rounded rectangle (not a circle) so the handle reads clearly as a “button”. */
+const SLIDE_THUMB_RADIUS = 12;
+const SLIDE_RAIL_INSET_X = 6;
+const SLIDE_LABEL_GAP = 10;
+/** Nudge up ~1dp: drop shadow reads as extra weight below the thumb. */
+const SLIDE_THUMB_TOP = (SLIDE_TRACK_HEIGHT - SLIDE_THUMB_HEIGHT) / 2 - 1;
+
+/** Bottom dock chrome — keep `detail` scroll `paddingBottom` in sync with the dock `View`. */
+const TASK_SLIDE_DOCK_PADDING_TOP = 14;
+const TASK_SLIDE_DOCK_PADDING_X = 14;
+const TASK_SLIDE_DOCK_SAFE_MIN = 16;
+/** Match `TASK_SLIDE_DOCK_PADDING_TOP` so breathing room below the rail matches above (safe area is extra). */
+const TASK_SLIDE_DOCK_BELOW_RAIL = 14;
+/** Two-line hint + `taskSlideDockHint` margin below. */
+const TASK_SLIDE_DOCK_HINT_SCROLL_EXTRA = 56;
 
 type SlideToConfirmProps = {
   label: string;
@@ -494,7 +560,7 @@ function SlideToConfirm({ label, onConfirm, disabled, variant = "primary", reset
   const disabledRef = useRef(!!disabled);
   disabledRef.current = !!disabled;
   const [trackWidth, setTrackWidth] = useState(0);
-  const maxDrag = Math.max(0, trackWidth - SLIDE_THUMB_SIZE - SLIDE_TRACK_PAD * 2);
+  const maxDrag = Math.max(0, trackWidth - SLIDE_THUMB_WIDTH - SLIDE_RAIL_INSET_X * 2);
   maxDragRef.current = maxDrag;
 
   useEffect(() => {
@@ -592,13 +658,18 @@ function SlideToConfirm({ label, onConfirm, disabled, variant = "primary", reset
         style={trackStyles}
         onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
       >
-        <Text
-          pointerEvents="none"
-          style={[styles.slideTrackLabel, disabled && styles.slideTrackLabelDisabled]}
-          numberOfLines={1}
-        >
-          {label}
-        </Text>
+        <View style={styles.slideTrackLabelSlot} pointerEvents="none">
+          <Text
+            style={[
+              styles.slideTrackLabel,
+              variant === "primary" && !disabled && styles.slideTrackLabelPrimary,
+              disabled && styles.slideTrackLabelDisabled,
+            ]}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </View>
         <Animated.View
           style={[
             styles.slideThumb,
@@ -613,7 +684,7 @@ function SlideToConfirm({ label, onConfirm, disabled, variant = "primary", reset
         >
           <Ionicons
             name="chevron-forward"
-            size={22}
+            size={28}
             color={disabled ? "#713F12" : variant === "primary" ? theme.primary : "#047857"}
           />
         </Animated.View>
@@ -730,10 +801,11 @@ function AppContent() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
-  const [assigneeFilterInitialized, setAssigneeFilterInitialized] = useState(false);
+  const [taskListTab, setTaskListTab] = useState<TaskListTab>("pending");
+  const [taskFilterModalVisible, setTaskFilterModalVisible] = useState(false);
+  const [filterAssigneeId, setFilterAssigneeId] = useState<string | null>(null);
+  const [filterKind, setFilterKind] = useState<TaskListKindFilter>("all");
   const [completedVisibleCount, setCompletedVisibleCount] = useState(COMPLETED_INITIAL_VISIBLE);
-  const [pendingSortByPriority, setPendingSortByPriority] = useState(true);
   const [taskListTick, setTaskListTick] = useState(0);
 
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
@@ -742,6 +814,8 @@ function AppContent() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [workOrdersRefreshing, setWorkOrdersRefreshing] = useState(false);
   const [detailRefreshing, setDetailRefreshing] = useState(false);
+  /** Task "Detalles" card: collapsed by default. */
+  const [detailDetailsExpanded, setDetailDetailsExpanded] = useState(false);
   const [notificationsRefreshing, setNotificationsRefreshing] = useState(false);
   /** Draft strings for number fields while editing (allows "12." before blur). */
   const [checklistNumberDraft, setChecklistNumberDraft] = useState<Record<string, string>>({});
@@ -774,6 +848,8 @@ function AppContent() {
   const [inlinePdf, setInlinePdf] = useState<{ uri: string; title: string } | null>(null);
   const [inlineImage, setInlineImage] = useState<{ uri: string; title: string } | null>(null);
   const [kbOpeningId, setKbOpeningId] = useState<string | null>(null);
+  /** After login, default assignee filter to current user once per session. */
+  const assigneeFilterDefaultAppliedRef = useRef(false);
 
   const canLogin = username.trim().length > 0 && password.trim().length > 0;
   const firstName = useMemo(() => {
@@ -792,22 +868,36 @@ function AppContent() {
     );
   }, [knowledge, kbQuery]);
 
-  const ongoingTasks = useMemo(
-    () => workOrders.filter((w) => w.status === "in_progress"),
+  const workOrdersFiltered = useMemo(() => {
+    let list = workOrders;
+    if (filterAssigneeId != null) {
+      list = list.filter((w) => w.assigneeId === filterAssigneeId);
+    }
+    if (filterKind !== "all") {
+      list = list.filter((w) => parseWorkOrderKind(w.kind) === filterKind);
+    }
+    return list;
+  }, [workOrders, filterAssigneeId, filterKind]);
+
+  const ongoingTasksCountAll = useMemo(
+    () => workOrders.filter((w) => w.status === "in_progress").length,
     [workOrders]
   );
-  const pendingOpenTasks = useMemo(
-    () => workOrders.filter((w) => w.status === "open"),
-    [workOrders]
+
+  const ongoingTasks = useMemo(
+    () => workOrdersFiltered.filter((w) => w.status === "in_progress"),
+    [workOrdersFiltered]
+  );
+  const pendingQueueTasks = useMemo(
+    () => workOrdersFiltered.filter((w) => w.status === "pending"),
+    [workOrdersFiltered]
   );
   const pendingTasksSorted = useMemo(() => {
-    const list = [...pendingOpenTasks];
-    if (pendingSortByPriority) {
-      const rank: Record<WoPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
-      list.sort((a, b) => (rank[a.priority] ?? 9) - (rank[b.priority] ?? 9));
-      return list;
-    }
+    const list = [...pendingQueueTasks];
+    const rank: Record<WoPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
     list.sort((a, b) => {
+      const pr = (rank[a.priority] ?? 9) - (rank[b.priority] ?? 9);
+      if (pr !== 0) return pr;
       const o = (a.boardSortOrder ?? 0) - (b.boardSortOrder ?? 0);
       if (o !== 0) return o;
       const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -815,10 +905,10 @@ function AppContent() {
       return tb - ta;
     });
     return list;
-  }, [pendingOpenTasks, pendingSortByPriority]);
+  }, [pendingQueueTasks]);
 
   const completedTasks = useMemo(() => {
-    const list = workOrders.filter((w) => w.status === "completed");
+    const list = workOrdersFiltered.filter((w) => w.status === "completed");
     function sortTime(w: WorkOrderListItem): number {
       if (w.completedAt) {
         const t = new Date(w.completedAt).getTime();
@@ -831,21 +921,28 @@ function AppContent() {
       return 0;
     }
     return [...list].sort((a, b) => sortTime(b) - sortTime(a));
-  }, [workOrders]);
+  }, [workOrdersFiltered]);
   const completedTasksVisible = useMemo(
     () => completedTasks.slice(0, completedVisibleCount),
     [completedTasks, completedVisibleCount]
   );
 
+  /** Badge: non-default assignee (incl. "Todos") or type filter. Default = current user only. */
+  const taskFiltersActive =
+    filterKind !== "all" || (me != null && filterAssigneeId !== me.id);
+
   async function loadWorkOrders() {
     setOrdersLoading(true);
     setOrdersError(null);
     try {
-      const query = selectedAssigneeId
-        ? `?assigneeId=${encodeURIComponent(selectedAssigneeId)}`
-        : "";
-      const data = await apiFetch<WorkOrderListItem[]>(`/api/work-orders${query}`);
-      setWorkOrders(Array.isArray(data) ? data : []);
+      const data = await apiFetch<WorkOrderListItem[]>(`/api/work-orders`);
+      const rows = Array.isArray(data) ? data : [];
+      setWorkOrders(
+        rows.map((w) => ({
+          ...w,
+          status: normalizeWoStatus(w.status),
+        }))
+      );
       setCompletedVisibleCount(COMPLETED_INITIAL_VISIBLE);
     } catch (error) {
       setOrdersError(error instanceof Error ? error.message : "No se pudo cargar las tareas.");
@@ -1003,7 +1100,7 @@ function AppContent() {
     }
     try {
       const data = await apiFetch<WorkOrderDetail>(`/api/work-orders/${id}`);
-      setSelectedWorkOrder(data);
+      setSelectedWorkOrder({ ...data, status: normalizeWoStatus(data.status) });
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : "No se pudo cargar detalle.");
       if (!silent) {
@@ -1083,6 +1180,9 @@ function AppContent() {
           }
           if (next === "in_progress") {
             return { ...wo, status: "in_progress" };
+          }
+          if (next === "pending") {
+            return { ...wo, status: "pending" };
           }
           return wo;
         });
@@ -1237,9 +1337,12 @@ function AppContent() {
       setIsLoggedIn(false);
       closeTaskDetail();
       setPassword("");
+      assigneeFilterDefaultAppliedRef.current = false;
       setMe(null);
-      setSelectedAssigneeId(null);
-      setAssigneeFilterInitialized(false);
+      setFilterAssigneeId(null);
+      setFilterKind("all");
+      setTaskListTab("pending");
+      setTaskFilterModalVisible(false);
       setNotifications([]);
       setUnreadCount(0);
       setProfileBusy(false);
@@ -1284,13 +1387,6 @@ function AppContent() {
     }
   }
 
-  function statusLabel(status: WoStatus) {
-    if (status === "open") return "Abierta";
-    if (status === "in_progress") return "En curso";
-    if (status === "completed") return "Completada";
-    return "Cancelada";
-  }
-
   function priorityLabel(priority: WoPriority) {
     if (priority === "low") return "Baja";
     if (priority === "medium") return "Media";
@@ -1301,17 +1397,17 @@ function AppContent() {
   useEffect(() => {
     if (!isLoggedIn) return;
     loadWorkOrders();
-  }, [isLoggedIn, selectedAssigneeId]);
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !me?.id || assigneeFilterDefaultAppliedRef.current) return;
+    assigneeFilterDefaultAppliedRef.current = true;
+    setFilterAssigneeId(me.id);
+  }, [isLoggedIn, me?.id]);
 
   useEffect(() => {
     setCompletedVisibleCount(COMPLETED_INITIAL_VISIBLE);
-  }, [selectedAssigneeId, isLoggedIn]);
-
-  useEffect(() => {
-    if (!isLoggedIn || !me?.id || assigneeFilterInitialized) return;
-    setSelectedAssigneeId(me.id);
-    setAssigneeFilterInitialized(true);
-  }, [isLoggedIn, me?.id, assigneeFilterInitialized]);
+  }, [isLoggedIn, taskListTab, filterAssigneeId, filterKind]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -1364,6 +1460,7 @@ function AppContent() {
     setChecklistDropdownModal(null);
     setChecklistPhotoUploadingId(null);
     setChecklistDatePicker(null);
+    setDetailDetailsExpanded(false);
   }, [selectedWorkOrderId]);
 
   const detailCanEditChecklist = selectedWorkOrder?.status === "in_progress";
@@ -1372,7 +1469,7 @@ function AppContent() {
     selectedWorkOrder != null &&
     !detailLoading &&
     !detailError &&
-    (selectedWorkOrder.status === "open" || selectedWorkOrder.status === "in_progress");
+    (selectedWorkOrder.status === "pending" || selectedWorkOrder.status === "in_progress");
 
   const detailSlideCompleteNeedsHint =
     selectedWorkOrder != null &&
@@ -1485,9 +1582,13 @@ function AppContent() {
                       ? {
                           paddingBottom:
                             48 +
-                            86 +
-                            Math.max(insets.bottom, 14) +
-                            (detailSlideCompleteNeedsHint ? 34 : 0),
+                            TASK_SLIDE_DOCK_PADDING_TOP +
+                            SLIDE_TRACK_HEIGHT +
+                            TASK_SLIDE_DOCK_BELOW_RAIL +
+                            Math.max(insets.bottom, TASK_SLIDE_DOCK_SAFE_MIN) +
+                            (detailSlideCompleteNeedsHint
+                              ? TASK_SLIDE_DOCK_HINT_SCROLL_EXTRA
+                              : 0),
                         }
                       : null,
                   ]}
@@ -1529,35 +1630,34 @@ function AppContent() {
 
                     <Text style={styles.detailPageTitle}>{selectedWorkOrder.title}</Text>
 
-                    <View style={styles.detailPanel}>
-                      <Text style={styles.detailPanelKicker}>Estado</Text>
-                      <View
-                        style={[
-                          styles.detailStatusBanner,
-                          selectedWorkOrder.status === "open" && styles.detailStatusOpen,
-                          selectedWorkOrder.status === "in_progress" && styles.detailStatusInProgress,
-                          selectedWorkOrder.status === "completed" && styles.detailStatusCompleted,
-                          selectedWorkOrder.status === "cancelled" && styles.detailStatusCancelled,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.detailStatusBannerText,
-                            selectedWorkOrder.status === "open" && styles.detailStatusOpenText,
-                            selectedWorkOrder.status === "in_progress" && styles.detailStatusInProgressText,
-                            selectedWorkOrder.status === "completed" && styles.detailStatusCompletedText,
-                            selectedWorkOrder.status === "cancelled" && styles.detailStatusCancelledText,
-                          ]}
-                        >
-                          {statusLabel(selectedWorkOrder.status)}
-                        </Text>
-                      </View>
-                    </View>
-
                     <View style={styles.detailCard}>
-                      <View style={styles.detailCardHeader}>
-                        <Text style={styles.detailCardHeaderTitle}>Detalles</Text>
-                      </View>
+                      <Pressable
+                        onPress={() => setDetailDetailsExpanded((v) => !v)}
+                        style={({ pressed }) => [
+                          styles.detailCardHeader,
+                          !detailDetailsExpanded && styles.detailCardHeaderCollapsed,
+                          pressed && styles.detailCardHeaderPressed,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          detailDetailsExpanded ? "Ocultar detalles de la tarea" : "Mostrar detalles de la tarea"
+                        }
+                        accessibilityState={{ expanded: detailDetailsExpanded }}
+                      >
+                        <View style={styles.detailCardHeaderRow}>
+                          <Ionicons
+                            name={detailDetailsExpanded ? "chevron-up" : "chevron-down"}
+                            size={18}
+                            color={theme.zinc600}
+                            style={styles.detailCardHeaderChevron}
+                          />
+                          <Text style={[styles.detailCardHeaderTitle, styles.detailCardHeaderTitleFlex]}>
+                            Detalles
+                          </Text>
+                          <WorkOrderStatusBadge status={selectedWorkOrder.status} />
+                        </View>
+                      </Pressable>
+                      {detailDetailsExpanded ? (
                       <View style={styles.detailCardBody}>
                         <View style={styles.detailRow}>
                           <Text style={styles.detailRowLabel}>Tipo</Text>
@@ -1638,6 +1738,7 @@ function AppContent() {
                           </>
                         ) : null}
                       </View>
+                      ) : null}
                     </View>
 
                     <View style={styles.detailCard}>
@@ -1696,9 +1797,9 @@ function AppContent() {
                           <Text style={styles.detailCardHeaderTitle}>Checklist</Text>
                         </View>
                         <View style={styles.detailCardBody}>
-                          {selectedWorkOrder.status === "open" ? (
+                          {selectedWorkOrder.status === "pending" ? (
                             <Text style={styles.checklistHint}>
-                              Cambia el estado a <Text style={styles.checklistHintStrong}>En curso</Text> para
+                              Cambia el estado a <Text style={styles.checklistHintStrong}>En progreso</Text> para
                               editar el checklist.
                             </Text>
                           ) : null}
@@ -1939,7 +2040,11 @@ function AppContent() {
                   <View
                     style={[
                       styles.taskSlideDock,
-                      { paddingBottom: Math.max(insets.bottom, 12) },
+                      {
+                        paddingBottom:
+                          TASK_SLIDE_DOCK_BELOW_RAIL +
+                          Math.max(insets.bottom, TASK_SLIDE_DOCK_SAFE_MIN),
+                      },
                     ]}
                   >
                     {selectedWorkOrder.status === "in_progress" && detailSlideCompleteNeedsHint ? (
@@ -1947,9 +2052,9 @@ function AppContent() {
                         Completa el checklist para cerrar la tarea.
                       </Text>
                     ) : null}
-                    {selectedWorkOrder.status === "open" ? (
+                    {selectedWorkOrder.status === "pending" ? (
                       <SlideToConfirm
-                        resetKey={`${selectedWorkOrder.id}-open`}
+                        resetKey={`${selectedWorkOrder.id}-pending`}
                         label="Desliza para iniciar"
                         variant="primary"
                         onConfirm={() => void updateStatus("in_progress")}
@@ -2135,64 +2240,90 @@ function AppContent() {
               </View>
             ) : (
               <View style={styles.canvasShell}>
-                <View style={styles.filterRow}>
-                  <Text style={styles.cardMeta}>Asignado:</Text>
-                  {selectedAssigneeId ? (
-                    <View style={styles.filterTag}>
-                      <Text style={styles.filterTagText}>
-                        {users.find((u) => u.id === selectedAssigneeId)?.name ?? "Usuario"}
-                      </Text>
-                      <Pressable onPress={() => setSelectedAssigneeId(null)}>
-                        <Text style={styles.filterTagRemove}>Quitar</Text>
-                      </Pressable>
-                    </View>
-                  ) : (
-                    <Text style={styles.helpText}>Todos</Text>
-                  )}
-                </View>
-                <ScrollView
-                  style={styles.filterUsersScroll}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.filterUsersRow}
-                >
-                  <Pressable
-                    style={[
-                      styles.userFilterChip,
-                      selectedAssigneeId === null && styles.userFilterChipActive,
-                    ]}
-                    onPress={() => setSelectedAssigneeId(null)}
-                  >
-                    <Text
-                      style={[
-                        styles.userFilterChipText,
-                        selectedAssigneeId === null && styles.userFilterChipTextActive,
-                      ]}
-                    >
-                      Todos
-                    </Text>
-                  </Pressable>
-                  {users.map((user) => (
+                <View style={styles.taskListToolbar}>
+                  <View style={styles.taskTabRow}>
                     <Pressable
-                      key={user.id}
-                      style={[
-                        styles.userFilterChip,
-                        selectedAssigneeId === user.id && styles.userFilterChipActive,
-                      ]}
-                      onPress={() => setSelectedAssigneeId(user.id)}
+                      style={[styles.taskTab, taskListTab === "pending" && styles.taskTabActive]}
+                      onPress={() => setTaskListTab("pending")}
                     >
                       <Text
-                        style={[
-                          styles.userFilterChipText,
-                          selectedAssigneeId === user.id && styles.userFilterChipTextActive,
-                        ]}
+                        style={[styles.taskTabText, taskListTab === "pending" && styles.taskTabTextActive]}
+                        numberOfLines={1}
                       >
-                        {user.name}
+                        Pendientes
+                      </Text>
+                      <Text
+                        style={[styles.taskTabCount, taskListTab === "pending" && styles.taskTabCountActive]}
+                      >
+                        {pendingQueueTasks.length}
                       </Text>
                     </Pressable>
-                  ))}
-                </ScrollView>
+                    <Pressable
+                      style={[
+                        styles.taskTab,
+                        taskListTab === "in_progress" && styles.taskTabActiveInProgress,
+                      ]}
+                      onPress={() => setTaskListTab("in_progress")}
+                    >
+                      <Text
+                        style={[styles.taskTabText, taskListTab === "in_progress" && styles.taskTabTextActive]}
+                        numberOfLines={1}
+                      >
+                        En progreso
+                      </Text>
+                      <Text
+                        style={[
+                          styles.taskTabCount,
+                          taskListTab === "in_progress" && styles.taskTabCountActive,
+                        ]}
+                      >
+                        {ongoingTasks.length}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.taskTab, taskListTab === "completed" && styles.taskTabActive]}
+                      onPress={() => setTaskListTab("completed")}
+                    >
+                      <Text
+                        style={[styles.taskTabText, taskListTab === "completed" && styles.taskTabTextActive]}
+                        numberOfLines={1}
+                      >
+                        Completadas
+                      </Text>
+                      <Text
+                        style={[styles.taskTabCount, taskListTab === "completed" && styles.taskTabCountActive]}
+                      >
+                        {completedTasks.length}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <Pressable
+                    style={styles.taskFilterIconBtn}
+                    onPress={() => setTaskFilterModalVisible(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Filtros"
+                  >
+                    <Ionicons name="options-outline" size={22} color={theme.zinc700} />
+                    {taskFiltersActive ? <View style={styles.taskFilterBadgeDot} /> : null}
+                  </Pressable>
+                </View>
+                {ongoingTasksCountAll > 0 && taskListTab !== "in_progress" ? (
+                  <Pressable
+                    style={styles.ongoingTasksNotice}
+                    onPress={() => setTaskListTab("in_progress")}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Hay ${ongoingTasksCountAll} tareas en progreso. Ver lista.`}
+                  >
+                    <Ionicons name="flash-outline" size={18} color={theme.primary} />
+                    <Text style={styles.ongoingTasksNoticeText}>
+                      {ongoingTasksCountAll === 1
+                        ? "Hay 1 tarea en progreso."
+                        : `Hay ${ongoingTasksCountAll} tareas en progreso.`}{" "}
+                      <Text style={styles.ongoingTasksNoticeLink}>Ver en progreso</Text>
+                    </Text>
+                    <Ionicons name="chevron-forward" size={18} color={theme.primary} />
+                  </Pressable>
+                ) : null}
                 {ordersLoading ? <Text style={styles.cardMeta}>Cargando tareas...</Text> : null}
                 {ordersError ? <Text style={styles.errorText}>{ordersError}</Text> : null}
                 <ScrollView
@@ -2209,88 +2340,90 @@ function AppContent() {
                     />
                   }
                 >
-                  <View style={styles.dashboardSectionHeader}>
-                    <Text style={styles.dashboardSectionKicker}>TAREAS EN CURSO</Text>
-                    <View style={styles.dashboardActiveBadge}>
-                      <Text style={styles.dashboardActiveBadgeText}>
-                        {ongoingTasks.length} ACTIVA{ongoingTasks.length === 1 ? "" : "S"}
-                      </Text>
-                    </View>
-                  </View>
-                  {ongoingTasks.length === 0 ? (
-                    <Text style={styles.dashboardEmpty}>No hay tareas en curso.</Text>
-                  ) : (
-                    ongoingTasks.map((w) => {
-                      const assetKicker =
-                        w.assetAssetId != null && String(w.assetAssetId).trim() !== ""
-                          ? String(w.assetAssetId).toUpperCase()
-                          : w.assetName
-                            ? w.assetName.toUpperCase()
-                            : "SIN ACTIVO";
-                      return (
-                        <View key={w.id} style={[styles.surfaceCard, styles.ongoingHero]}>
-                          <View style={styles.ongoingHeroTop}>
-                            <View style={styles.ongoingHeroTopText}>
-                              <Text style={styles.ongoingAssetKicker}>ACTIVO: {assetKicker}</Text>
-                              <Pressable onPress={() => openWorkOrder(w.id)}>
-                                <Text style={styles.ongoingHeroTitle}>{w.title}</Text>
-                              </Pressable>
-                            </View>
-                            <View style={styles.taskCardAvatarPriorityRow}>
-                              <TaskCardAssigneeAvatar
-                                name={w.assigneeName}
-                                userId={w.assigneeId}
-                                avatarUrl={w.assigneeAvatarUrl}
-                                avatarBackgroundColor={w.assigneeAvatarBackgroundColor}
-                              />
-                              <WorkOrderPriorityIconRN priority={w.priority} />
-                            </View>
-                          </View>
-                          <View style={styles.ongoingTimerStrip}>
-                            <View style={styles.ongoingTimerCol}>
-                              <Text style={styles.ongoingTimerDigits}>
-                                {formatElapsedClock(w.createdAt, taskListTick)}
-                              </Text>
-                              <Text style={styles.ongoingTimerHint}>desde registro</Text>
-                            </View>
-                            <View style={styles.ongoingTimerDivider} />
-                            <View style={styles.ongoingTimerCol}>
-                              <Text style={styles.ongoingTimerEstLabel}>VENCIMIENTO</Text>
-                              <Text style={styles.ongoingTimerEstValue} numberOfLines={2}>
-                                {formatDueRelative(w.dueDate)}
-                              </Text>
-                            </View>
-                          </View>
-                          <Pressable
-                            style={styles.ongoingCompleteMain}
-                            onPress={() => updateWorkOrderStatusById(w.id, "completed")}
-                          >
-                            <Text style={styles.ongoingCompleteMainText}>Completar</Text>
-                          </Pressable>
-                          <View style={styles.ongoingSecondaryRow}>
-                            <Pressable
-                              style={styles.ongoingPauseBtn}
-                              onPress={() => updateWorkOrderStatusById(w.id, "open")}
-                            >
-                              <Ionicons name="pause" size={18} color={theme.zinc700} />
-                              <Text style={styles.ongoingPauseBtnText}>Pausar</Text>
-                            </Pressable>
-                            <Pressable style={styles.ongoingMoreBtn} onPress={() => openWorkOrder(w.id)}>
-                              <Ionicons name="ellipsis-horizontal" size={22} color={theme.zinc600} />
-                            </Pressable>
-                          </View>
+                  {taskListTab === "in_progress" ? (
+                    <>
+                      <View style={styles.dashboardSectionHeader}>
+                        <Text style={styles.dashboardSectionKicker}>TAREAS EN PROGRESO</Text>
+                        <View style={styles.dashboardActiveBadge}>
+                          <Text style={styles.dashboardActiveBadgeText}>
+                            {ongoingTasks.length} ACTIVA{ongoingTasks.length === 1 ? "" : "S"}
+                          </Text>
                         </View>
-                      );
-                    })
-                  )}
+                      </View>
+                      {ongoingTasks.length === 0 ? (
+                        <Text style={styles.dashboardEmpty}>No hay tareas en progreso.</Text>
+                      ) : (
+                        ongoingTasks.map((w) => {
+                          const assetKicker =
+                            w.assetAssetId != null && String(w.assetAssetId).trim() !== ""
+                              ? String(w.assetAssetId).toUpperCase()
+                              : w.assetName
+                                ? w.assetName.toUpperCase()
+                                : "SIN ACTIVO";
+                          return (
+                            <View key={w.id} style={[styles.surfaceCard, styles.ongoingHero]}>
+                              <View style={styles.ongoingHeroTop}>
+                                <View style={styles.ongoingHeroTopText}>
+                                  <Text style={styles.ongoingAssetKicker}>ACTIVO: {assetKicker}</Text>
+                                  <Pressable onPress={() => openWorkOrder(w.id)}>
+                                    <Text style={styles.ongoingHeroTitle}>{w.title}</Text>
+                                  </Pressable>
+                                </View>
+                                <View style={styles.taskCardAvatarPriorityRow}>
+                                  <TaskCardAssigneeAvatar
+                                    name={w.assigneeName}
+                                    userId={w.assigneeId}
+                                    avatarUrl={w.assigneeAvatarUrl}
+                                    avatarBackgroundColor={w.assigneeAvatarBackgroundColor}
+                                  />
+                                  <WorkOrderPriorityIconRN priority={w.priority} />
+                                </View>
+                              </View>
+                              <View style={styles.ongoingTimerStrip}>
+                                <View style={styles.ongoingTimerCol}>
+                                  <Text style={styles.ongoingTimerDigits}>
+                                    {formatElapsedClock(w.createdAt, taskListTick)}
+                                  </Text>
+                                  <Text style={styles.ongoingTimerHint}>desde registro</Text>
+                                </View>
+                                <View style={styles.ongoingTimerDivider} />
+                                <View style={styles.ongoingTimerCol}>
+                                  <Text style={styles.ongoingTimerEstLabel}>VENCIMIENTO</Text>
+                                  <Text style={styles.ongoingTimerEstValue} numberOfLines={2}>
+                                    {formatDueRelative(w.dueDate)}
+                                  </Text>
+                                </View>
+                              </View>
+                              <Pressable
+                                style={styles.ongoingCompleteMain}
+                                onPress={() => updateWorkOrderStatusById(w.id, "completed")}
+                              >
+                                <Text style={styles.ongoingCompleteMainText}>Completar</Text>
+                              </Pressable>
+                              <View style={styles.ongoingSecondaryRow}>
+                                <Pressable
+                                  style={styles.ongoingPauseBtn}
+                                  onPress={() => updateWorkOrderStatusById(w.id, "pending")}
+                                >
+                                  <Ionicons name="pause" size={18} color={theme.zinc700} />
+                                  <Text style={styles.ongoingPauseBtnText}>Pausar</Text>
+                                </Pressable>
+                                <Pressable style={styles.ongoingMoreBtn} onPress={() => openWorkOrder(w.id)}>
+                                  <Ionicons name="ellipsis-horizontal" size={22} color={theme.zinc600} />
+                                </Pressable>
+                              </View>
+                            </View>
+                          );
+                        })
+                      )}
+                    </>
+                  ) : null}
 
-                  <View style={[styles.dashboardSectionHeader, styles.dashboardSectionHeaderSpaced]}>
+                  {taskListTab === "pending" ? (
+                    <>
+                  <View style={styles.dashboardSectionHeader}>
                     <Text style={styles.dashboardSectionKicker}>COLA PENDIENTE</Text>
-                    <Pressable onPress={() => setPendingSortByPriority((v) => !v)} hitSlop={8}>
-                      <Text style={styles.dashboardSortLink}>
-                        {pendingSortByPriority ? "Orden del tablero" : "Ordenar por prioridad"}
-                      </Text>
-                    </Pressable>
+                    <Text style={styles.dashboardSectionCount}>{pendingTasksSorted.length}</Text>
                   </View>
                   {pendingTasksSorted.length === 0 ? (
                     <Text style={styles.dashboardEmpty}>No hay tareas pendientes.</Text>
@@ -2352,7 +2485,11 @@ function AppContent() {
                       );
                     })
                   )}
+                    </>
+                  ) : null}
 
+                  {taskListTab === "completed" ? (
+                    <>
                   <View style={[styles.dashboardSectionHeader, styles.dashboardSectionHeaderSpaced]}>
                     <Text style={styles.dashboardSectionKicker}>TERMINADAS</Text>
                     <Text style={styles.dashboardSectionCount}>{completedTasks.length}</Text>
@@ -2402,7 +2539,145 @@ function AppContent() {
                       ) : null}
                     </>
                   )}
+                    </>
+                  ) : null}
                 </ScrollView>
+                <Modal
+                  visible={taskFilterModalVisible}
+                  transparent
+                  animationType="fade"
+                  onRequestClose={() => setTaskFilterModalVisible(false)}
+                >
+                  <View style={styles.taskFilterModalRoot}>
+                    <Pressable
+                      style={styles.taskFilterModalBackdrop}
+                      onPress={() => setTaskFilterModalVisible(false)}
+                    />
+                    <View
+                      style={[
+                        styles.taskFilterModalSheet,
+                        { paddingBottom: Math.max(insets.bottom, 20) },
+                      ]}
+                    >
+                      <Text style={styles.taskFilterModalTitle}>Filtros</Text>
+                      <Text style={styles.taskFilterModalSection}>Asignado</Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.taskFilterModalChipsRow}
+                      >
+                        <Pressable
+                          style={[
+                            styles.userFilterChip,
+                            filterAssigneeId === null && styles.userFilterChipActive,
+                          ]}
+                          onPress={() => setFilterAssigneeId(null)}
+                        >
+                          <Text
+                            style={[
+                              styles.userFilterChipText,
+                              filterAssigneeId === null && styles.userFilterChipTextActive,
+                            ]}
+                          >
+                            Todos
+                          </Text>
+                        </Pressable>
+                        {users.map((user) => (
+                          <Pressable
+                            key={user.id}
+                            style={[
+                              styles.userFilterChip,
+                              filterAssigneeId === user.id && styles.userFilterChipActive,
+                            ]}
+                            onPress={() => setFilterAssigneeId(user.id)}
+                          >
+                            <Text
+                              style={[
+                                styles.userFilterChipText,
+                                filterAssigneeId === user.id && styles.userFilterChipTextActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {user.name}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                      <Text style={[styles.taskFilterModalSection, styles.taskFilterModalSectionSpaced]}>
+                        Tipo
+                      </Text>
+                      <View style={styles.taskFilterKindRow}>
+                        <Pressable
+                          style={[styles.userFilterChip, filterKind === "all" && styles.userFilterChipActive]}
+                          onPress={() => setFilterKind("all")}
+                        >
+                          <Text
+                            style={[
+                              styles.userFilterChipText,
+                              filterKind === "all" && styles.userFilterChipTextActive,
+                            ]}
+                          >
+                            Todos
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.userFilterChip,
+                            filterKind === "routine" && styles.userFilterChipActive,
+                          ]}
+                          onPress={() => setFilterKind("routine")}
+                        >
+                          <Text
+                            style={[
+                              styles.userFilterChipText,
+                              filterKind === "routine" && styles.userFilterChipTextActive,
+                            ]}
+                          >
+                            {workOrderKindLabel("routine")}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.userFilterChip,
+                            filterKind === "on_demand" && styles.userFilterChipActive,
+                          ]}
+                          onPress={() => setFilterKind("on_demand")}
+                        >
+                          <Text
+                            style={[
+                              styles.userFilterChipText,
+                              filterKind === "on_demand" && styles.userFilterChipTextActive,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {workOrderKindLabel("on_demand")}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <View style={styles.taskFilterModalFooter}>
+                        {taskFiltersActive ? (
+                          <Pressable
+                            style={styles.taskFilterModalClearBtn}
+                            onPress={() => {
+                              setFilterAssigneeId(null);
+                              setFilterKind("all");
+                            }}
+                          >
+                            <Text style={styles.taskFilterModalClearBtnText}>Limpiar</Text>
+                          </Pressable>
+                        ) : (
+                          <View style={styles.taskFilterModalFooterSpacer} />
+                        )}
+                        <Pressable
+                          style={styles.taskFilterModalDoneBtn}
+                          onPress={() => setTaskFilterModalVisible(false)}
+                        >
+                          <Text style={styles.taskFilterModalDoneBtnText}>Listo</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+                </Modal>
               </View>
             )
           ) : activeSection === "knowledgeBase" ? (
@@ -2867,31 +3142,34 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 40,
     backgroundColor: theme.pageBg,
-    paddingTop: 12,
-    paddingHorizontal: 0,
+    /** Bleed into `contentArea` horizontal padding so the rail is wider on screen. */
+    marginHorizontal: -16,
+    paddingTop: TASK_SLIDE_DOCK_PADDING_TOP,
+    paddingHorizontal: TASK_SLIDE_DOCK_PADDING_X,
   },
   taskSlideDockHint: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
     color: theme.zinc600,
     textAlign: "center",
-    marginBottom: 10,
-    paddingHorizontal: 8,
+    lineHeight: 20,
+    marginTop: 0,
+    marginBottom: 12,
+    paddingHorizontal: 2,
   },
   slideToConfirmRoot: {
     width: "100%",
   },
   slideTrack: {
     height: SLIDE_TRACK_HEIGHT,
-    borderRadius: SLIDE_TRACK_HEIGHT / 2,
-    justifyContent: "center",
+    borderRadius: SLIDE_TRACK_RADIUS,
     overflow: "hidden",
     position: "relative",
   },
   slideTrackPrimary: {
-    backgroundColor: theme.zinc200,
+    backgroundColor: theme.primary50,
     borderWidth: 1,
-    borderColor: theme.zinc300,
+    borderColor: theme.primary,
   },
   slideTrackSuccess: {
     backgroundColor: "#d1fae5",
@@ -2903,37 +3181,52 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#EAB308",
   },
+  slideTrackLabelSlot: {
+    position: "absolute",
+    left: SLIDE_RAIL_INSET_X + SLIDE_THUMB_WIDTH + SLIDE_LABEL_GAP,
+    right: SLIDE_RAIL_INSET_X,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   slideTrackLabel: {
-    paddingLeft: SLIDE_THUMB_SIZE + SLIDE_TRACK_PAD * 2,
-    paddingRight: SLIDE_TRACK_PAD * 2,
     textAlign: "center",
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: "700",
     color: theme.zinc600,
     letterSpacing: -0.2,
+    width: "100%",
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      default: {},
+    }),
+  },
+  slideTrackLabelPrimary: {
+    color: theme.primary,
   },
   slideTrackLabelDisabled: {
     color: "#713F12",
   },
   slideThumb: {
     position: "absolute",
-    left: SLIDE_TRACK_PAD,
+    left: SLIDE_RAIL_INSET_X,
     top: SLIDE_THUMB_TOP,
-    width: SLIDE_THUMB_SIZE,
-    height: SLIDE_THUMB_SIZE,
-    borderRadius: SLIDE_THUMB_SIZE / 2,
+    width: SLIDE_THUMB_WIDTH,
+    height: SLIDE_THUMB_HEIGHT,
+    borderRadius: SLIDE_THUMB_RADIUS,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.14,
+    shadowOpacity: 0.12,
     shadowRadius: 3,
     elevation: 4,
   },
   slideThumbPrimary: {
     backgroundColor: theme.white,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
+    borderWidth: 2,
+    borderColor: theme.primary,
   },
   slideThumbSuccess: {
     backgroundColor: theme.white,
@@ -2967,30 +3260,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     marginBottom: 12,
   },
-  detailPanel: { marginBottom: 10 },
-  detailPanelKicker: {
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    color: theme.zinc500,
-    marginBottom: 8,
-  },
-  detailStatusBanner: {
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    alignItems: "center",
-  },
-  detailStatusBannerText: { fontSize: 15, fontWeight: "700" },
-  detailStatusOpen: { backgroundColor: "#FEF3C7" },
-  detailStatusOpenText: { color: "#92400E" },
-  detailStatusInProgress: { backgroundColor: "#DBEAFE" },
-  detailStatusInProgressText: { color: "#1E40AF" },
-  detailStatusCompleted: { backgroundColor: "#D1FAE5" },
-  detailStatusCompletedText: { color: "#065F46" },
-  detailStatusCancelled: { backgroundColor: theme.zinc100 },
-  detailStatusCancelledText: { color: theme.zinc600 },
   /** One rounded card per block (header + content share the same card — no inner “body” card). */
   detailCard: {
     backgroundColor: theme.white,
@@ -3011,6 +3280,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
+  detailCardHeaderCollapsed: {
+    borderBottomWidth: 0,
+  },
+  detailCardHeaderPressed: {
+    backgroundColor: theme.zinc50,
+  },
+  detailCardHeaderChevron: {
+    marginRight: 4,
+  },
+  detailCardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
   detailCardHeaderTitle: {
     fontSize: 11,
     fontWeight: "700",
@@ -3018,6 +3302,41 @@ const styles = StyleSheet.create({
     color: theme.zinc500,
     textTransform: "uppercase",
   },
+  detailCardHeaderTitleFlex: {
+    flex: 1,
+    minWidth: 0,
+  },
+  woStatusBadge: {
+    flexShrink: 0,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+  },
+  woStatusBadgeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  woStatusBadgePending: {
+    backgroundColor: "#FEF08A",
+    borderColor: "#EAB308",
+  },
+  woStatusBadgePendingText: { color: "#713F12" },
+  woStatusBadgeInProgress: {
+    backgroundColor: "#DBEAFE",
+    borderColor: theme.primary,
+  },
+  woStatusBadgeInProgressText: { color: "#1E3A8A" },
+  woStatusBadgeCompleted: {
+    backgroundColor: "#BBF7D0",
+    borderColor: "#22C55E",
+  },
+  woStatusBadgeCompletedText: { color: "#14532D" },
+  woStatusBadgeCancelled: {
+    backgroundColor: theme.zinc200,
+    borderColor: theme.zinc300,
+  },
+  woStatusBadgeCancelledText: { color: theme.zinc600 },
   detailCardHeaderSub: {
     marginTop: 6,
     fontSize: 12,
@@ -3092,7 +3411,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   dashboardActiveBadgeText: { fontSize: 11, fontWeight: "800", color: "#1E40AF" },
-  dashboardSortLink: { fontSize: 13, fontWeight: "700", color: theme.primary },
   dashboardEmpty: { fontSize: 14, color: theme.zinc500, marginBottom: 12 },
   ongoingHero: {
     padding: 16,
@@ -3234,14 +3552,19 @@ const styles = StyleSheet.create({
     borderColor: "#011752",
   },
   kindBadgeOnDemand: {
-    backgroundColor: theme.accent,
+    backgroundColor: "#FFEDD5",
     borderWidth: 1,
-    borderColor: "#c43d06",
+    borderColor: "#FDBA74",
   },
   kindBadgeText: {
-    color: theme.white,
     fontSize: 11,
     fontWeight: "700",
+  },
+  kindBadgeTextRoutine: {
+    color: theme.white,
+  },
+  kindBadgeTextOnDemand: {
+    color: "#9A3412",
   },
   sectionBlock: {
     gap: 10,
@@ -3498,22 +3821,183 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     gap: 6,
   },
-  filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  filterTag: {
+  taskListToolbar: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: theme.primary50,
-    borderWidth: 1,
-    borderColor: theme.primary200,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    gap: 10,
+    marginBottom: 4,
   },
-  filterTagText: { color: theme.zinc900, fontWeight: "600", fontSize: 12 },
-  filterTagRemove: { color: theme.accent, fontWeight: "700", fontSize: 12 },
-  filterUsersScroll: { flexGrow: 0, maxHeight: 44 },
-  filterUsersRow: { gap: 8, alignItems: "center", paddingRight: 4 },
+  taskTabRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 6,
+    minWidth: 0,
+  },
+  taskTab: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    backgroundColor: theme.white,
+  },
+  taskTabActive: {
+    backgroundColor: theme.primary50,
+    borderColor: theme.primary200,
+  },
+  taskTabActiveInProgress: {
+    backgroundColor: "#DBEAFE",
+    borderColor: theme.primary,
+    borderWidth: 1,
+  },
+  taskTabText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.zinc600,
+    textAlign: "center",
+  },
+  taskTabTextActive: {
+    color: theme.primary,
+  },
+  taskTabCount: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: theme.zinc400,
+    marginTop: 2,
+  },
+  taskTabCountActive: {
+    color: theme.primary,
+  },
+  ongoingTasksNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    backgroundColor: "#EFF6FF",
+    marginBottom: 2,
+  },
+  ongoingTasksNoticeText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.zinc800,
+  },
+  ongoingTasksNoticeLink: {
+    fontWeight: "700",
+    color: theme.primary,
+  },
+  taskFilterIconBtn: {
+    position: "relative",
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    backgroundColor: theme.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  taskFilterBadgeDot: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.accent,
+  },
+  taskFilterModalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  taskFilterModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  taskFilterModalSheet: {
+    backgroundColor: theme.white,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: 18,
+    paddingHorizontal: 16,
+    maxHeight: "78%",
+  },
+  taskFilterModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: theme.zinc900,
+    marginBottom: 16,
+  },
+  taskFilterModalSection: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    color: theme.zinc500,
+    textTransform: "uppercase",
+    marginBottom: 10,
+  },
+  taskFilterModalSectionSpaced: {
+    marginTop: 18,
+  },
+  taskFilterModalChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+    paddingBottom: 4,
+  },
+  taskFilterKindRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
+  },
+  taskFilterModalFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.zinc200,
+  },
+  taskFilterModalFooterSpacer: {
+    flex: 1,
+  },
+  taskFilterModalClearBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
+  },
+  taskFilterModalClearBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: theme.zinc700,
+  },
+  taskFilterModalDoneBtn: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: theme.primary,
+  },
+  taskFilterModalDoneBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.white,
+  },
   userFilterChip: {
     borderRadius: 999,
     borderWidth: 1,

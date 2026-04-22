@@ -41,11 +41,11 @@ type WorkOrderRow = {
   startedAt?: string | null;
 };
 
-type BoardStatus = "open" | "in_progress" | "completed";
+type BoardStatus = "pending" | "in_progress" | "completed";
 type UserOption = { id: string; name: string };
 
 const boardColumns: { key: BoardStatus; title: string }[] = [
-  { key: "open", title: "Abiertas" },
+  { key: "pending", title: "Pendientes" },
   { key: "in_progress", title: "En progreso" },
   { key: "completed", title: "Terminadas" },
 ];
@@ -170,11 +170,7 @@ function insertionIndexFromPointer(
   return elements.length;
 }
 
-export function WorkOrderList({
-  currentUserId,
-}: {
-  currentUserId: string | null;
-}) {
+export function WorkOrderList() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const searchQueryRaw = (searchParams.get("q") ?? "").trim();
@@ -182,9 +178,7 @@ export function WorkOrderList({
   const q = searchQueryRaw.toLowerCase();
   const [items, setItems] = useState<WorkOrderRow[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(
-    () => currentUserId ?? null
-  );
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<BoardStatus | null>(null);

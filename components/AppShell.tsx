@@ -138,11 +138,6 @@ export function AppShell({
       type: "Plataforma",
       items: [
        {
-        href: "/logs",
-        label: "Logs de plataforma",
-        icon: BarChart2,
-       } satisfies NavItem,
-       {
         href: "/users",
         label: "Usuarios",
         icon: User,

@@ -5,31 +5,11 @@ import {
   checklistTemplates,
   users,
 } from "@/lib/db/schema";
-import { eq, asc } from "drizzle-orm";
-import { formatRecurrenceLabel } from "@/lib/maintenance-recurrence";
-import { MaintenanceAssigneeSelect } from "./MaintenanceAssigneeSelect";
+import { asc } from "drizzle-orm";
 import { CalendarMonthView } from "./CalendarMonthView";
 import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
 
 export const dynamic = "force-dynamic";
-
-function formatDate(value: Date | null) {
-  if (!value) return "Sin fecha programada";
-  return new Date(value).toLocaleDateString("es-MX", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function isMissingAssigneeColumnError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const message = error.message.toLowerCase();
-  return (
-    message.includes("maintenance_schedules.assignee_id") &&
-    (message.includes("no such column") || message.includes("has no column named"))
-  );
-}
 
 function isMissingColorColumnError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -46,18 +26,12 @@ export default async function CalendarioPage() {
     .from(users)
     .orderBy(users.name);
 
-  let hasAssigneeColumn = true;
   let schedules: Array<{
     id: string;
     name: string;
     recurrence: string;
     color: string | null;
     nextRunAt: Date | null;
-    assigneeId: string | null;
-    assigneeName: string | null;
-    assetName: string | null;
-    assetCode: string | null;
-    checklistName: string | null;
   }> = [];
   try {
     schedules = await db
@@ -67,46 +41,21 @@ export default async function CalendarioPage() {
         recurrence: maintenanceSchedules.recurrence,
         color: maintenanceSchedules.color,
         nextRunAt: maintenanceSchedules.nextRunAt,
-        assigneeId: maintenanceSchedules.assigneeId,
-        assigneeName: users.name,
-        assetName: assets.name,
-        assetCode: assets.assetId,
-        checklistName: checklistTemplates.name,
       })
       .from(maintenanceSchedules)
-      .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id))
-      .leftJoin(users, eq(maintenanceSchedules.assigneeId, users.id))
-      .leftJoin(
-        checklistTemplates,
-        eq(maintenanceSchedules.checklistTemplateId, checklistTemplates.id)
-      )
       .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
   } catch (error) {
-    if (!isMissingAssigneeColumnError(error) && !isMissingColorColumnError(error)) throw error;
-    if (isMissingAssigneeColumnError(error)) hasAssigneeColumn = false;
-    const fallbackSchedules = await db
+    if (!isMissingColorColumnError(error)) throw error;
+    const rows = await db
       .select({
         id: maintenanceSchedules.id,
         name: maintenanceSchedules.name,
         recurrence: maintenanceSchedules.recurrence,
         nextRunAt: maintenanceSchedules.nextRunAt,
-        assetName: assets.name,
-        assetCode: assets.assetId,
-        checklistName: checklistTemplates.name,
       })
       .from(maintenanceSchedules)
-      .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id))
-      .leftJoin(
-        checklistTemplates,
-        eq(maintenanceSchedules.checklistTemplateId, checklistTemplates.id)
-      )
       .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
-    schedules = fallbackSchedules.map((item) => ({
-      ...item,
-      color: null,
-      assigneeId: null,
-      assigneeName: null,
-    }));
+    schedules = rows.map((row) => ({ ...row, color: null }));
   }
 
   const assetOptions = await db
@@ -153,78 +102,6 @@ export default async function CalendarioPage() {
       </header>
 
       <CalendarMonthView schedules={calendarSchedules} />
-
-      <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-zinc-800">
-        Lista de programaciones
-      </h2>
-
-      {schedules.length === 0 ? (
-        <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
-          Aún no hay mantenimientos programados.
-        </div>
-      ) : (
-        <ul className="space-y-2">
-          {schedules.map((task) => (
-            <li
-              key={task.id}
-              className="rounded-xl border border-zinc-200 bg-white p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="font-medium text-zinc-900">{task.name}</p>
-                  <p className="text-xs text-zinc-500">
-                    Frecuencia: {formatRecurrenceLabel(task.recurrence)}
-                  </p>
-                </div>
-                <span className="rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700">
-                  {formatDate(task.nextRunAt)}
-                </span>
-              </div>
-              <div className="mt-2">
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
-                  style={{ backgroundColor: task.color ?? "#02257D" }}
-                >
-                  Color
-                </span>
-              </div>
-              <div className="mt-3 grid gap-3 text-sm text-zinc-600 md:grid-cols-2">
-                <p>
-                  Activo:{" "}
-                  {task.assetName
-                    ? `${task.assetName}${task.assetCode ? ` (${task.assetCode})` : ""}`
-                    : "Sin activo asignado"}
-                </p>
-                <p>
-                  Checklist: {task.checklistName ?? "Sin checklist asignado"}
-                </p>
-              </div>
-              <div className="mt-3 border-t border-zinc-100 pt-3">
-                {task.assigneeName && (
-                  <p className="mb-2 text-xs text-zinc-500">
-                    Asignado actualmente:{" "}
-                    <span className="font-medium text-zinc-700">
-                      {task.assigneeName}
-                    </span>
-                  </p>
-                )}
-                {hasAssigneeColumn ? (
-                  <MaintenanceAssigneeSelect
-                    scheduleId={task.id}
-                    users={userList}
-                    assigneeId={task.assigneeId}
-                  />
-                ) : (
-                  <p className="text-xs text-zinc-500">
-                    Asignaciones deshabilitadas temporalmente: falta la columna
-                    `assignee_id` en la base de datos.
-                  </p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

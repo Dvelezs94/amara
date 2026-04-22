@@ -124,6 +124,7 @@ type YearAuditRow = {
 };
 
 const YEAR_AUDIT_PAGE_SIZE = 150;
+const LINKED_WO_PAGE_SIZE = 15;
 
 function buildYearAuditRows(
   cellYear: number,
@@ -209,8 +210,9 @@ export function CalendarMonthView({
   const [linkedWorkOrders, setLinkedWorkOrders] = useState<
     { id: string; folio: number | null; title: string; status: string; createdAt: string | Date }[]
   >([]);
+  const [linkedWorkOrdersHasMore, setLinkedWorkOrdersHasMore] = useState(false);
   const [loadingLinkedWorkOrders, setLoadingLinkedWorkOrders] = useState(false);
-  const [visibleLinkedWorkOrders, setVisibleLinkedWorkOrders] = useState(5);
+  const [loadingMoreLinkedWorkOrders, setLoadingMoreLinkedWorkOrders] = useState(false);
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -225,24 +227,29 @@ export function CalendarMonthView({
   useEffect(() => {
     if (!selectedEvent) {
       setLinkedWorkOrders([]);
+      setLinkedWorkOrdersHasMore(false);
       setLoadingLinkedWorkOrders(false);
+      setLoadingMoreLinkedWorkOrders(false);
       setSelectedAssigneeId("");
       setAssigneePromptOpen(false);
-      setVisibleLinkedWorkOrders(5);
       return;
     }
     let cancelled = false;
     setLoadingLinkedWorkOrders(true);
-    fetch(`/api/maintenance-schedules/${selectedEvent.id}/work-orders`)
+    fetch(
+      `/api/maintenance-schedules/${selectedEvent.id}/work-orders?limit=${LINKED_WO_PAGE_SIZE}&offset=0`
+    )
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        setLinkedWorkOrders(Array.isArray(data) ? data : []);
-        setVisibleLinkedWorkOrders(5);
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setLinkedWorkOrders(items);
+        setLinkedWorkOrdersHasMore(Boolean(data?.hasMore));
       })
       .catch(() => {
         if (cancelled) return;
         setLinkedWorkOrders([]);
+        setLinkedWorkOrdersHasMore(false);
       })
       .finally(() => {
         if (cancelled) return;
@@ -282,7 +289,7 @@ export function CalendarMonthView({
   }, [selectedEvent]);
 
   function statusLabel(status: string) {
-    if (status === "open") return "Abierta";
+    if (status === "pending") return "Pendiente";
     if (status === "in_progress") return "En progreso";
     if (status === "completed") return "Completada";
     if (status === "cancelled") return "Cancelada";
@@ -290,7 +297,7 @@ export function CalendarMonthView({
   }
 
   function statusBadgeClass(status: string) {
-    if (status === "open") return "bg-amber-100 text-amber-800";
+    if (status === "pending") return "bg-amber-100 text-amber-800";
     if (status === "in_progress") return "bg-blue-100 text-blue-800";
     if (status === "completed") return "bg-emerald-100 text-emerald-800";
     if (status === "cancelled") return "bg-zinc-100 text-zinc-600";
@@ -842,7 +849,7 @@ export function CalendarMonthView({
                 <p className="mt-1 text-xs text-zinc-600">Sin tareas asociadas.</p>
               ) : (
                 <ul className="mt-2 space-y-1.5">
-                  {linkedWorkOrders.slice(0, visibleLinkedWorkOrders).map((wo) => (
+                  {linkedWorkOrders.map((wo) => (
                     <li
                       key={wo.id}
                       className="rounded-md border border-zinc-200 bg-white px-2.5 py-2"
@@ -871,17 +878,29 @@ export function CalendarMonthView({
                   ))}
                 </ul>
               )}
-              {linkedWorkOrders.length > visibleLinkedWorkOrders ? (
+              {linkedWorkOrdersHasMore ? (
                 <button
                   type="button"
-                  onClick={() =>
-                    setVisibleLinkedWorkOrders((prev) =>
-                      Math.min(prev + 5, linkedWorkOrders.length)
-                    )
-                  }
-                  className="mt-2 rounded-sm border border-zinc-200 px-2 py-1 text-[11px] font-semibold uppercase text-zinc-700 hover:bg-zinc-100"
+                  disabled={loadingMoreLinkedWorkOrders || !selectedEvent}
+                  onClick={async () => {
+                    if (!selectedEvent || loadingMoreLinkedWorkOrders) return;
+                    setLoadingMoreLinkedWorkOrders(true);
+                    try {
+                      const offset = linkedWorkOrders.length;
+                      const res = await fetch(
+                        `/api/maintenance-schedules/${selectedEvent.id}/work-orders?limit=${LINKED_WO_PAGE_SIZE}&offset=${offset}`
+                      );
+                      const data = await res.json().catch(() => ({}));
+                      const items = Array.isArray(data?.items) ? data.items : [];
+                      setLinkedWorkOrders((prev) => [...prev, ...items]);
+                      setLinkedWorkOrdersHasMore(Boolean(data?.hasMore));
+                    } finally {
+                      setLoadingMoreLinkedWorkOrders(false);
+                    }
+                  }}
+                  className="mt-2 rounded-sm border border-zinc-200 px-2 py-1 text-[11px] font-semibold uppercase text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
                 >
-                  Cargar más
+                  {loadingMoreLinkedWorkOrders ? "Cargando…" : "Cargar más"}
                 </button>
               ) : null}
               </div>

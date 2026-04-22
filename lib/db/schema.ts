@@ -55,8 +55,8 @@ export const workOrders = sqliteTable("work_orders", {
   title: text("title").notNull(),
   description: text("description"),
   status: text("status", {
-    enum: ["open", "in_progress", "completed", "cancelled"],
-  }).notNull().default("open"),
+    enum: ["pending", "in_progress", "completed", "cancelled"],
+  }).notNull().default("pending"),
   priority: text("priority", { enum: ["low", "medium", "high", "urgent"] })
     .notNull()
     .default("medium"),

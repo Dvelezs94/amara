@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { WorkOrderList } from "./WorkOrderList";
 import { getSession } from "@/lib/auth";
 
 export default async function WorkOrdersPage() {
   const session = await getSession();
+  if (!session) redirect("/login");
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -15,7 +17,7 @@ export default async function WorkOrdersPage() {
           Nueva tarea
         </Link>
       </div>
-      <WorkOrderList currentUserId={session?.id ?? null} />
+      <WorkOrderList />
     </div>
   );
 }

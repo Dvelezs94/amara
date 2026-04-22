@@ -63,7 +63,7 @@ export async function GET(req: Request) {
     })
     .from(workOrders)
     .leftJoin(assets, sql`${workOrders.assetId} = ${assets.id}`)
-    .where(inArray(workOrders.status, ["open", "in_progress"]))
+    .where(inArray(workOrders.status, ["pending", "in_progress"]))
     .orderBy(asc(workOrders.dueDate), asc(workOrders.createdAt))
     .limit(6)
     : Promise.resolve([]);

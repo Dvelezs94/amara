@@ -29,7 +29,7 @@ type Widget = {
 type PendingOrder = {
   id: string;
   title: string;
-  status: "open" | "in_progress" | "completed" | "cancelled";
+  status: "pending" | "in_progress" | "completed" | "cancelled";
   dueDate: string | null;
   priority: "low" | "medium" | "high" | "urgent";
   assetName: string | null;
@@ -44,8 +44,12 @@ type UpcomingEvent = {
   assigneeName: string | null;
 };
 
+const CHART_AUTO_REFRESH_KEY = "dashboard-chart-auto-refresh";
+const CHART_REFRESH_LEGACY_MS_KEY = "dashboard-chart-refresh-ms";
+const CHART_REFRESH_INTERVAL_MS = 30_000;
+
 const statusColors: Record<PendingOrder["status"], string> = {
-  open: "bg-amber-100 text-amber-800",
+  pending: "bg-amber-100 text-amber-800",
   in_progress: "bg-blue-100 text-blue-800",
   completed: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-zinc-100 text-zinc-600",
@@ -64,6 +68,7 @@ export default function DashboardPage() {
   const [widgetSizes, setWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
   const WIDGET_SIZE_KEY = "dashboard-widget-sizes-v1";
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
+  const [chartAutoRefresh, setChartAutoRefresh] = useState(true);
 
   const showLists = isDefaultLast30DaysRange(range);
 
@@ -73,6 +78,17 @@ export default function DashboardPage() {
       if (raw) {
         const parsed = JSON.parse(raw) as Record<string, "sm" | "md" | "lg">;
         setWidgetSizes(parsed ?? {});
+      }
+      const auto = localStorage.getItem(CHART_AUTO_REFRESH_KEY);
+      if (auto === "0") {
+        setChartAutoRefresh(false);
+      } else if (auto === "1") {
+        setChartAutoRefresh(true);
+      } else {
+        const legacy = localStorage.getItem(CHART_REFRESH_LEGACY_MS_KEY);
+        if (legacy && legacy !== "" && !Number.isNaN(Number(legacy))) {
+          setChartAutoRefresh(Number(legacy) >= 5000);
+        }
       }
     } catch {
       setWidgetSizes({});
@@ -145,7 +161,7 @@ export default function DashboardPage() {
   }
 
   function statusLabel(status: PendingOrder["status"]) {
-    if (status === "open") return "Abierta";
+    if (status === "pending") return "Pendiente";
     if (status === "in_progress") return "En progreso";
     if (status === "completed") return "Completada";
     return "Cancelada";
@@ -386,6 +402,44 @@ export default function DashboardPage() {
         Arrastra las tarjetas para reordenar. Los gráficos se guardan aquí desde la página de analíticas.
       </p>
 
+      {widgets.length > 0 && (
+        <div className="flex flex-wrap items-center gap-4 rounded-lg border border-zinc-200 bg-white px-4 py-3">
+          <span className="text-sm font-medium text-zinc-700">Auto-actualización de gráficos</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={chartAutoRefresh}
+            aria-label={
+              chartAutoRefresh
+                ? "Desactivar auto-actualización cada 30 segundos"
+                : "Activar auto-actualización cada 30 segundos"
+            }
+            onClick={() => {
+              const next = !chartAutoRefresh;
+              setChartAutoRefresh(next);
+              try {
+                localStorage.setItem(CHART_AUTO_REFRESH_KEY, next ? "1" : "0");
+              } catch {
+                /* ignore */
+              }
+            }}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${
+              chartAutoRefresh ? "bg-primary-600" : "bg-zinc-300"
+            }`}
+          >
+            <span
+              aria-hidden
+              className={`absolute top-1 left-1 block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+                chartAutoRefresh ? "translate-x-[1.375rem]" : "translate-x-0"
+              }`}
+            />
+          </button>
+          <span className="text-xs text-zinc-500">
+            {chartAutoRefresh ? "Cada 30 s" : "Desactivada"}
+          </span>
+        </div>
+      )}
+
       {widgets.length === 0 ? (
         <div className="rounded-lg border border-zinc-200 border-dashed bg-zinc-50 p-12 text-center">
           <p className="text-zinc-600 mb-2">Aún no hay gráficos en el dashboard</p>
@@ -461,6 +515,9 @@ export default function DashboardPage() {
                   dateFrom={range.from}
                   dateTo={range.to}
                   size={widgetSizes[w.id] ?? "md"}
+                  refreshIntervalMs={
+                    chartAutoRefresh ? CHART_REFRESH_INTERVAL_MS : undefined
+                  }
                 />
               </div>
             </div>

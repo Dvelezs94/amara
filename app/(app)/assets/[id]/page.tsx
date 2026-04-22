@@ -75,7 +75,7 @@ export default async function AssetDetailPage({
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500">
-                    {wo.status === "open" ? "Abierta" : wo.status === "in_progress" ? "En curso" : wo.status === "completed" ? "Completada" : wo.status} · Vence{" "}
+                    {wo.status === "pending" ? "Pendiente" : wo.status === "in_progress" ? "En curso" : wo.status === "completed" ? "Completada" : wo.status} · Vence{" "}
                     {wo.dueDate
                       ? new Date(wo.dueDate).toLocaleDateString("es")
                       : "—"}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -37,6 +37,8 @@ type ApiResponse = {
   fields: string[];
 };
 
+const MIN_REFRESH_MS = 5_000;
+
 export function AnalyticsChartCard({
   templateId,
   templateName,
@@ -45,6 +47,7 @@ export function AnalyticsChartCard({
   dateTo,
   title,
   size = "md",
+  refreshIntervalMs,
 }: {
   templateId: string;
   templateName: string;
@@ -53,6 +56,8 @@ export function AnalyticsChartCard({
   dateTo?: string | null;
   title?: string;
   size?: "sm" | "md" | "lg";
+  /** Polling interval for checklist data; omit or use values below 5000 ms to disable. */
+  refreshIntervalMs?: number;
 }) {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,17 +66,36 @@ export function AnalyticsChartCard({
     size === "lg" ? "h-80 md:h-96" : size === "sm" ? "h-44 md:h-52" : "h-56 md:h-64";
   const emptyHeightClass = size === "lg" ? "h-[26rem]" : size === "sm" ? "h-60" : "h-80";
 
+  const load = useCallback(
+    async (showLoading: boolean) => {
+      if (showLoading) setLoading(true);
+      try {
+        const params = new URLSearchParams({ templateId });
+        if (dateFrom) params.set("from", dateFrom);
+        if (dateTo) params.set("to", dateTo);
+        const r = await fetch(`/api/analytics/checklist-data?${params}`);
+        const json = (await r.json()) as ApiResponse;
+        setData(json);
+      } catch {
+        setData(null);
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [templateId, dateFrom, dateTo]
+  );
+
   useEffect(() => {
-    setLoading(true);
-    const params = new URLSearchParams({ templateId });
-    if (dateFrom) params.set("from", dateFrom);
-    if (dateTo) params.set("to", dateTo);
-    fetch(`/api/analytics/checklist-data?${params}`)
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, [templateId, dateFrom, dateTo]);
+    void load(true);
+  }, [load]);
+
+  useEffect(() => {
+    if (!refreshIntervalMs || refreshIntervalMs < MIN_REFRESH_MS) return;
+    const id = window.setInterval(() => {
+      void load(false);
+    }, refreshIntervalMs);
+    return () => window.clearInterval(id);
+  }, [refreshIntervalMs, load]);
 
   const selectedField =
     data?.workOrders?.flatMap((wo) =>

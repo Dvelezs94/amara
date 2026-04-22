@@ -318,7 +318,7 @@ async function run() {
         title: "Falla de calentamiento en horno HT-01",
         description:
           "El horno no supera los 600C durante el turno nocturno. Revisar quemador y termocupla.",
-        status: "open",
+        status: "pending",
         priority: "urgent",
         assetCode: "HORNO-HT-01",
         templateName: "Checklist semanal de horno industrial",
