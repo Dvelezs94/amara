@@ -1,11 +1,16 @@
+import { sql } from "drizzle-orm";
 import {
-  sqliteTable,
+  pgTable,
   text,
   integer,
-  real,
-} from "drizzle-orm/sqlite-core";
+  timestamp,
+  boolean,
+  jsonb,
+  uniqueIndex,
+  index,
+} from "drizzle-orm/pg-core";
 
-export const users = sqliteTable("users", {
+export const users = pgTable("users", {
   id: text("id").primaryKey(),
   username: text("username").notNull().unique(),
   email: text("email").unique(),
@@ -17,80 +22,90 @@ export const users = sqliteTable("users", {
   avatarUrl: text("avatar_url"),
   /** Fondo del avatar con iniciales (#RRGGBB); null = derivar de id en cliente */
   avatarBackgroundColor: text("avatar_background_color"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const assets = sqliteTable("assets", {
+export const assets = pgTable("assets", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   assetId: text("asset_id").notNull().unique(), // human-readable
   locationId: text("location_id"),
   parentAssetId: text("parent_asset_id"),
   qrCode: text("qr_code"),
-  metadata: text("metadata", { mode: "json" }),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const assetFiles = sqliteTable("asset_files", {
+export const assetFiles = pgTable("asset_files", {
   id: text("id").primaryKey(),
   assetId: text("asset_id").references(() => assets.id, { onDelete: "cascade" }), // null = uploaded directly to knowledge base
   filename: text("filename").notNull(),
   fileUrl: text("file_url").notNull(),
   category: text("category"), // e.g. "manual", "spec", "other" or free text
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const workOrders = sqliteTable("work_orders", {
-  id: text("id").primaryKey(),
-  folio: integer("folio"),
-  title: text("title").notNull(),
-  description: text("description"),
-  status: text("status", {
-    enum: ["pending", "in_progress", "completed", "cancelled"],
-  }).notNull().default("pending"),
-  priority: text("priority", { enum: ["low", "medium", "high", "urgent"] })
-    .notNull()
-    .default("medium"),
-  assetId: text("asset_id"),
-  assigneeId: text("assignee_id"),
-  requesterId: text("requester_id"),
-  dueDate: integer("due_date", { mode: "timestamp" }),
-  completedAt: integer("completed_at", { mode: "timestamp" }),
-  /** Set once on first transition to in_progress; null = nunca iniciada */
-  startedAt: integer("started_at", { mode: "timestamp" }),
-  /** routine = desde mantenimiento programado; on_demand = creada bajo demanda */
-  kind: text("kind", { enum: ["routine", "on_demand"] })
-    .notNull()
-    .default("on_demand"),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-  /** Order within the Kanban column (same status); lower = higher on the board */
-  boardSortOrder: integer("board_sort_order").notNull().default(0),
-});
+export const workOrders = pgTable(
+  "work_orders",
+  {
+    id: text("id").primaryKey(),
+    folio: integer("folio"),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status", {
+      enum: ["pending", "in_progress", "completed", "cancelled"],
+    })
+      .notNull()
+      .default("pending"),
+    priority: text("priority", { enum: ["low", "medium", "high", "urgent"] })
+      .notNull()
+      .default("medium"),
+    assetId: text("asset_id"),
+    assigneeId: text("assignee_id"),
+    requesterId: text("requester_id"),
+    dueDate: timestamp("due_date", { withTimezone: true, mode: "date" }),
+    completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+    /** Set once on first transition to in_progress; null = nunca iniciada */
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
+    /** routine = desde mantenimiento programado; on_demand = creada bajo demanda */
+    kind: text("kind", { enum: ["routine", "on_demand"] })
+      .notNull()
+      .default("on_demand"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    /** Order within the Kanban column (same status); lower = higher on the board */
+    boardSortOrder: integer("board_sort_order").notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex("work_orders_folio_unique_idx")
+      .on(t.folio)
+      .where(sql`${t.folio} IS NOT NULL`),
+  ]
+);
 
-export const checklistTemplates = sqliteTable("checklist_templates", {
+export const checklistTemplates = pgTable("checklist_templates", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const checklistTemplateItems = sqliteTable("checklist_template_items", {
+export const checklistTemplateItems = pgTable("checklist_template_items", {
   id: text("id").primaryKey(),
   checklistTemplateId: text("checklist_template_id")
     .notNull()
@@ -101,10 +116,10 @@ export const checklistTemplateItems = sqliteTable("checklist_template_items", {
   fieldType: text("field_type", {
     enum: ["text", "number", "date", "dropdown", "checkbox", "photo"],
   }),
-  options: text("options", { mode: "json" }), // for dropdown: string[]
+  options: jsonb("options").$type<string[]>(), // for dropdown: string[]
 });
 
-export const workOrderChecklist = sqliteTable("work_order_checklist", {
+export const workOrderChecklist = pgTable("work_order_checklist", {
   id: text("id").primaryKey(),
   workOrderId: text("work_order_id")
     .notNull()
@@ -113,27 +128,27 @@ export const workOrderChecklist = sqliteTable("work_order_checklist", {
   type: text("type", { enum: ["step", "custom_field"] }).notNull(),
   label: text("label").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
-  completed: integer("completed", { mode: "boolean" }).default(false),
-  value: text("value", { mode: "json" }), // for custom_field
+  completed: boolean("completed").notNull().default(false),
+  value: jsonb("value"), // for custom_field
   fieldType: text("field_type", {
     enum: ["text", "number", "date", "dropdown", "checkbox", "photo"],
   }),
-  options: text("options", { mode: "json" }),
+  options: jsonb("options").$type<string[]>(),
 });
 
-export const notes = sqliteTable("notes", {
+export const notes = pgTable("notes", {
   id: text("id").primaryKey(),
   workOrderId: text("work_order_id")
     .notNull()
     .references(() => workOrders.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id),
   body: text("body").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const attachments = sqliteTable("attachments", {
+export const attachments = pgTable("attachments", {
   id: text("id").primaryKey(),
   workOrderId: text("work_order_id")
     .notNull()
@@ -141,12 +156,12 @@ export const attachments = sqliteTable("attachments", {
   userId: text("user_id").notNull().references(() => users.id),
   fileUrl: text("file_url").notNull(),
   filename: text("filename").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const requests = sqliteTable("requests", {
+export const requests = pgTable("requests", {
   id: text("id").primaryKey(),
   description: text("description").notNull(),
   priority: text("priority", { enum: ["low", "medium", "high", "urgent"] })
@@ -158,13 +173,13 @@ export const requests = sqliteTable("requests", {
     .notNull()
     .default("pending"),
   workOrderId: text("work_order_id"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
 // Dashboard: saved analytics widgets per user
-export const dashboardWidgets = sqliteTable("dashboard_widgets", {
+export const dashboardWidgets = pgTable("dashboard_widgets", {
   id: text("id").primaryKey(),
   userId: text("user_id")
     .notNull()
@@ -175,45 +190,55 @@ export const dashboardWidgets = sqliteTable("dashboard_widgets", {
   dateFrom: text("date_from"), // YYYY-MM-DD or null
   dateTo: text("date_to"),
   sortOrder: integer("sort_order").notNull().default(0),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const auditLogs = sqliteTable("audit_logs", {
+export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),
   entityType: text("entity_type").notNull(), // e.g. work_order, checklist_template, work_order_checklist
   entityId: text("entity_id").notNull(),
   action: text("action").notNull(), // e.g. created, updated, completed
   /** null = accion del sistema o publica (ej. solicitud sin sesion) */
   userId: text("user_id").references(() => users.id),
-  metadata: text("metadata", { mode: "json" }),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const notifications = sqliteTable("notifications", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  type: text("type", { enum: ["assignment", "work_order_update", "mention"] })
-    .notNull(),
-  title: text("title").notNull(),
-  body: text("body"),
-  workOrderId: text("work_order_id").references(() => workOrders.id, {
-    onDelete: "cascade",
-  }),
-  noteId: text("note_id").references(() => notes.id, { onDelete: "cascade" }),
-  readAt: integer("read_at", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type", { enum: ["assignment", "work_order_update", "mention"] })
+      .notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    workOrderId: text("work_order_id").references(() => workOrders.id, {
+      onDelete: "cascade",
+    }),
+    noteId: text("note_id").references(() => notes.id, { onDelete: "cascade" }),
+    readAt: timestamp("read_at", { withTimezone: true, mode: "date" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    userCreatedIdx: index("notifications_user_created_idx").on(
+      t.userId,
+      t.createdAt
+    ),
+    userUnreadIdx: index("notifications_user_unread_idx").on(t.userId, t.readAt),
+  })
+);
 
 // Phase 3
-export const maintenanceSchedules = sqliteTable("maintenance_schedules", {
+export const maintenanceSchedules = pgTable("maintenance_schedules", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   assetId: text("asset_id"),
@@ -221,8 +246,8 @@ export const maintenanceSchedules = sqliteTable("maintenance_schedules", {
   color: text("color"),
   recurrence: text("recurrence").notNull(), // cron or interval description
   checklistTemplateId: text("checklist_template_id"),
-  nextRunAt: integer("next_run_at", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  nextRunAt: timestamp("next_run_at", { withTimezone: true, mode: "date" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });

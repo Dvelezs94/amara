@@ -1,4 +1,4 @@
-# Agent context — AMS
+# Agent context — MSA
 
 This file is **living documentation** for coding agents and humans. **You may edit, replace, or extend this file whenever you learn something durable about the project** (new folders, env vars, auth rules, deploy steps). Keep it accurate and reasonably concise; remove stale sections rather than appending noise.
 
@@ -6,7 +6,7 @@ This file is **living documentation** for coding agents and humans. **You may ed
 
 ## What this project is
 
-**AMS** (branding: **MSA** — Maintenance Software / Support Assistant) is a maintenance-management web app for AMISSA: work orders (tareas), assets, calendar, checklists, knowledge base, analytics, requests, and operator tooling. UI copy is mostly **Spanish**.
+**MSA** (branding: **MSA** — Maintenance Software / Support Assistant) is a maintenance-management web app for AMISSA: work orders (tareas), assets, calendar, checklists, knowledge base, analytics, requests, and operator tooling. UI copy is mostly **Spanish**.
 
 ---
 
@@ -16,8 +16,9 @@ This file is **living documentation** for coding agents and humans. **You may ed
 |------|------|------|
 | **Web app** | Repo root (`app/`, `components/`, `lib/`) | Next.js 14 (App Router), primary product |
 | **Mobile app** | `mobile/` | Expo (React Native) client that talks to the **same HTTP API** as the web app |
-| **Database** | `lib/db/`, `drizzle/` | SQLite via Drizzle ORM |
+| **Database** | `lib/db/`, `drizzle/` | PostgreSQL via Drizzle ORM (`pg`) |
 | **Scripts** | `scripts/` | Seed, reset, etc. |
+| **Tests** | `tests/` | Vitest unit tests (`npm test`, `npm run test:watch`) |
 
 Root `package.json` is for the **Next.js** app only. The mobile app has its **own** `mobile/package.json` and must be run from `mobile/` (e.g. `npm run start`).
 
@@ -55,8 +56,22 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 
 ### Data layer
 
-- **Drizzle + SQLite** (`better-sqlite3`) — schema in `lib/db/schema.ts` (users, assets, work orders, checklists, notifications, maintenance schedules, audit logs, etc.)
-- **Migrations** — `drizzle/`; scripts: `npm run db:*` at repo root
+- **Drizzle + PostgreSQL** (`pg` connection pool) — schema in `lib/db/schema.ts` (users, assets, work orders, checklists, notifications, maintenance schedules, audit logs, etc.)
+- **Migrations / push** — `drizzle/`; scripts: `npm run db:*` at repo root; `DATABASE_URL` required
+
+### Testing (required for agents)
+
+- **Runner:** **Vitest** (`vitest.config.ts`), **`npm test`** / **`npm run test:watch`**
+- **Layout:** `tests/unit/*.test.ts` — prefer **pure logic** in `lib/` (easy to cover); API routes may use **integration tests** with a test DB or HTTP mocks when added later.
+- **Policy:** When you **add or change behavior** (new API, new `lib/` helper, business rules, auth/middleware rules, recurrence, work-order UX logic, etc.), **add or update tests in the same change** so `npm test` stays green. If something is too coupled to run quickly, extract testable helpers into `lib/` first, then test them.
+- **Coverage map (extend as features grow):**
+  - Work orders / UI strings: `lib/work-order-kind.ts`, `lib/work-order-duration.ts`
+  - Calendar / maintenance: `lib/maintenance-recurrence.ts`
+  - Access control: `lib/middleware-rules.ts` (used by `middleware.ts`)
+  - Profile / avatars: `lib/avatar-helpers.ts`
+  - IDs: `lib/id.ts`
+  - Roles: `lib/auth-shared.ts`
+- **CI / pre-merge:** Run **`npm test`** before considering work done (same bar as `npm run lint`).
 
 ---
 
@@ -85,7 +100,7 @@ cd mobile && npm install && npm run start
 
 ## Environment and tooling
 
-- Web: standard Next env (e.g. `NODE_ENV`); database path/configuration via Drizzle setup in `lib/db/`
+- Web: standard Next env (e.g. `NODE_ENV`); **`DATABASE_URL`** for PostgreSQL (`lib/db/`)
 - Mobile: **`EXPO_PUBLIC_API_HOST`** required for real devices/simulators to reach the API
 
 ---
@@ -100,6 +115,6 @@ cd mobile && npm install && npm run start
 
 ## Maintenance of this file
 
-**Agents:** When you finish work that changes architecture, env requirements, role limits, or folder layout, **update `agent.md`** so the next session stays aligned. You may **override, shorten, or restructure** this document if that improves clarity—this is not a legal spec, it is operational context.
+**Agents:** When you finish work that changes architecture, env requirements, role limits, folder layout, or **behavior**, **update `AGENTS.md`** as needed and **add/update tests** (see **Testing** above). You may **override, shorten, or restructure** this document if that improves clarity—this is not a legal spec, it is operational context.
 
 **Humans:** Treat this as a quick orientation; the code and `middleware.ts` remain authoritative for security behavior.

@@ -11,52 +11,22 @@ import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
 
 export const dynamic = "force-dynamic";
 
-function isMissingColorColumnError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const message = error.message.toLowerCase();
-  return (
-    message.includes("maintenance_schedules.color") &&
-    (message.includes("no such column") || message.includes("has no column named"))
-  );
-}
-
 export default async function CalendarioPage() {
   const userList = await db
     .select({ id: users.id, name: users.name })
     .from(users)
     .orderBy(users.name);
 
-  let schedules: Array<{
-    id: string;
-    name: string;
-    recurrence: string;
-    color: string | null;
-    nextRunAt: Date | null;
-  }> = [];
-  try {
-    schedules = await db
-      .select({
-        id: maintenanceSchedules.id,
-        name: maintenanceSchedules.name,
-        recurrence: maintenanceSchedules.recurrence,
-        color: maintenanceSchedules.color,
-        nextRunAt: maintenanceSchedules.nextRunAt,
-      })
-      .from(maintenanceSchedules)
-      .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
-  } catch (error) {
-    if (!isMissingColorColumnError(error)) throw error;
-    const rows = await db
-      .select({
-        id: maintenanceSchedules.id,
-        name: maintenanceSchedules.name,
-        recurrence: maintenanceSchedules.recurrence,
-        nextRunAt: maintenanceSchedules.nextRunAt,
-      })
-      .from(maintenanceSchedules)
-      .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
-    schedules = rows.map((row) => ({ ...row, color: null }));
-  }
+  const schedules = await db
+    .select({
+      id: maintenanceSchedules.id,
+      name: maintenanceSchedules.name,
+      recurrence: maintenanceSchedules.recurrence,
+      color: maintenanceSchedules.color,
+      nextRunAt: maintenanceSchedules.nextRunAt,
+    })
+    .from(maintenanceSchedules)
+    .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
 
   const assetOptions = await db
     .select({

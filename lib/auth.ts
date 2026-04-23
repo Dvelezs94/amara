@@ -72,9 +72,13 @@ export async function createSession(userId: string): Promise<void> {
   });
   const token = signPayload({ sub: userId, role: normalizeRole(user?.role) });
   const store = await cookies();
+  /** Set `INSECURE_SESSION_COOKIES=1` only for local HTTP (e.g. docker-compose without TLS). */
+  const secureSessionCookie =
+    process.env.NODE_ENV === "production" &&
+    process.env.INSECURE_SESSION_COOKIES !== "1";
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: secureSessionCookie,
     sameSite: "lax",
     maxAge: SESSION_MAX_AGE,
     path: "/",

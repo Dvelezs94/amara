@@ -24,7 +24,7 @@ export async function recordAuditLog({
     entityId,
     action,
     userId: userId ?? null,
-    metadata: metadata ?? null,
+    metadata: (metadata ?? null) as Record<string, unknown> | null,
   });
 }
 

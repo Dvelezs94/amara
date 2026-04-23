@@ -21,9 +21,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# drizzle
+# legacy local SQLite (no longer used by default)
 sqlite.db
 sqlite.db-journal
-drizzle
 
 public/uploads/*

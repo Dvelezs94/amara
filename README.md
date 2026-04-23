@@ -1,6 +1,14 @@
-# AMS
+# MSA
 
-Mobile-first maintenance management (CMMS-style) with web support. UI inspired by Nimble: clear, efficient, consistent.
+Maintenance Management System (CMMS) for Amissa.
+
+## Stack
+
+- **Next.js 14** (App Router) — frontend + API
+- **PostgreSQL** + **Drizzle ORM** — database (`pg` driver)
+- **Docker / Compose** — optional local stack (`postgres` + `web` in `docker-compose.yml`)
+- **Tailwind CSS** — styling
+- **Session auth** — cookie-based (JWT-style payload)
 
 ## Color palette
 
@@ -24,14 +32,12 @@ The UI uses a modern dark theme centered on navy and deep slate blues, with vibr
 
 Overall, the palette conveys clarity and contrast, with a professional dark interface and orange for primary actions—see the screenshot for reference.
 
-## Stack
+## Prerequisites
 
-- **Next.js 14** (App Router) — frontend + API
-- **SQLite** + **Drizzle ORM** — database (MVP)
-- **Tailwind CSS** — styling
-- **Session auth** — cookie-based (JWT-style payload)
+- **Node.js 22**
+- **PostgreSQL 16**
 
-## Setup
+## Setup (local Node + PostgreSQL)
 
 1. **Install dependencies**
 
@@ -41,33 +47,142 @@ Overall, the palette conveys clarity and contrast, with a professional dark inte
 
 2. **Environment**
 
-   Copy `.env.example` to `.env` and set `SESSION_SECRET` (min 32 chars) for production.
+   Copy `.env.example` to `.env` and set:
 
-3. **Database**
+   - `DATABASE_URL` — e.g. `postgresql://msa:msa@localhost:5432/msa`
+   - `SESSION_SECRET` — at least 32 characters in production
 
-   Create tables and optional seed user:
+3. **Database schema**
+
+   With PostgreSQL running and `DATABASE_URL` set:
 
    ```bash
    npm run db:push
-   npx tsx scripts/seed.ts
    ```
 
-   Demo login: `demo@ams.local` / `demo1234`
+4. **Seed demo data (optional)**
 
-   Or create an admin user with `./create-user.js` and follow the prompts
+   ```bash
+   npm run db:seed
+   ```
 
-4. **Run**
+   Test logins:
+
+   - `admin` / `1234aA` (email `admin@admin.com`)
+   - `operador` / `operador1234`
+
+   Or create an admin interactively:
+
+   ```bash
+   node scripts/create-user.js
+   ```
+
+5. **Run**
 
    ```bash
    npm run dev
    ```
 
-   Open [http://localhost:3000](http://localhost:3000). Sign up or log in, then use Work orders, Assets, and Requests.
+   Open [http://localhost:3000](http://localhost:3000).
 
-## Features (MVP)
+## Setup with Docker (Ubuntu 24 and similar)
+
+Docker provides PostgreSQL so you do not need a system-wide Postgres install for development.
+
+
+```bash
+docker compose up --build -d
+```
+
+This starts:
+
+- **`postgres`** — PostgreSQL 16 on port **5432** (`msa` / `msa`, database `msa`)
+- **`web`** — msa Next.js app on port **3000**, built from the repo **`Dockerfile`**, with `DATABASE_URL` pointing at the `postgres` service
+
+The stack sets **`INSECURE_SESSION_COOKIES=1`** so session cookies work over **HTTP** on localhost. For a public HTTPS deployment, remove that variable and terminate TLS in front of the app.
+
+Override the session signing secret (recommended outside local dev):
+
+```bash
+SESSION_SECRET="your-long-random-secret-at-least-32-chars" docker compose up --build -d
+```
+
+Or create a `.env` file next to `docker-compose.yml` with `SESSION_SECRET=...` (Compose loads it automatically for variable substitution).
+
+### 3. Apply schema and seed (first run)
+
+Postgres is exposed on `localhost:5432`, so run Drizzle from the host (Node + repo checkout):
+
+```bash
+cp .env.example .env
+# .env DATABASE_URL should match: postgresql://msa:msa@localhost:5432/msa
+npm install
+npm run db:push
+npm run db:seed
+```
+
+Then open **http://localhost:3000** (the containerized app).
+
+### 4. Postgres only (run Next on the host)
+
+If you only want the database in Docker:
+
+```bash
+docker compose up -d postgres
+npm install
+npm run db:push
+npm run db:seed
+npm run dev
+```
+
+### 5. Reset the database (Docker volume still exists)
+
+To wipe all tables and recreate from scratch:
+
+```bash
+npm run db:reset
+npm run db:push
+npm run db:seed
+```
+
+To remove the Postgres **data volume** entirely:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+npm run db:push
+npm run db:seed
+```
+
+### 6. Run the web image alone (without Compose)
+
+```bash
+docker build -t msa-web .
+docker run --rm -p 3000:3000 \
+  -e DATABASE_URL="postgresql://msa:msa@host.docker.internal:5432/msa" \
+  -e SESSION_SECRET="change-me-in-production-min-32-chars-long" \
+  msa-web
+```
+
+On Linux, add `--add-host=host.docker.internal:host-gateway` if `host.docker.internal` is not defined.
+
+## Scripts
+
+| Command | Description |
+|--------|-------------|
+| `npm run db:push` | Apply Drizzle schema to the database (dev-friendly) |
+| `npm run db:generate` | Generate SQL migrations from schema changes |
+| `npm run db:migrate` | Run migrations (when using generated migrations) |
+| `npm run db:studio` | Open Drizzle Studio |
+| `npm run db:seed` | Seed demo users, assets, checklists, sample work orders |
+| `npm run db:reset` | Drop and recreate `public` schema in PostgreSQL (destructive) |
+| `npm test` | Run Vitest unit tests (`tests/**/*.test.ts`) |
+| `npm run test:watch` | Vitest in watch mode |
+
+## Features
 
 - **Auth** — Sign up, log in, log out
-- **Work orders** — List (filter by status), detail, create, edit, status flow (open → in progress → completed), checklist steps
+- **Work orders** — List (filter by status), detail, create, edit, status flow, checklist steps
 - **Assets** — List (search), detail, create; link to work orders
 - **Requests** — Submit request (description + optional asset), list, detail, convert to work order
 - **Profile** — View profile, log out
@@ -79,14 +194,6 @@ Overall, the palette conveys clarity and contrast, with a professional dark inte
 - `app/api/` — API routes (auth, work-orders, assets, requests, users)
 - `components/` — AppShell (nav)
 - `lib/` — db (schema, client), auth, id, work-orders helper
-- `scripts/seed.ts` — Demo user seed
-
-## Data model
-
-See `PLAN.md` for full schema. Core tables: `users`, `assets`, `work_orders`, `work_order_checklist`, `checklist_templates`, `checklist_template_items`, `requests`, `notes`, `attachments`, `maintenance_schedules` (Phase 3).
-
-## Next steps (from plan)
-
-- Phase 2: Offline, QR scan, photos/notes on WO, checklist templates with custom fields
-- Phase 3: Calendar, dashboard, preventive maintenance (schedules + checklist templates)
-- Phase 4: Parts/inventory, locations, integrations, audit
+- `scripts/seed.ts` — Demo seed
+- `docker-compose.yml` — PostgreSQL + msa `web` service
+- `Dockerfile` — Production Next.js (`standalone`) image

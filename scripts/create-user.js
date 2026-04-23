@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
-const path = require("path");
+/**
+ * Interactive admin user creation. Requires DATABASE_URL (PostgreSQL).
+ * Usage: node scripts/create-user.js
+ */
+
 const crypto = require("crypto");
 const readline = require("readline/promises");
 const { stdin, stdout } = require("process");
-const Database = require("better-sqlite3");
+const { Client } = require("pg");
 const bcrypt = require("bcryptjs");
-
-const DB_PATH = process.env.DATABASE_PATH ?? path.join(process.cwd(), "sqlite.db");
 
 function normalizeNameForUsername(name) {
   return name
@@ -25,10 +27,18 @@ function generateUsername(name, fallbackIndex) {
 }
 
 async function main() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    console.error("DATABASE_URL is required.");
+    process.exit(1);
+  }
+
   const rl = readline.createInterface({ input: stdin, output: stdout });
-  const db = new Database(DB_PATH);
+  const client = new Client({ connectionString });
 
   try {
+    await client.connect();
+
     const name = (await rl.question("Name: ")).trim();
     if (!name) {
       console.error("Name is required.");
@@ -40,10 +50,11 @@ async function main() {
     const email = emailRaw || null;
 
     if (email) {
-      const existingByEmail = db
-        .prepare("SELECT id FROM users WHERE email = ? LIMIT 1")
-        .get(email);
-      if (existingByEmail) {
+      const { rows } = await client.query(
+        "SELECT id FROM users WHERE email = $1 LIMIT 1",
+        [email]
+      );
+      if (rows.length) {
         console.error("That email is already in use.");
         process.exitCode = 1;
         return;
@@ -60,10 +71,11 @@ async function main() {
     let username = "";
     for (let i = 0; i < 200; i += 1) {
       const candidate = generateUsername(name, i);
-      const existing = db
-        .prepare("SELECT id FROM users WHERE username = ? LIMIT 1")
-        .get(candidate);
-      if (!existing) {
+      const { rows } = await client.query(
+        "SELECT id FROM users WHERE username = $1 LIMIT 1",
+        [candidate]
+      );
+      if (!rows.length) {
         username = candidate;
         break;
       }
@@ -75,23 +87,21 @@ async function main() {
 
     const id = crypto.randomUUID();
     const passwordHash = await bcrypt.hash(password, 10);
-    const nowUnix = Math.floor(Date.now() / 1000);
 
-    db.prepare(
-      `
-      INSERT INTO users (id, username, email, name, password_hash, role, created_at)
-      VALUES (?, ?, ?, ?, ?, 'admin', ?)
-      `
-    ).run(id, username, email, name, passwordHash, nowUnix);
+    await client.query(
+      `INSERT INTO users (id, username, email, name, password_hash, role, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'admin', NOW())`,
+      [id, username, email, name, passwordHash]
+    );
 
     console.log("");
     console.log("Admin user created successfully.");
     console.log(`Username: ${username}`);
-    console.log(`Role: admin`);
+    console.log("Role: admin");
     console.log(`ID: ${id}`);
   } finally {
     rl.close();
-    db.close();
+    await client.end().catch(() => {});
   }
 }
 

@@ -61,9 +61,9 @@ export async function POST(
     return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   }
 
-  let formData: FormData;
+  let formData: globalThis.FormData;
   try {
-    formData = await req.formData();
+    formData = (await req.formData()) as unknown as globalThis.FormData;
   } catch {
     return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }

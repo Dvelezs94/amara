@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `avatar_background_color` text;

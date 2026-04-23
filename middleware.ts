@@ -1,45 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-
-const apiPublicPrefix = "/api/auth/";
-const operatorAllowedAppPrefixes = ["/tareas", "/knowledge-base", "/profile"];
-const operatorAllowedApiPrefixes = [
-  "/api/work-orders",
-  "/api/knowledge-base",
-  "/api/asset-files",
-  "/api/users/me/avatar",
-  "/api/users",
-  "/api/assets",
-  "/api/checklist-templates",
-  "/api/notifications",
-];
-
-function decodeSessionRole(token: string): string | null {
-  try {
-    const payloadPart = token.split(".")[1];
-    if (!payloadPart) return null;
-    const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(
-      normalized.length + ((4 - (normalized.length % 4)) % 4),
-      "="
-    );
-    const payload = JSON.parse(atob(padded)) as { role?: unknown };
-    return typeof payload.role === "string" ? payload.role : null;
-  } catch {
-    return null;
-  }
-}
-
-function isAllowedPrefix(path: string, prefixes: string[]): boolean {
-  return prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
-}
+import {
+  API_AUTH_PUBLIC_PREFIX,
+  decodeSessionRoleFromCookie,
+  isOperatorApiPathAllowed,
+  isOperatorAppPathAllowed,
+} from "@/lib/middleware-rules";
 
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   if (path.startsWith("/uploads/")) return NextResponse.next();
   if (path === "/" || path === "/login" || path === "/solicitud")
     return NextResponse.next();
-  if (path.startsWith(apiPublicPrefix)) return NextResponse.next();
+  if (path.startsWith(API_AUTH_PUBLIC_PREFIX)) return NextResponse.next();
   /** Public form: crear orden sin sesión (misma ruta sirve con sesión de operador/admin) */
   if (path === "/api/solicitud") return NextResponse.next();
   const session = req.cookies.get("session")?.value;
@@ -49,7 +22,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  const role = decodeSessionRole(session);
+  const role = decodeSessionRoleFromCookie(session);
   if (!role) {
     if (path.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -68,16 +41,13 @@ export function middleware(req: NextRequest) {
 
   if (role === "operator") {
     if (path.startsWith("/api/")) {
-      if (
-        path.startsWith(apiPublicPrefix) ||
-        isAllowedPrefix(path, operatorAllowedApiPrefixes)
-      ) {
+      if (isOperatorApiPathAllowed(path)) {
         return NextResponse.next();
       }
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    if (isAllowedPrefix(path, operatorAllowedAppPrefixes)) {
+    if (isOperatorAppPathAllowed(path)) {
       return NextResponse.next();
     }
     return NextResponse.redirect(new URL("/tareas", req.url));

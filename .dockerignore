@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env
+.env.*
+*.md
+sqlite.db
+sqlite.db-journal
+sqlite.db-wal
+sqlite.db-shm
+coverage
+.turbo

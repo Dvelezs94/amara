@@ -4,7 +4,11 @@ import { db } from "@/lib/db";
 import { workOrders } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
-const boardStatuses = new Set(["pending", "in_progress", "completed"] as const);
+type BoardColumnStatus = "pending" | "in_progress" | "completed";
+
+function isBoardColumnStatus(s: string | undefined): s is BoardColumnStatus {
+  return s === "pending" || s === "in_progress" || s === "completed";
+}
 
 export async function POST(req: Request) {
   const session = await getSession();
@@ -17,7 +21,7 @@ export async function POST(req: Request) {
   const status = statusRaw === "open" ? "pending" : statusRaw;
   const orderedIds = body.orderedIds as unknown;
 
-  if (!status || !boardStatuses.has(status as "pending" | "in_progress" | "completed")) {
+  if (!isBoardColumnStatus(status)) {
     return NextResponse.json({ error: "Estado de columna no válido" }, { status: 400 });
   }
   if (!Array.isArray(orderedIds) || orderedIds.some((id) => typeof id !== "string")) {

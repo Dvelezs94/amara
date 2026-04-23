@@ -159,9 +159,9 @@ function insertionIndexFromPointer(
   clientY: number,
   excludeId: string
 ): number {
-  const elements = [
-    ...container.querySelectorAll<HTMLElement>("article[data-woid]"),
-  ].filter((el) => el.dataset.woid !== excludeId);
+  const elements = Array.from(
+    container.querySelectorAll<HTMLElement>("article[data-woid]")
+  ).filter((el) => el.dataset.woid !== excludeId);
   for (let i = 0; i < elements.length; i += 1) {
     const box = elements[i]!.getBoundingClientRect();
     const mid = box.top + box.height / 2;

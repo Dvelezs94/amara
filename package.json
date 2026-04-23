@@ -1,5 +1,5 @@
 {
-  "name": "ams",
+  "name": "msa",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,17 +7,19 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
+    "db:push": "drizzle-kit push --config=drizzle.config.ts",
+    "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:reset": "node scripts/reset-db.mjs",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.6.0",
     "drizzle-orm": "^0.36.0",
+    "pg": "^8.13.1",
     "lucide-react": "^0.460.0",
     "next": "14.2.18",
     "openai": "^6.32.0",
@@ -27,11 +29,13 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "@types/better-sqlite3": "^7.6.11",
+    "@types/pg": "^8.11.10",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "drizzle-kit": "^0.28.0",
+    "tsx": "^4.19.2",
+    "vitest": "^3.0.5",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.18",
     "postcss": "^8.4.49",
