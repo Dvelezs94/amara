@@ -1,0 +1,66 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg DATABASE_URL=postgresql://msa:msa@127.0.0.1:5432/msa \
+            -t msa-ci:${{ github.sha }} \
+            .
+
+  deploy:
+    name: Deploy over SSH
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+    env:
+      DEPLOY_HOST: 5.78.189.24
+      DEPLOY_PORT: 22
+      DEPLOY_USER: deploy
+      DEPLOY_PATH: /var/www/msa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Add known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Copy project files to server
+        run: |
+          rsync -az --delete \
+            --exclude ".git/" \
+            --exclude "node_modules/" \
+            --exclude ".next/" \
+            --exclude ".env" \
+            --exclude "coverage/" \
+            -e "ssh -p ${DEPLOY_PORT:-22}" \
+            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+
+      - name: Restart Docker Compose and run migrations
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" <<EOF
+          set -euo pipefail
+          cd "${DEPLOY_PATH}"
+          docker compose up -d --build --remove-orphans
+          docker compose run --rm web npm run db:push
+          EOF
