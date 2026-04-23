@@ -204,7 +204,7 @@ export function AnalyticsCharts() {
       {loading && <p className="text-zinc-500">Loading…</p>}
       {!templateId && !loading && (
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-8 text-center text-zinc-500">
-          Select a checklist template to see analytics.
+          Selecciona una plantilla de checklist para ver las analíticas.
         </div>
       )}
       {templateId && data?.workOrders?.length === 0 && !loading && (
