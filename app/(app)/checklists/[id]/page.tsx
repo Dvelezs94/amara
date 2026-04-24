@@ -29,9 +29,6 @@ export default async function EditChecklistPage({
       </nav>
       <h1 className="text-xl font-semibold text-zinc-900">Editar plantilla de checklist</h1>
       <ChecklistTemplateForm templateId={id} initial={template} />
-      <Link href="/checklists" className="inline-block text-sm text-primary-600 font-medium">
-        Volver a checklist
-      </Link>
     </div>
   );
 }
