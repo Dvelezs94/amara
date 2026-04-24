@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AVAILABLE_USER_ROLES, type UserRole } from "@/lib/auth-shared";
 import { UserAvatar } from "@/components/UserAvatar";
+import { Pencil, RefreshCw } from "lucide-react";
 
 type AdminUser = {
   id: string;
@@ -41,6 +42,9 @@ export function InviteUsersPanel() {
   const [uploadingAvatarUserId, setUploadingAvatarUserId] = useState<string | null>(
     null
   );
+  const [editingNameUserId, setEditingNameUserId] = useState<string | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState("");
+  const [savingNameUserId, setSavingNameUserId] = useState<string | null>(null);
   const [resetModalUser, setResetModalUser] = useState<AdminUser | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
 
@@ -166,6 +170,44 @@ export function InviteUsersPanel() {
       setError("No se pudo subir la foto");
     } finally {
       setUploadingAvatarUserId(null);
+    }
+  }
+
+  async function saveNameForUser(user: AdminUser) {
+    const nextName = editingNameValue.trim();
+    if (!nextName) {
+      setError("El nombre no puede estar vacío");
+      return;
+    }
+    if (nextName === user.name) {
+      setEditingNameUserId(null);
+      setEditingNameValue("");
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    setSavingNameUserId(user.id);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nextName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo actualizar el nombre");
+        return;
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, name: nextName } : u))
+      );
+      setSuccess(`Nombre de ${user.username} actualizado.`);
+      setEditingNameUserId(null);
+      setEditingNameValue("");
+    } catch {
+      setError("No se pudo actualizar el nombre");
+    } finally {
+      setSavingNameUserId(null);
     }
   }
 
@@ -296,7 +338,52 @@ export function InviteUsersPanel() {
                   size="md"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-zinc-900">{user.name}</p>
+                  {editingNameUserId === user.id ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        value={editingNameValue}
+                        onChange={(e) => setEditingNameValue(e.target.value)}
+                        className="min-w-[180px] flex-1 rounded-lg border border-zinc-300 px-2 py-1 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveNameForUser(user)}
+                        disabled={savingNameUserId === user.id}
+                        className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                      >
+                        {savingNameUserId === user.id ? "Guardando..." : "Guardar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingNameUserId(null);
+                          setEditingNameValue("");
+                        }}
+                        disabled={savingNameUserId === user.id}
+                        className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-zinc-900">{user.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingNameUserId(user.id);
+                          setEditingNameValue(user.name);
+                        }}
+                        disabled={savingNameUserId === user.id}
+                        className="rounded-md p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60"
+                        aria-label={`Editar nombre de ${user.name}`}
+                        title="Editar nombre"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                   <p className="text-xs text-zinc-500">@{user.username}</p>
                   {user.email ? (
                     <p className="text-xs text-zinc-500">{user.email}</p>
@@ -376,9 +463,11 @@ export function InviteUsersPanel() {
                 <button
                   type="button"
                   onClick={() => setResetPasswordValue(generatePassword())}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700"
+                  className="rounded-lg border border-zinc-300 p-2 text-zinc-700 hover:bg-zinc-50"
+                  aria-label="Generar contraseña"
+                  title="Generar contraseña"
                 >
-                  Generar
+                  <RefreshCw className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -404,9 +493,9 @@ export function InviteUsersPanel() {
                   setResetModalUser(null);
                   setResetPasswordValue("");
                 }}
-                className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
               >
-                Confirmar cambio de contraseña
+                Guardar
               </button>
             </div>
           </div>
