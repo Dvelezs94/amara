@@ -54,7 +54,7 @@ export default async function CalendarioPage() {
     <div className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold uppercase tracking-tight text-zinc-900">Calendario</h1>
+          <h1 className="text-xl font-semibold text-zinc-900">Calendario</h1>
           <p className="mt-1 text-sm text-zinc-500">
             Vista mensual y tareas de mantenimiento preventivo con repetición
             (diaria, semanal, mensual, etc.).
@@ -71,7 +71,16 @@ export default async function CalendarioPage() {
         />
       </header>
 
-      <CalendarMonthView schedules={calendarSchedules} />
+      <CalendarMonthView
+        schedules={calendarSchedules}
+        assets={assetOptions.map((a) => ({
+          id: a.id,
+          name: a.name,
+          sublabel: a.assetId,
+        }))}
+        users={userList}
+        checklistTemplates={templateOptions}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
 import {
   expandOccurrencesInRange,
   formatRecurrenceLabel,
@@ -182,8 +183,14 @@ function buildYearAuditRows(
 
 export function CalendarMonthView({
   schedules,
+  assets,
+  users,
+  checklistTemplates,
 }: {
   schedules: CalendarSchedulePayload[];
+  assets: { id: string; name: string; sublabel?: string }[];
+  users: { id: string; name: string }[];
+  checklistTemplates: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"year" | "month" | "week" | "day">("month");
@@ -214,6 +221,8 @@ export function CalendarMonthView({
   const [loadingLinkedWorkOrders, setLoadingLinkedWorkOrders] = useState(false);
   const [loadingMoreLinkedWorkOrders, setLoadingMoreLinkedWorkOrders] = useState(false);
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createModalDate, setCreateModalDate] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!selectedEvent) return;
@@ -726,7 +735,12 @@ export function CalendarMonthView({
               return (
                 <div
                   key={i}
-                  onClick={() => setCurrentDate(new Date(cell.date))}
+                  onClick={() => {
+                    const ymd = toYmdLocal(cell.date);
+                    setCurrentDate(new Date(cell.date));
+                    setCreateModalDate(ymd);
+                    setCreateModalOpen(true);
+                  }}
                   className={`min-h-[108px] border-r border-b border-zinc-200 px-2 py-1 text-left align-top transition-colors ${
                     cell.inMonth ? "bg-surface" : "bg-zinc-50/50"
                   } ${cell.isToday ? "ring-1 ring-inset ring-accent-500" : ""}`}
@@ -743,7 +757,8 @@ export function CalendarMonthView({
                       <button
                         key={`${ev.id}-${i}`}
                         type="button"
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setSelectedEvent({
                             id: ev.id,
                             name: ev.name,
@@ -755,8 +770,8 @@ export function CalendarMonthView({
                               day: "numeric",
                             }),
                             dateYmd,
-                          })
-                        }
+                          });
+                        }}
                         onMouseDown={(e) => e.stopPropagation()}
                         className="block w-full truncate rounded-sm px-1.5 py-0.5 text-left text-[10px] font-semibold uppercase tracking-wide text-white"
                         style={{ backgroundColor: ev.color ?? "#02257D" }}
@@ -810,16 +825,10 @@ export function CalendarMonthView({
             className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  {formatRecurrenceLabel(selectedEvent.recurrence)}
-                </p>
-                <h3 className="mt-1 truncate text-lg font-semibold text-zinc-900">
-                  {selectedEvent.name}
-                </h3>
-                <p className="mt-1 text-xs text-zinc-500">{selectedEvent.dateLabel}</p>
-              </div>
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+              <h3 className="truncate pr-3 text-sm font-semibold text-zinc-900">
+                {selectedEvent.name}
+              </h3>
               <button
                 type="button"
                 onClick={() => {
@@ -834,6 +843,10 @@ export function CalendarMonthView({
               </button>
             </div>
             <div className="overflow-y-auto px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                {formatRecurrenceLabel(selectedEvent.recurrence)}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">{selectedEvent.dateLabel}</p>
               {createWorkOrderError ? (
                 <p className="mb-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
                   {createWorkOrderError}
@@ -1048,6 +1061,16 @@ export function CalendarMonthView({
           </div>
         </div>
       ) : null}
+
+      <CalendarCreateEventModal
+        assets={assets}
+        users={users}
+        checklistTemplates={checklistTemplates}
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        initialStartDate={createModalDate}
+        hideTrigger
+      />
     </div>
   );
 }

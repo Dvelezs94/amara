@@ -48,14 +48,19 @@ export default async function AssetDetailPage({
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <Link
-          href="/assets"
-          className="inline-flex items-center gap-1 text-sm font-medium text-zinc-700 hover:text-zinc-900"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Volver
-        </Link>
-        <h1 className="text-xl font-semibold text-zinc-900">{asset.name}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/assets"
+            className="inline-flex items-center gap-1 text-sm font-medium text-[#F14C03] hover:underline"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Maquinas
+          </Link>
+          <span aria-hidden className="text-zinc-400">
+            /
+          </span>
+          <h1 className="text-xl font-semibold text-zinc-900">{asset.name}</h1>
+        </div>
         <p className="text-zinc-500">{asset.assetId}</p>
       </div>
       <AssetFilesSection assetId={id} initialFiles={asset.files} />

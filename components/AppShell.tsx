@@ -18,7 +18,6 @@ import {
  ChevronLeft,
  ChevronRight,
  Wrench,
- ArrowLeft,
  Bell,
  Search,
 } from "lucide-react";
@@ -501,17 +500,6 @@ export function AppShell({
       MSA
      </Link>
      <div className="ml-auto flex items-center gap-2">
-      {showBackButton && (
-       <button
-        type="button"
-        onClick={() => router.back()}
-          className="inline-flex items-center gap-1 text-sm font-medium text-zinc-700 hover:text-zinc-900"
-        aria-label="Volver"
-       >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Volver
-       </button>
-      )}
       <div className="relative md:hidden" ref={profileHeaderRef}>
        <button
         type="button"

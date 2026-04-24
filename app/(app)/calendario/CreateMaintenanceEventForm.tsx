@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type SelectOption = { id: string; name: string; sublabel?: string };
 
@@ -37,16 +37,18 @@ export function CreateMaintenanceEventForm({
   users,
   checklistTemplates,
   onCreated,
+  initialStartDate,
 }: {
   assets: SelectOption[];
   users: SelectOption[];
   checklistTemplates: SelectOption[];
   onCreated?: () => void;
+  initialStartDate?: string;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [startDate, setStartDate] = useState(() =>
-    new Date().toISOString().slice(0, 10)
+  const [startDate, setStartDate] = useState(
+    initialStartDate ?? new Date().toISOString().slice(0, 10)
   );
   const [frequency, setFrequency] = useState<string>("none");
   const [interval, setInterval] = useState(1);
@@ -71,6 +73,11 @@ export function CreateMaintenanceEventForm({
     if (weekdays.length === 0) return undefined;
     return weekdays;
   }, [showWeekdayPick, weekdays]);
+
+  useEffect(() => {
+    if (!initialStartDate) return;
+    setStartDate(initialStartDate);
+  }, [initialStartDate]);
 
   function toggleWeekday(v: number) {
     setWeekdays((prev) =>

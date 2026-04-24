@@ -353,21 +353,15 @@ export function WorkOrderDetail({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex flex-wrap items-center gap-2 sm:gap-3">
-          <Link
-            href="/tareas"
-            className="inline-flex items-center gap-1 text-sm font-medium text-zinc-700 hover:text-zinc-900"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Volver
-          </Link>
           <nav
             className="flex flex-wrap items-center gap-1 text-sm text-zinc-500"
             aria-label="Migas de pan"
           >
             <Link
               href="/tareas"
-              className="font-medium text-[#F14C03] hover:underline"
+              className="inline-flex items-center gap-1 font-medium text-[#F14C03] hover:underline"
             >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
               Tareas
             </Link>
             <span aria-hidden className="text-zinc-400">
@@ -394,14 +388,14 @@ export function WorkOrderDetail({
         </div>
       </div>
 
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 md:text-[26px] md:leading-snug">
+          {initial.title}
+        </h1>
+      </header>
+
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
         <div className="min-w-0 flex-1 space-y-8">
-          <header>
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 md:text-[26px] md:leading-snug">
-              {initial.title}
-            </h1>
-          </header>
-
           <details
             open
             className="group rounded-xl border border-zinc-200 bg-white [&_summary::-webkit-details-marker]:hidden"
@@ -683,7 +677,7 @@ export function WorkOrderDetail({
 
         </div>
 
-        <aside className="w-full shrink-0 space-y-4 lg:sticky lg:top-4 lg:w-72 xl:w-80">
+        <aside className="order-first w-full shrink-0 space-y-4 lg:order-none lg:sticky lg:top-4 lg:w-72 xl:w-80">
           <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
             <label
               htmlFor="wo-status"
@@ -714,10 +708,11 @@ export function WorkOrderDetail({
             )}
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-            <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">
-              Detalles
-            </div>
+          <details className="group overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900 [&::-webkit-details-marker]:hidden">
+              <span>Detalles</span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400 transition group-open:rotate-180" />
+            </summary>
             <div className="divide-y divide-zinc-100 px-4">
               <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
                 <span className="text-zinc-500">Tipo</span>
@@ -899,7 +894,7 @@ export function WorkOrderDetail({
                 </div>
               ) : null}
             </div>
-          </div>
+          </details>
         </aside>
       </div>
 

@@ -357,20 +357,6 @@ export function WorkOrderList() {
     );
   }
 
-  if (items.length === 0) {
-    return (
-      <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center">
-        <p className="text-zinc-500">Aún no hay tareas.</p>
-        <Link
-          href="/tareas/new"
-          className="mt-3 inline-block text-primary-600 font-medium"
-        >
-          Crear una
-        </Link>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-3">
       {error && (
@@ -440,6 +426,17 @@ export function WorkOrderList() {
           ))}
         </div>
       </div>
+      {items.length === 0 && !q && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center">
+          <p className="text-zinc-500">Sin tareas.</p>
+          <Link
+            href="/tareas/new"
+            className="mt-3 inline-block text-primary-600 font-medium"
+          >
+            Crear una
+          </Link>
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-3">
         {boardColumns.map((column) => {
           const columnItems = filteredItems
