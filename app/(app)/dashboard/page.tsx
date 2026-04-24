@@ -251,10 +251,11 @@ export default function DashboardPage() {
           </button>
           <Link
             href="/analytics"
-            className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 px-4 text-sm font-semibold uppercase tracking-[0.08em] text-white shadow-sm hover:bg-primary-700"
+            className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 pl-3 pr-3 text-sm font-medium text-white shadow-sm hover:bg-primary-700 sm:px-4 sm:font-semibold sm:uppercase sm:tracking-[0.08em]"
           >
             <Plus className="h-4 w-4" />
-            Añadir gráfico
+            <span className="sm:hidden">Gráfico</span>
+            <span className="hidden sm:inline">Añadir gráfico</span>
           </Link>
         </div>
       </div>
