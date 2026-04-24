@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { ChevronDown, ChevronUp, ChevronsUp, Equal } from "lucide-react";
 import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
+import { UserAvatar } from "@/components/UserAvatar";
 import {
   expandOccurrencesInRange,
   formatRecurrenceLabel,
@@ -215,7 +217,18 @@ export function CalendarMonthView({
   const [selectedAssigneeId, setSelectedAssigneeId] = useState("");
   const [assigneePromptOpen, setAssigneePromptOpen] = useState(false);
   const [linkedWorkOrders, setLinkedWorkOrders] = useState<
-    { id: string; folio: number | null; title: string; status: string; createdAt: string | Date }[]
+    {
+      id: string;
+      folio: number | null;
+      title: string;
+      status: string;
+      priority?: string | null;
+      dueDate?: string | Date | null;
+      assigneeId?: string | null;
+      assigneeName?: string | null;
+      assigneeAvatarUrl?: string | null;
+      createdAt: string | Date;
+    }[]
   >([]);
   const [linkedWorkOrdersHasMore, setLinkedWorkOrdersHasMore] = useState(false);
   const [loadingLinkedWorkOrders, setLoadingLinkedWorkOrders] = useState(false);
@@ -311,6 +324,21 @@ export function CalendarMonthView({
     if (status === "completed") return "bg-emerald-100 text-emerald-800";
     if (status === "cancelled") return "bg-zinc-100 text-zinc-600";
     return "bg-zinc-100 text-zinc-700";
+  }
+
+  function priorityLabel(priority?: string | null) {
+    if (priority === "low") return "Baja";
+    if (priority === "medium") return "Media";
+    if (priority === "high") return "Alta";
+    if (priority === "urgent") return "Urgente";
+    return "Media";
+  }
+
+  function priorityMeta(priority?: string | null) {
+    if (priority === "low") return { Icon: ChevronDown, className: "text-[#0065FF]" };
+    if (priority === "high") return { Icon: ChevronUp, className: "text-[#FF8B00]" };
+    if (priority === "urgent") return { Icon: ChevronsUp, className: "text-[#BF2600]" };
+    return { Icon: Equal, className: "text-[#E2A100]" };
   }
 
   function formatOpenedAt(value: string | Date) {
@@ -861,7 +889,6 @@ export function CalendarMonthView({
                   {createWorkOrderError}
                 </p>
               ) : null}
-              <div className="rounded-md border border-zinc-200 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
                 Tareas asociadas
               </p>
@@ -872,30 +899,61 @@ export function CalendarMonthView({
               ) : (
                 <ul className="mt-2 space-y-1.5">
                   {linkedWorkOrders.map((wo) => (
-                    <li
-                      key={wo.id}
-                      className="rounded-md border border-zinc-200 bg-white px-2.5 py-2"
-                    >
-                      <div className="flex items-start justify-between gap-2 text-xs">
-                        <Link
-                          href={`/tareas/${wo.id}`}
-                          className="line-clamp-2 text-[#F14C03] hover:underline"
-                          onClick={() => setSelectedEvent(null)}
-                        >
-                          {wo.folio != null ? `Folio ${wo.folio} · ` : ""}
-                          {wo.title}
-                        </Link>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusBadgeClass(
-                            wo.status
-                          )}`}
-                        >
-                          {statusLabel(wo.status)}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[10px] text-zinc-500">
-                        Abierta el {formatOpenedAt(wo.createdAt)}
-                      </p>
+                    <li key={wo.id}>
+                      <Link
+                        href={`/tareas/${wo.id}`}
+                        className="block rounded-lg border border-zinc-200 bg-white p-3 hover:border-primary-200"
+                        onClick={() => setSelectedEvent(null)}
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="line-clamp-2 font-medium text-zinc-900">
+                                {wo.folio != null ? `Folio ${wo.folio} · ` : ""}
+                                {wo.title}
+                              </p>
+                            </div>
+                            {(() => {
+                              const { Icon, className } = priorityMeta(wo.priority);
+                              return (
+                                <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-zinc-900">
+                                  <Icon className={`h-4 w-4 ${className}`} strokeWidth={2.5} aria-hidden />
+                                  {priorityLabel(wo.priority)}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <p className="text-zinc-500">
+                              {statusLabel(wo.status)} · Vence{" "}
+                              {wo.dueDate ? new Date(wo.dueDate).toLocaleDateString("es") : "—"}
+                            </p>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusBadgeClass(
+                                wo.status
+                              )}`}
+                            >
+                              {statusLabel(wo.status)}
+                            </span>
+                          </div>
+                          {wo.assigneeName ? (
+                            <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                              <span>Asignado:</span>
+                              <UserAvatar
+                                userId={wo.assigneeId ?? ""}
+                                name={wo.assigneeName}
+                                avatarUrl={wo.assigneeAvatarUrl}
+                                size="sm"
+                                className="!h-5 !w-5 !text-[8px]"
+                              />
+                              <span className="truncate">{wo.assigneeName}</span>
+                            </div>
+                          ) : null}
+                          <p className="text-[10px] text-zinc-500">
+                            Abierta el {formatOpenedAt(wo.createdAt)}
+                          </p>
+                        </div>
+                      </Link>
                     </li>
                   ))}
                 </ul>
@@ -925,7 +983,6 @@ export function CalendarMonthView({
                   {loadingMoreLinkedWorkOrders ? "Cargando…" : "Cargar más"}
                 </button>
               ) : null}
-              </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"

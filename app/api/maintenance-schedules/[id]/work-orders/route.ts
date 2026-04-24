@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { desc, like } from "drizzle-orm";
+import { desc, eq, like } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { workOrders } from "@/lib/db/schema";
+import { users, workOrders } from "@/lib/db/schema";
 
 const DEFAULT_PAGE_SIZE = 15;
 const MAX_PAGE_SIZE = 50;
@@ -34,9 +34,15 @@ export async function GET(
       folio: workOrders.folio,
       title: workOrders.title,
       status: workOrders.status,
+      priority: workOrders.priority,
+      dueDate: workOrders.dueDate,
       createdAt: workOrders.createdAt,
+      assigneeId: users.id,
+      assigneeName: users.name,
+      assigneeAvatarUrl: users.avatarUrl,
     })
     .from(workOrders)
+    .leftJoin(users, eq(workOrders.assigneeId, users.id))
     .where(
       like(
         workOrders.description,
