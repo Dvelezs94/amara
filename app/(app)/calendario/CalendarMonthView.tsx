@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, ChevronUp, ChevronsUp, Equal } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronsUp, Equal, X } from "lucide-react";
 import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
 import { UserAvatar } from "@/components/UserAvatar";
 import {
@@ -12,6 +12,7 @@ import {
   parseRecurrence,
   toYmdLocal,
 } from "@/lib/maintenance-recurrence";
+import { useSheetModalPresence } from "@/lib/use-sheet-modal-presence";
 
 export type CalendarSchedulePayload = {
   id: string;
@@ -20,6 +21,15 @@ export type CalendarSchedulePayload = {
   color?: string | null;
   /** Para registros antiguos sin JSON en recurrence */
   nextRunAt: string | null;
+};
+
+type SelectedMaintenanceEvent = {
+  id: string;
+  name: string;
+  recurrence: string;
+  color?: string | null;
+  dateLabel: string;
+  dateYmd: string;
 };
 
 const WEEK_HEADER = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -201,14 +211,19 @@ export function CalendarMonthView({
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const monthStart = startOfCalendarMonth(year, month);
-  const [selectedEvent, setSelectedEvent] = useState<{
-    id: string;
-    name: string;
-    recurrence: string;
-    color?: string | null;
-    dateLabel: string;
-    dateYmd: string;
-  } | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<SelectedMaintenanceEvent | null>(null);
+  const [panelEvent, setPanelEvent] = useState<SelectedMaintenanceEvent | null>(null);
+  const { mounted: detailModalMounted, show: detailModalShow, onPanelTransitionEnd: onDetailPanelTransitionEnd } =
+    useSheetModalPresence(selectedEvent != null);
+
+  useLayoutEffect(() => {
+    if (selectedEvent) setPanelEvent(selectedEvent);
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    if (!detailModalMounted && !selectedEvent) setPanelEvent(null);
+  }, [detailModalMounted, selectedEvent]);
+
   const [creatingWorkOrder, setCreatingWorkOrder] = useState(false);
   const [createWorkOrderError, setCreateWorkOrderError] = useState<string | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -238,16 +253,16 @@ export function CalendarMonthView({
   const [createModalDate, setCreateModalDate] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!selectedEvent) return;
+    if (!detailModalMounted) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [selectedEvent]);
+  }, [detailModalMounted]);
 
   useEffect(() => {
-    if (!selectedEvent) {
+    if (!panelEvent) {
       setLinkedWorkOrders([]);
       setLinkedWorkOrdersHasMore(false);
       setLoadingLinkedWorkOrders(false);
@@ -259,7 +274,7 @@ export function CalendarMonthView({
     let cancelled = false;
     setLoadingLinkedWorkOrders(true);
     fetch(
-      `/api/maintenance-schedules/${selectedEvent.id}/work-orders?limit=${LINKED_WO_PAGE_SIZE}&offset=0`
+      `/api/maintenance-schedules/${panelEvent.id}/work-orders?limit=${LINKED_WO_PAGE_SIZE}&offset=0`
     )
       .then((r) => r.json())
       .then((data) => {
@@ -280,10 +295,10 @@ export function CalendarMonthView({
     return () => {
       cancelled = true;
     };
-  }, [selectedEvent]);
+  }, [panelEvent]);
 
   useEffect(() => {
-    if (!selectedEvent) {
+    if (!panelEvent) {
       setUserOptions([]);
       setLoadingUserOptions(false);
       return;
@@ -308,7 +323,7 @@ export function CalendarMonthView({
     return () => {
       cancelled = true;
     };
-  }, [selectedEvent]);
+  }, [panelEvent]);
 
   function statusLabel(status: string) {
     if (status === "pending") return "Pendiente";
@@ -848,9 +863,11 @@ export function CalendarMonthView({
         )}
       </div>
 
-      {selectedEvent ? (
+      {detailModalMounted && panelEvent ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className={`fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 transition-opacity duration-300 ease-out motion-reduce:transition-none md:items-center md:justify-center md:p-4 ${
+            detailModalShow ? "opacity-100" : "opacity-0"
+          }`}
           onClick={() => {
             setSelectedEvent(null);
             setCreateWorkOrderError(null);
@@ -859,12 +876,21 @@ export function CalendarMonthView({
           }}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white"
+            className={`relative flex max-h-[min(90dvh,900px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-zinc-200 border-b-0 bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-300 ease-out motion-reduce:transition-none motion-reduce:duration-0 md:max-h-[85vh] md:rounded-lg md:border-b md:shadow-lg ${
+              detailModalShow
+                ? "translate-y-0 motion-reduce:translate-y-0"
+                : "translate-y-full motion-reduce:translate-y-0 md:translate-y-4"
+            }`}
             onClick={(e) => e.stopPropagation()}
+            onTransitionEnd={onDetailPanelTransitionEnd}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+            <div
+              className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-zinc-300 md:hidden"
+              aria-hidden
+            />
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
               <h3 className="truncate pr-3 text-sm font-semibold text-zinc-900">
-                {selectedEvent.name}
+                {panelEvent.name}
               </h3>
               <button
                 type="button"
@@ -874,16 +900,17 @@ export function CalendarMonthView({
                   setActionsOpen(false);
                   setAssigneePromptOpen(false);
                 }}
-                className="rounded-sm border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+                aria-label="Cerrar modal"
+                className="inline-flex shrink-0 items-center justify-center rounded-sm border border-zinc-300 p-1 text-zinc-700 hover:bg-zinc-100"
               >
-                Cerrar
+                <X className="h-4 w-4" aria-hidden />
               </button>
             </div>
-            <div className="overflow-y-auto px-4 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                {formatRecurrenceLabel(selectedEvent.recurrence)}
+                {formatRecurrenceLabel(panelEvent.recurrence)}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">{selectedEvent.dateLabel}</p>
+              <p className="mt-1 text-xs text-zinc-500">{panelEvent.dateLabel}</p>
               {createWorkOrderError ? (
                 <p className="mb-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
                   {createWorkOrderError}
@@ -961,14 +988,14 @@ export function CalendarMonthView({
               {linkedWorkOrdersHasMore ? (
                 <button
                   type="button"
-                  disabled={loadingMoreLinkedWorkOrders || !selectedEvent}
+                  disabled={loadingMoreLinkedWorkOrders || !panelEvent}
                   onClick={async () => {
-                    if (!selectedEvent || loadingMoreLinkedWorkOrders) return;
+                    if (!panelEvent || loadingMoreLinkedWorkOrders) return;
                     setLoadingMoreLinkedWorkOrders(true);
                     try {
                       const offset = linkedWorkOrders.length;
                       const res = await fetch(
-                        `/api/maintenance-schedules/${selectedEvent.id}/work-orders?limit=${LINKED_WO_PAGE_SIZE}&offset=${offset}`
+                        `/api/maintenance-schedules/${panelEvent.id}/work-orders?limit=${LINKED_WO_PAGE_SIZE}&offset=${offset}`
                       );
                       const data = await res.json().catch(() => ({}));
                       const items = Array.isArray(data?.items) ? data.items : [];
@@ -1008,12 +1035,12 @@ export function CalendarMonthView({
                     type="button"
                     onClick={async () => {
                       const firstConfirm = window.confirm(
-                        `Eliminar solo la ocurrencia del ${selectedEvent.dateLabel}?`
+                        `Eliminar solo la ocurrencia del ${panelEvent.dateLabel}?`
                       );
                       if (!firstConfirm) return;
                       const res = await fetch(
-                        `/api/maintenance-schedules/${selectedEvent.id}?scope=single&date=${encodeURIComponent(
-                          selectedEvent.dateYmd
+                        `/api/maintenance-schedules/${panelEvent.id}?scope=single&date=${encodeURIComponent(
+                          panelEvent.dateYmd
                         )}`,
                         { method: "DELETE" }
                       );
@@ -1037,7 +1064,7 @@ export function CalendarMonthView({
                       );
                       if (!secondConfirm) return;
                       const res = await fetch(
-                        `/api/maintenance-schedules/${selectedEvent.id}?scope=all`,
+                        `/api/maintenance-schedules/${panelEvent.id}?scope=all`,
                         { method: "DELETE" }
                       );
                       setSelectedEvent(null);
@@ -1077,17 +1104,17 @@ export function CalendarMonthView({
                     className="rounded-sm bg-primary-600 px-2 py-1 text-[11px] font-semibold uppercase text-white hover:bg-primary-700 disabled:opacity-50"
                     disabled={creatingWorkOrder || !selectedAssigneeId}
                     onClick={async () => {
-                      if (!selectedEvent || !selectedAssigneeId) return;
+                      if (!panelEvent || !selectedAssigneeId) return;
                       setCreateWorkOrderError(null);
                       setCreatingWorkOrder(true);
                       try {
                         const res = await fetch(
-                          `/api/maintenance-schedules/${selectedEvent.id}/create-work-order`,
+                          `/api/maintenance-schedules/${panelEvent.id}/create-work-order`,
                           {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
-                              dateYmd: selectedEvent.dateYmd,
+                              dateYmd: panelEvent.dateYmd,
                               assigneeId: selectedAssigneeId,
                             }),
                           }
