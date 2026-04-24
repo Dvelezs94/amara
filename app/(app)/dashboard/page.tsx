@@ -226,7 +226,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <h1 className="text-3xl font-bold uppercase tracking-tight text-zinc-900">Dashboard</h1>
+        <h1 className="text-xl font-semibold text-zinc-900">Dashboard</h1>
         <p className="text-zinc-500">Cargando…</p>
       </div>
     );
@@ -236,7 +236,7 @@ export default function DashboardPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold uppercase leading-none text-zinc-900">Dashboard</h1>
+          <h1 className="text-xl font-semibold text-zinc-900">Dashboard</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button

@@ -394,8 +394,8 @@ export function WorkOrderDetail({
         </h1>
       </header>
 
-      <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
-        <div className="min-w-0 flex-1 space-y-8">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
+        <div className="min-w-0 flex-1 space-y-6">
           <details
             open
             className="group rounded-xl border border-zinc-200 bg-white [&_summary::-webkit-details-marker]:hidden"
@@ -701,8 +701,8 @@ export function WorkOrderDetail({
                 className="w-full cursor-pointer rounded-lg border-2 border-[#F14C03] bg-[#FFF5F0] py-2.5 pl-3 pr-8 text-sm font-semibold text-zinc-900 shadow-sm focus:border-[#F14C03] focus:outline-none focus:ring-2 focus:ring-[#F14C03]/25"
               >
                 <option value="pending">Pendiente</option>
-                <option value="in_progress">En curso</option>
-                <option value="completed">Completada</option>
+                <option value="in_progress">En progreso</option>
+                <option value="completed">Terminada</option>
                 <option value="cancelled">Cancelada</option>
               </select>
             )}

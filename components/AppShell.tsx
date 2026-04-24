@@ -461,10 +461,10 @@ export function AppShell({
        <button
         type="button"
         onClick={() => setProfileMenuOpen((o) => !o)}
-        className={`inline-flex items-center justify-center rounded-md border p-1.5 ${
+        className={`inline-flex items-center justify-center rounded-md ${
          profileAreaActive
-          ? "border-[#F14C03] bg-[#FFF5F0]"
-          : "border-zinc-200 bg-white hover:bg-zinc-100"
+          ? "bg-[#FFF5F0]"
+          : "bg-transparent hover:bg-zinc-100"
         }`}
         aria-label="Perfil"
         aria-expanded={profileMenuOpen}

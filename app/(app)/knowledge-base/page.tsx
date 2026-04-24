@@ -62,6 +62,8 @@ export default function KnowledgeBasePage() {
   }
 
   async function handleDelete(id: string) {
+    const confirmed = window.confirm("¿Eliminar este archivo de la base de conocimiento?");
+    if (!confirmed) return;
     const res = await fetch(`/api/asset-files/${id}`, { method: "DELETE" });
     if (res.ok) setFiles((prev) => prev.filter((f) => f.id !== id));
   }

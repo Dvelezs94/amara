@@ -146,14 +146,14 @@ export function AnalyticsCharts() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-4 items-end">
-        <div>
+        <div className="w-full sm:w-auto">
           <label className="block text-sm font-medium text-zinc-700 mb-1">
             Plantilla de checklist
           </label>
           <select
             value={templateId}
             onChange={(e) => setTemplateId(e.target.value)}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 min-w-[200px]"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 sm:min-w-[200px]"
           >
             <option value="">Seleccionar…</option>
             {templates.map((t) => (
@@ -181,23 +181,25 @@ export function AnalyticsCharts() {
             </select>
           </div>
         )}
-        <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-1">Desde</label>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-1">Hasta</label>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900"
-          />
+        <div className="flex w-full gap-4 sm:w-auto">
+          <div className="flex-1 sm:flex-none">
+            <label className="block text-sm font-medium text-zinc-700 mb-1">Desde</label>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 sm:w-auto"
+            />
+          </div>
+          <div className="flex-1 sm:flex-none">
+            <label className="block text-sm font-medium text-zinc-700 mb-1">Hasta</label>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 sm:w-auto"
+            />
+          </div>
         </div>
       </div>
 

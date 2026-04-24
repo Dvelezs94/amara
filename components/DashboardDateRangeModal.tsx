@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   clampRangeOrder,
   startOfLocalDayFromYmd,
@@ -233,7 +233,7 @@ export function DashboardDateRangeModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/40 p-4 md:items-center"
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onOpenChange(false);
@@ -243,16 +243,21 @@ export function DashboardDateRangeModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[min(90vh,720px)] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl"
+        className="my-2 flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl md:my-0 md:max-h-[min(90vh,720px)]"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-zinc-100 px-5 py-4">
-          <h2 id={titleId} className="text-lg font-semibold text-zinc-900">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <h2 id={titleId} className="text-sm font-semibold text-zinc-900">
             Rango de fechas
           </h2>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            Afecta indicadores y gráficos del dashboard.
-          </p>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label="Cerrar modal"
+            className="rounded-sm border border-zinc-300 p-1 text-zinc-700 hover:bg-zinc-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
