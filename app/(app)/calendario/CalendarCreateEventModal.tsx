@@ -70,10 +70,6 @@ export function CalendarCreateEventModal({
             onClick={(e) => e.stopPropagation()}
             onTransitionEnd={onPanelTransitionEnd}
           >
-            <div
-              className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-zinc-300 md:hidden"
-              aria-hidden
-            />
             <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
               <h2 className="text-sm font-semibold text-zinc-900">Nuevo evento de mantenimiento</h2>
               <button

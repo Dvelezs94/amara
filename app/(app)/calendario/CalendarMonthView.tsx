@@ -884,10 +884,6 @@ export function CalendarMonthView({
             onClick={(e) => e.stopPropagation()}
             onTransitionEnd={onDetailPanelTransitionEnd}
           >
-            <div
-              className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-zinc-300 md:hidden"
-              aria-hidden
-            />
             <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
               <h3 className="truncate pr-3 text-sm font-semibold text-zinc-900">
                 {panelEvent.name}
