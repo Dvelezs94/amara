@@ -55,11 +55,14 @@ export function ChecklistTemplateForm({
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   function addStep() {
-    setItems((prev) => [...prev, { id: makeItemId(), type: "step", label: "Nuevo paso" }]);
+    setItems((prev) => [
+      ...prev,
+      { id: makeItemId(), type: "custom_field", label: "Nuevo texto", fieldType: "text" },
+    ]);
   }
 
   function addCustomField() {
-    setItems((prev) => [...prev, { id: makeItemId(), type: "custom_field", label: "Nuevo campo", fieldType: "text" }]);
+    setItems((prev) => [...prev, { id: makeItemId(), type: "custom_field", label: "Nuevo campo", fieldType: "number" }]);
   }
 
   function moveItem(fromIndex: number, toIndex: number) {
@@ -256,14 +259,18 @@ export function ChecklistTemplateForm({
       <div>
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-medium text-zinc-700">Elementos (pasos y campos)</h2>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={addStep}
               className="text-sm text-primary-600 font-medium flex items-center gap-1"
             >
-              <Plus className="h-4 w-4" /> Paso
+              <Plus className="h-4 w-4" />
+              Texto
             </button>
+            <span className="text-zinc-300" aria-hidden>
+              |
+            </span>
             <button
               type="button"
               onClick={addCustomField}
