@@ -257,9 +257,9 @@ body {
 /* Tipo de tarea (Rutinaria / Orden de trabajo): color explícito para que no lo pise el tema HMI */
 /* Tipo tarea: azul marca / naranja marca */
 .wo-kind-routine {
-  background-color: #02257d !important;
-  color: #ffffff !important;
-  border: 1px solid #011752 !important;
+  background-color: #dbeafe !important;
+  color: #1d4ed8 !important;
+  border: 1px solid #93c5fd !important;
 }
 
 .wo-kind-on-demand {
@@ -273,9 +273,9 @@ body {
 }
 
 .hmi .wo-kind-routine {
-  background-color: #02257d !important;
-  color: #ffffff !important;
-  border-color: #011752 !important;
+  background-color: #dbeafe !important;
+  color: #1d4ed8 !important;
+  border-color: #93c5fd !important;
 }
 
 .hmi .wo-kind-on-demand {

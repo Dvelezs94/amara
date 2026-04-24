@@ -5,13 +5,10 @@ import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 import { workOrders } from "@/lib/db/schema";
 import { assetFiles } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { users } from "@/lib/db/schema";
+import { desc, eq } from "drizzle-orm";
 import { AssetFilesSection } from "./AssetFilesSection";
-import {
-  parseWorkOrderKind,
-  workOrderKindBadgeClass,
-  workOrderKindLabel,
-} from "@/lib/work-order-kind";
+import { AssetWorkOrdersList } from "./AssetWorkOrdersList";
 
 async function getAsset(id: string) {
   const asset = await db.query.assets.findFirst({
@@ -25,10 +22,16 @@ async function getAsset(id: string) {
         title: workOrders.title,
         status: workOrders.status,
         dueDate: workOrders.dueDate,
-        kind: workOrders.kind,
+        priority: workOrders.priority,
+        createdAt: workOrders.createdAt,
+        assigneeId: users.id,
+        assigneeAvatarUrl: users.avatarUrl,
+        assigneeName: users.name,
       })
       .from(workOrders)
-      .where(eq(workOrders.assetId, id)),
+      .leftJoin(users, eq(workOrders.assigneeId, users.id))
+      .where(eq(workOrders.assetId, id))
+      .orderBy(desc(workOrders.createdAt)),
     db.query.assetFiles.findMany({
       where: eq(assetFiles.assetId, id),
       orderBy: (f, { desc }) => [desc(f.createdAt)],
@@ -67,36 +70,8 @@ export default async function AssetDetailPage({
 
       {asset.workOrders.length > 0 && (
         <section>
-          <h2 className="text-sm font-medium text-zinc-500 mb-2">
-            Órdenes de trabajo
-          </h2>
-          <ul className="space-y-2">
-            {asset.workOrders.map((wo) => (
-              <li key={wo.id}>
-                <Link
-                  href={`/tareas/${wo.id}`}
-                  className="block rounded-lg border border-zinc-200 bg-white p-3 hover:border-primary-200"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-zinc-900">{wo.title}</p>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${workOrderKindBadgeClass(
-                        parseWorkOrderKind(wo.kind)
-                      )}`}
-                    >
-                      {workOrderKindLabel(parseWorkOrderKind(wo.kind))}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-500">
-                    {wo.status === "pending" ? "Pendiente" : wo.status === "in_progress" ? "En curso" : wo.status === "completed" ? "Completada" : wo.status} · Vence{" "}
-                    {wo.dueDate
-                      ? new Date(wo.dueDate).toLocaleDateString("es")
-                      : "—"}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <h2 className="text-sm font-medium text-zinc-500 mb-2">Tareas</h2>
+          <AssetWorkOrdersList workOrders={asset.workOrders} />
         </section>
       )}
     </div>

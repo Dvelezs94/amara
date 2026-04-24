@@ -324,7 +324,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <section className="rounded-lg border border-zinc-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-zinc-900">Tareas pendientes</h2>
+              <h2 className="text-sm font-semibold text-zinc-900">Tareas</h2>
               <Link href="/tareas" className="text-sm font-medium text-primary-600 hover:underline">
                 Ver todas
               </Link>
