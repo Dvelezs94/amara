@@ -436,49 +436,6 @@ export function AppShell({
       </div>
      ))}
     </nav>
-    <div className="border-t border-zinc-200 p-3">
-     <button
-      type="button"
-      onClick={() => setProfileMenuOpen((o) => !o)}
-      className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-sm font-medium tap-target ${
-       profileAreaActive
-        ? "bg-[#F14C03] text-white"
-        : "text-zinc-700 hover:bg-primary-50"
-      }`}
-     >
-      <span className="flex min-w-0 flex-1 items-center gap-3">
-       <UserAvatar
-        userId={user.id}
-        name={user.name}
-        avatarUrl={user.avatarUrl}
-        size="sm"
-       />
-       <span className="flex min-w-0 flex-col text-left leading-tight">
-        <span className="truncate">Perfil</span>
-        <span
-         className={`truncate text-xs font-normal ${
-          profileAreaActive ? "text-white/85" : "text-neutral-400"
-         }`}
-        >
-         {user.name} · {userRole}
-        </span>
-       </span>
-      </span>
-      <ChevronDown
-       className={`h-4 w-4 shrink-0 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`}
-      />
-     </button>
-     {profileMenuOpen && (
-      <div className="mt-1 pl-2">
-       <ProfileSubmenu
-        onClose={() => {
-         setProfileMenuOpen(false);
-         setSidebarOpen(false);
-        }}
-       />
-      </div>
-     )}
-    </div>
    </aside>
 
    {/* Main content */}

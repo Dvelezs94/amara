@@ -741,8 +741,17 @@ export function CalendarMonthView({
                     setCreateModalDate(ymd);
                     setCreateModalOpen(true);
                   }}
+                  title={
+                    cell.events.length === 0
+                      ? "Click para crear un evento en este día"
+                      : undefined
+                  }
                   className={`min-h-[108px] border-r border-b border-zinc-200 px-2 py-1 text-left align-top transition-colors ${
                     cell.inMonth ? "bg-surface" : "bg-zinc-50/50"
+                  } ${
+                    cell.events.length === 0
+                      ? "cursor-pointer hover:bg-primary-50/50 hover:ring-1 hover:ring-inset hover:ring-primary-300"
+                      : ""
                   } ${cell.isToday ? "ring-1 ring-inset ring-accent-500" : ""}`}
                 >
                   <div
