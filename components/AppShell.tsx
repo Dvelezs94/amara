@@ -64,16 +64,12 @@ function roleLabel(role: string) {
 
 function ProfileSubmenu({
  onClose,
- inBottomBar,
 }: {
  onClose: () => void;
- inBottomBar?: boolean;
 }) {
  return (
   <div
-   className={`rounded-lg border border-zinc-200 bg-white py-1 shadow-lg ${
-    inBottomBar ? "min-w-[180px]" : "w-full"
-   }`}
+   className="w-full rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
   >
    <Link
     href="/profile"
@@ -147,7 +143,6 @@ export function AppShell({
     ]
    : []),
  ];
- const mainNav = navSections.flatMap((s) => s.items);
  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
  const [sidebarOpen, setSidebarOpen] = useState(false);
  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -167,12 +162,12 @@ export function AppShell({
  const [unreadCount, setUnreadCount] = useState(0);
  const [searchQuery, setSearchQuery] = useState("");
  const showBackButton =
-  pathname.startsWith("/tareas") ||
-  pathname.startsWith("/checklists") ||
-  pathname.startsWith("/assets");
+  pathname.startsWith("/tareas/") ||
+  pathname.startsWith("/checklists/") ||
+  pathname.startsWith("/assets/");
 
  const profileDesktopRef = useRef<HTMLDivElement>(null);
- const profileMobileRef = useRef<HTMLDivElement>(null);
+ const profileHeaderRef = useRef<HTMLDivElement>(null);
  const notificationsRef = useRef<HTMLDivElement>(null);
 
  useEffect(() => {
@@ -205,9 +200,9 @@ export function AppShell({
   function handleClickOutside(e: MouseEvent) {
    const target = e.target as Node;
    const insideDesktop = profileDesktopRef.current?.contains(target);
-   const insideMobile = profileMobileRef.current?.contains(target);
+   const insideHeader = profileHeaderRef.current?.contains(target);
    const insideNotifications = notificationsRef.current?.contains(target);
-   if (!insideDesktop && !insideMobile) setProfileMenuOpen(false);
+   if (!insideDesktop && !insideHeader) setProfileMenuOpen(false);
    if (!insideNotifications) setNotificationsOpen(false);
   }
   document.addEventListener("click", handleClickOutside);
@@ -502,20 +497,46 @@ export function AppShell({
      >
       <Menu className="h-5 w-5 text-zinc-600" />
      </button>
-     {showBackButton && (
-      <button
-       type="button"
-       onClick={() => router.back()}
-       className="rounded-lg p-2 tap-target hover:bg-zinc-100"
-       aria-label="Volver"
-      >
-       <ArrowLeft className="h-5 w-5 text-zinc-600" />
-      </button>
-     )}
      <Link href="/tareas" className="text-lg font-extrabold uppercase tracking-tight text-[#F14C03] md:hidden">
       MSA
      </Link>
      <div className="ml-auto flex items-center gap-2">
+      {showBackButton && (
+       <button
+        type="button"
+        onClick={() => router.back()}
+          className="inline-flex items-center gap-1 text-sm font-medium text-zinc-700 hover:text-zinc-900"
+        aria-label="Volver"
+       >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Volver
+       </button>
+      )}
+      <div className="relative md:hidden" ref={profileHeaderRef}>
+       <button
+        type="button"
+        onClick={() => setProfileMenuOpen((o) => !o)}
+        className={`inline-flex items-center justify-center rounded-md border p-1.5 ${
+         profileAreaActive
+          ? "border-[#F14C03] bg-[#FFF5F0]"
+          : "border-zinc-200 bg-white hover:bg-zinc-100"
+        }`}
+        aria-label="Perfil"
+        aria-expanded={profileMenuOpen}
+       >
+        <UserAvatar
+         userId={user.id}
+         name={user.name}
+         avatarUrl={user.avatarUrl}
+         size="sm"
+        />
+       </button>
+       {profileMenuOpen && (
+        <div className="absolute right-0 z-40 mt-2 w-48">
+         <ProfileSubmenu onClose={() => setProfileMenuOpen(false)} />
+        </div>
+       )}
+      </div>
       <div className="hidden min-w-[260px] items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 md:flex">
        <Search className="h-4 w-4 text-neutral-400" />
        <input
@@ -614,54 +635,9 @@ export function AppShell({
      </div>
     </header>
 
-    <main className="flex-1 min-h-0 !bg-zinc-200 p-4 pb-24 md:mx-auto md:w-full md:max-w-none md:pb-4">
+    <main className="flex-1 min-h-0 !bg-zinc-200 p-4 md:mx-auto md:w-full md:max-w-none md:pb-4">
      {children}
     </main>
-
-    {/* Bottom nav (mobile only) */}
-    <nav className="fixed bottom-0 left-0 right-0 z-30 flex h-16 items-center justify-around border-t border-zinc-200 bg-white md:hidden">
-     {mainNav.map(({ href, label, icon: Icon }) => (
-      <Link
-       key={href}
-       href={href}
-       className={`flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-xs font-medium tap-target ${
-        pathname.startsWith(href)
-         ? "text-[#F14C03]"
-         : "text-zinc-500"
-       }`}
-      >
-       <Icon className="h-6 w-6 shrink-0" />
-       {label}
-      </Link>
-     ))}
-     <div className="flex flex-1 flex-col items-center justify-center relative" ref={profileMobileRef}>
-      <button
-       type="button"
-       onClick={() => setProfileMenuOpen((o) => !o)}
-       className={`flex h-full w-full flex-col items-center justify-center gap-0.5 text-xs font-medium tap-target ${
-        pathname.startsWith("/profile") || profileMenuOpen
-         ? "text-[#F14C03]"
-         : "text-zinc-500"
-       }`}
-      >
-       <UserAvatar
-        userId={user.id}
-        name={user.name}
-        avatarUrl={user.avatarUrl}
-        size="sm"
-       />
-       Perfil
-      </button>
-      {profileMenuOpen && (
-       <div className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
-        <ProfileSubmenu
-         inBottomBar
-         onClose={() => setProfileMenuOpen(false)}
-        />
-       </div>
-      )}
-     </div>
-    </nav>
    </div>
   </div>
  );

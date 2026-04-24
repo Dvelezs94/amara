@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 import { workOrders } from "@/lib/db/schema";
@@ -46,7 +47,14 @@ export default async function AssetDetailPage({
   if (!asset) notFound();
   return (
     <div className="space-y-6">
-      <div>
+      <div className="space-y-1">
+        <Link
+          href="/assets"
+          className="inline-flex items-center gap-1 text-sm font-medium text-zinc-700 hover:text-zinc-900"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Volver
+        </Link>
         <h1 className="text-xl font-semibold text-zinc-900">{asset.name}</h1>
         <p className="text-zinc-500">{asset.assetId}</p>
       </div>
@@ -86,12 +94,6 @@ export default async function AssetDetailPage({
           </ul>
         </section>
       )}
-      <Link
-        href="/assets"
-        className="inline-block text-sm text-primary-600 font-medium"
-      >
-        Volver a maquinas
-      </Link>
     </div>
   );
 }

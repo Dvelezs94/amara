@@ -12,6 +12,8 @@ import {
   Clock,
   Equal,
   X,
+  Pencil,
+  ArrowLeft,
 } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
 import {
@@ -349,41 +351,46 @@ export function WorkOrderDetail({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <nav
-          className="flex flex-wrap items-center gap-1 text-sm text-zinc-500"
-          aria-label="Migas de pan"
-        >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex flex-wrap items-center gap-2 sm:gap-3">
           <Link
             href="/tareas"
-            className="font-medium text-[#F14C03] hover:underline"
+            className="inline-flex items-center gap-1 text-sm font-medium text-zinc-700 hover:text-zinc-900"
           >
-            Tareas
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Volver
           </Link>
-          <span aria-hidden className="text-zinc-400">
-            /
-          </span>
-          <span className="text-zinc-600">
-            {initial.folio != null
-              ? `Folio ${initial.folio}`
-              : `Ref. ${initial.id.slice(0, 8)}…`}
-          </span>
-        </nav>
-        <div className="flex flex-wrap gap-2">
+          <nav
+            className="flex flex-wrap items-center gap-1 text-sm text-zinc-500"
+            aria-label="Migas de pan"
+          >
+            <Link
+              href="/tareas"
+              className="font-medium text-[#F14C03] hover:underline"
+            >
+              Tareas
+            </Link>
+            <span aria-hidden className="text-zinc-400">
+              /
+            </span>
+            <span className="text-zinc-600">
+              {initial.folio != null
+                ? `Folio ${initial.folio}`
+                : `Ref. ${initial.id.slice(0, 8)}…`}
+            </span>
+          </nav>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           {!isCompleted && (
             <Link
               href={`/tareas/${initial.id}/edit`}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 tap-target hover:bg-zinc-50"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 tap-target"
+              aria-label="Editar tarea"
+              title="Editar"
             >
-              Editar
+              <Pencil className="h-4 w-4" />
             </Link>
           )}
-          <Link
-            href="/tareas"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 tap-target hover:bg-zinc-50"
-          >
-            Volver al listado
-          </Link>
         </div>
       </div>
 
