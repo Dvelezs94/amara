@@ -26,3 +26,5 @@ sqlite.db
 sqlite.db-journal
 
 public/uploads/*
+
+public/uploads/asset-files/*
