@@ -505,10 +505,25 @@ function kbFileIonIcon(kind: KnowledgeFileKind): ComponentProps<typeof Ionicons>
 }
 
 const KB_CACHE_SUBDIR = "kb-cache";
+let onAuthExpired: (() => void) | null = null;
 
 function kbSafeLocalName(filename: string): string {
   const base = filename.trim() || "archivo";
   return base.replace(/[/\\?%*:|"<>]/g, "_").replace(/\s+/g, "_").slice(0, 120);
+}
+
+function knowledgeMimeType(filename: string, fileUrl: string): string {
+  const kind = knowledgeFileKind(filename, fileUrl);
+  if (kind === "pdf") return "application/pdf";
+  if (kind === "image") {
+    const n = filename.trim().toLowerCase();
+    if (n.endsWith(".png")) return "image/png";
+    if (n.endsWith(".webp")) return "image/webp";
+    if (n.endsWith(".gif")) return "image/gif";
+    if (n.endsWith(".bmp")) return "image/bmp";
+    return "image/jpeg";
+  }
+  return "application/octet-stream";
 }
 
 /** Avatar on task list cards: photo when `avatarUrl` exists (same paths as web), else initials ring. */
@@ -546,6 +561,36 @@ function TaskCardAssigneeAvatar({
     );
   }
   return null;
+}
+
+function HeaderProfileAvatar({
+  name,
+  userId,
+  avatarUrl,
+  avatarBackgroundColor,
+}: {
+  name: string;
+  userId?: string | null;
+  avatarUrl?: string | null;
+  avatarBackgroundColor?: string | null;
+}) {
+  const displayName = name.trim() || "Operador";
+  const raw = avatarUrl != null ? String(avatarUrl).trim() : "";
+  const uri = raw !== "" ? absoluteFileUrl(raw) : null;
+  if (uri) {
+    return <Image source={{ uri }} style={styles.headerProfileAvatarImage} resizeMode="cover" />;
+  }
+  const parts = displayName.split(/\s+/).filter(Boolean);
+  const initials =
+    parts.length >= 2
+      ? `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase()
+      : (parts[0]?.slice(0, 2).toUpperCase() ?? "OP");
+  const bg = resolveAvatarBackgroundColor(userId, displayName, avatarBackgroundColor);
+  return (
+    <View style={[styles.headerProfileAvatarFallback, { backgroundColor: bg, borderColor: bg }]}>
+      <Text style={styles.headerProfileAvatarFallbackText}>{initials}</Text>
+    </View>
+  );
 }
 
 /** Rail and thumb: larger targets for gloves / factory floor use. */
@@ -733,6 +778,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    onAuthExpired?.();
+    throw new Error("Sesion expirada. Inicia sesion.");
+  }
   if (!res.ok) {
     throw new Error(typeof data?.error === "string" ? data.error : "API error");
   }
@@ -822,7 +871,6 @@ function AppContent() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [authBootstrapping, setAuthBootstrapping] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
@@ -869,6 +917,7 @@ function AppContent() {
   const [kbLoading, setKbLoading] = useState(false);
   const [kbError, setKbError] = useState<string | null>(null);
   const [kbQuery, setKbQuery] = useState("");
+  const [kbStorageDirUri, setKbStorageDirUri] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
@@ -1073,6 +1122,29 @@ function AppContent() {
         const result = await FileSystem.downloadAsync(remoteUrl, localPath);
         localUri = ensureFileScheme(result.uri);
       }
+      if (Platform.OS === "android") {
+        let targetDir = kbStorageDirUri;
+        if (!targetDir) {
+          const perms = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+          if (!perms.granted || !perms.directoryUri) {
+            throw new Error("Se requiere permiso de almacenamiento para guardar archivos de biblioteca.");
+          }
+          targetDir = perms.directoryUri;
+          setKbStorageDirUri(perms.directoryUri);
+        }
+        const safeName = `${item.id}-${Date.now()}-${kbSafeLocalName(item.filename)}`;
+        const targetUri = await FileSystem.StorageAccessFramework.createFileAsync(
+          targetDir,
+          safeName,
+          knowledgeMimeType(item.filename, item.fileUrl)
+        );
+        const base64 = await FileSystem.readAsStringAsync(localUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        await FileSystem.writeAsStringAsync(targetUri, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
       const kind = knowledgeFileKind(item.filename, item.fileUrl);
       const title = item.filename?.trim() || "Documento";
       if (kind === "image") {
@@ -1173,6 +1245,29 @@ function AppContent() {
     setSelectedWorkOrder(null);
     setDetailError(null);
   }, []);
+
+  const clearClientSession = useCallback(
+    (authMessage?: string) => {
+      setIsLoggedIn(false);
+      closeTaskDetail();
+      setPassword("");
+      assigneeFilterDefaultAppliedRef.current = false;
+      setMe(null);
+      setFilterAssigneeId(null);
+      setFilterKind("all");
+      setTaskListTab("pending");
+      setTaskFilterModalVisible(false);
+      setNotifications([]);
+      setUnreadCount(0);
+      setOrdersError(null);
+      setDetailError(null);
+      setKbError(null);
+      setNotificationsError(null);
+      setActiveSection("workOrders");
+      if (authMessage) setAuthError(authMessage);
+    },
+    [closeTaskDetail]
+  );
 
   async function openWorkOrder(id: string, opts?: { silent?: boolean }) {
     const silent = opts?.silent === true;
@@ -1417,17 +1512,7 @@ function AppContent() {
     } catch {
       // Even if API logout fails, clear local state.
     } finally {
-      setIsLoggedIn(false);
-      closeTaskDetail();
-      setPassword("");
-      assigneeFilterDefaultAppliedRef.current = false;
-      setMe(null);
-      setFilterAssigneeId(null);
-      setFilterKind("all");
-      setTaskListTab("pending");
-      setTaskFilterModalVisible(false);
-      setNotifications([]);
-      setUnreadCount(0);
+      clearClientSession();
       setProfileBusy(false);
     }
   }
@@ -1478,25 +1563,13 @@ function AppContent() {
   }
 
   useEffect(() => {
-    let cancelled = false;
-    async function bootstrapAuth() {
-      try {
-        await apiFetch<CurrentUser>("/api/users/me");
-        if (cancelled) return;
-        setIsLoggedIn(true);
-        await loadInitialData();
-      } catch {
-        if (cancelled) return;
-        setIsLoggedIn(false);
-      } finally {
-        if (!cancelled) setAuthBootstrapping(false);
-      }
-    }
-    void bootstrapAuth();
-    return () => {
-      cancelled = true;
+    onAuthExpired = () => {
+      clearClientSession("Tu sesion expiro. Inicia sesion nuevamente.");
     };
-  }, []);
+    return () => {
+      if (onAuthExpired) onAuthExpired = null;
+    };
+  }, [clearClientSession]);
 
   useEffect(() => {
     if (!isLoggedIn || !me?.id || assigneeFilterDefaultAppliedRef.current) return;
@@ -1579,18 +1652,6 @@ function AppContent() {
     !isChecklistFullyComplete(selectedWorkOrder.checklist);
 
   const detailSlideCompleteDisabled = detailSlideCompleteNeedsHint;
-
-  if (authBootstrapping) {
-    return (
-      <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
-        <View style={styles.authLoadingRoot}>
-          <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={styles.authLoadingText}>Verificando sesion...</Text>
-        </View>
-        <StatusBar style="dark" />
-      </SafeAreaView>
-    );
-  }
 
   if (!isLoggedIn) {
     return (
@@ -1697,10 +1758,11 @@ function AppContent() {
                 setActiveSection("profile");
               }}
             >
-              <Ionicons
-                name="person-outline"
-                size={20}
-                color={activeSection === "profile" ? theme.accent : theme.zinc600}
+              <HeaderProfileAvatar
+                name={(me?.name ?? username).trim() || "Operador"}
+                userId={me?.id}
+                avatarUrl={me?.avatarUrl ?? null}
+                avatarBackgroundColor={me?.avatarBackgroundColor ?? null}
               />
             </Pressable>
           </View>
@@ -3190,14 +3252,6 @@ const styles = StyleSheet.create({
   loginKeyboardAvoid: { flex: 1, backgroundColor: theme.surface },
   loginScroll: { backgroundColor: theme.surface },
   loginScrollContent: { flexGrow: 1, justifyContent: "center" },
-  authLoadingRoot: {
-    flex: 1,
-    backgroundColor: theme.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  authLoadingText: { color: theme.zinc600, fontWeight: "600" },
   topHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -3239,6 +3293,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerProfileAvatarImage: { width: 26, height: 26, borderRadius: 13 },
+  headerProfileAvatarFallback: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  headerProfileAvatarFallbackText: { fontSize: 10, fontWeight: "800", color: theme.white },
   headerAlertButtonActive: {
     borderColor: theme.accent,
     backgroundColor: "#FFF7ED",
