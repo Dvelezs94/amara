@@ -145,7 +145,7 @@ jobs:
           set -euo pipefail
           cd "${DEPLOY_PATH}"
           mkdir -p "${DEPLOY_PATH}/public/uploads/asset-files"
-          chown -R 1001:1001 "${DEPLOY_PATH}/public/uploads"
+          chown -R 1000:1000 "${DEPLOY_PATH}/public/uploads"
           chmod -R u+rwX,g+rwX,o-rwx "${DEPLOY_PATH}/public/uploads"
           docker compose up -d --build --remove-orphans
           docker compose run --rm web npm run db:push

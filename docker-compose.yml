@@ -26,6 +26,7 @@ services:
         DATABASE_URL: postgresql://msa:msa@127.0.0.1:5432/msa
     image: msa-web:local
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "3000:3000"
     environment:
