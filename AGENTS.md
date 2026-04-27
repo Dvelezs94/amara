@@ -96,6 +96,13 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 cd mobile && npm install && npm run start
 ```
 
+### CI build output
+
+- GitHub Actions builds an Android release APK from Expo (`expo prebuild` + Gradle `assembleRelease`)
+- CI sets `EXPO_PUBLIC_API_HOST=https://msa.saimco.mx` for the Android build job
+- APK is copied to `/downloads/android` when available (falls back to `downloads/android` in workspace if root path is unavailable), then uploaded as workflow artifact
+- Deploy job downloads the APK artifact and syncs it to server path `/var/www/downloads/android/msa-release.apk`
+
 ---
 
 ## Environment and tooling

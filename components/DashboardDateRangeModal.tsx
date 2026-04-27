@@ -12,6 +12,7 @@ import {
   rangeForQuickPreset,
   type DashboardQuickPreset,
 } from "@/lib/dashboard-quick-presets";
+import { useSheetModalPresence } from "@/lib/use-sheet-modal-presence";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -154,6 +155,7 @@ export function DashboardDateRangeModal({
   onApply,
 }: Props) {
   const titleId = useId();
+  const { mounted, show, onPanelTransitionEnd } = useSheetModalPresence(open);
   const [draft, setDraft] = useState(value);
   const [viewY, setViewY] = useState(() => {
     const [y, m] = value.from.split("-").map(Number);
@@ -186,6 +188,15 @@ export function DashboardDateRangeModal({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mounted]);
 
   const bumpView = useCallback((delta: number) => {
     setViewY((v) => {
@@ -229,22 +240,27 @@ export function DashboardDateRangeModal({
     onOpenChange(false);
   };
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/40 p-4 md:items-center"
+      className={`fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-0 transition-opacity duration-300 ease-out motion-reduce:transition-none md:items-center md:p-4 ${
+        show ? "opacity-100" : "opacity-0"
+      }`}
       role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onOpenChange(false);
-      }}
+      onClick={() => onOpenChange(false)}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="my-2 flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl md:my-0 md:max-h-[min(90vh,720px)]"
-        onMouseDown={(e) => e.stopPropagation()}
+        className={`relative flex max-h-[min(90dvh,760px)] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 border-b-0 bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-300 ease-out motion-reduce:transition-none motion-reduce:duration-0 md:max-h-[min(90vh,720px)] md:rounded-xl md:border-b md:shadow-xl ${
+          show
+            ? "translate-y-0 motion-reduce:translate-y-0"
+            : "translate-y-full motion-reduce:translate-y-0 md:translate-y-4"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+        onTransitionEnd={onPanelTransitionEnd}
       >
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <h2 id={titleId} className="text-sm font-semibold text-zinc-900">
@@ -262,7 +278,7 @@ export function DashboardDateRangeModal({
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <nav
-            className="flex shrink-0 flex-col border-b border-zinc-100 md:w-52 md:border-b-0 md:border-r"
+            className="flex shrink-0 flex-col overflow-y-auto border-b border-zinc-100 md:w-52 md:border-b-0 md:border-r"
             aria-label="Rangos rápidos"
           >
             {DASHBOARD_QUICK_PRESETS.map(({ id, label }) => {

@@ -3,12 +3,21 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
   Animated,
   BackHandler,
+  Dimensions,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -803,6 +812,10 @@ function AppContent() {
   const [users, setUsers] = useState<UserOption[]>([]);
   const [taskListTab, setTaskListTab] = useState<TaskListTab>("pending");
   const [taskFilterModalVisible, setTaskFilterModalVisible] = useState(false);
+  const taskFilterSheetTranslateY = useRef(
+    new Animated.Value(Dimensions.get("window").height)
+  ).current;
+  const taskFilterBackdropOpacity = useRef(new Animated.Value(0)).current;
   const [filterAssigneeId, setFilterAssigneeId] = useState<string | null>(null);
   const [filterKind, setFilterKind] = useState<TaskListKindFilter>("all");
   const [completedVisibleCount, setCompletedVisibleCount] = useState(COMPLETED_INITIAL_VISIBLE);
@@ -858,6 +871,48 @@ function AppContent() {
     return source.split(/\s+/)[0] ?? "Operador";
   }, [me?.name, username]);
 
+  const closeTaskFilterModal = useCallback(() => {
+    const h = Dimensions.get("window").height;
+    Animated.parallel([
+      Animated.timing(taskFilterSheetTranslateY, {
+        toValue: h,
+        duration: 260,
+        useNativeDriver: true,
+      }),
+      Animated.timing(taskFilterBackdropOpacity, {
+        toValue: 0,
+        duration: 260,
+        useNativeDriver: true,
+      }),
+    ]).start((r) => {
+      if (r.finished) setTaskFilterModalVisible(false);
+    });
+  }, [taskFilterSheetTranslateY, taskFilterBackdropOpacity]);
+
+  useLayoutEffect(() => {
+    const h = Dimensions.get("window").height;
+    if (!taskFilterModalVisible) {
+      taskFilterSheetTranslateY.setValue(h);
+      taskFilterBackdropOpacity.setValue(0);
+      return;
+    }
+    taskFilterSheetTranslateY.setValue(h);
+    taskFilterBackdropOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(taskFilterSheetTranslateY, {
+        toValue: 0,
+        friction: 12,
+        tension: 68,
+        useNativeDriver: true,
+      }),
+      Animated.timing(taskFilterBackdropOpacity, {
+        toValue: 0.45,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [taskFilterModalVisible, taskFilterSheetTranslateY, taskFilterBackdropOpacity]);
+
   const filteredKnowledge = useMemo(() => {
     const q = kbQuery.trim().toLowerCase();
     if (!q) return knowledge;
@@ -879,10 +934,12 @@ function AppContent() {
     return list;
   }, [workOrders, filterAssigneeId, filterKind]);
 
-  const ongoingTasksCountAll = useMemo(
-    () => workOrders.filter((w) => w.status === "in_progress").length,
-    [workOrders]
-  );
+  const ongoingTasksCountMine = useMemo(() => {
+    if (me == null) return 0;
+    return workOrders.filter(
+      (w) => w.status === "in_progress" && w.assigneeId === me.id
+    ).length;
+  }, [workOrders, me]);
 
   const ongoingTasks = useMemo(
     () => workOrdersFiltered.filter((w) => w.status === "in_progress"),
@@ -1605,10 +1662,28 @@ function AppContent() {
                     />
                   }
                 >
-                <View style={styles.detailTopBar}>
-                  <Pressable style={styles.backIconButton} onPress={closeTaskDetail}>
-                    <Ionicons name="arrow-back" size={20} color={theme.zinc600} />
+                <View style={styles.detailBreadcrumb}>
+                  <Pressable
+                    style={styles.detailBreadcrumbBackTap}
+                    onPress={closeTaskDetail}
+                    accessibilityRole="button"
+                    accessibilityLabel="Volver a tareas"
+                  >
+                    <Ionicons name="arrow-back" size={18} color={theme.accent} />
+                    <Text style={styles.detailBreadcrumbLink}>Tareas</Text>
                   </Pressable>
+                  <Text style={styles.detailBreadcrumbSep}> / </Text>
+                  <Text style={styles.detailBreadcrumbCurrent} numberOfLines={1}>
+                    {detailError && selectedWorkOrder == null
+                      ? "—"
+                      : detailLoading ||
+                          selectedWorkOrder == null ||
+                          selectedWorkOrder.id !== selectedWorkOrderId
+                        ? "…"
+                        : selectedWorkOrder.folio != null
+                          ? `Folio ${selectedWorkOrder.folio}`
+                          : `Ref. ${selectedWorkOrder.id.slice(0, 8)}…`}
+                  </Text>
                 </View>
                 {detailLoading ? (
                   <Text style={styles.cardMeta}>Cargando detalle...</Text>
@@ -1616,18 +1691,6 @@ function AppContent() {
                   <Text style={styles.errorText}>{detailError}</Text>
                 ) : selectedWorkOrder ? (
                   <>
-                    <View style={styles.detailBreadcrumb}>
-                      <Pressable onPress={closeTaskDetail}>
-                        <Text style={styles.detailBreadcrumbLink}>Tareas</Text>
-                      </Pressable>
-                      <Text style={styles.detailBreadcrumbSep}> / </Text>
-                      <Text style={styles.detailBreadcrumbCurrent} numberOfLines={1}>
-                        {selectedWorkOrder.folio != null
-                          ? `Folio ${selectedWorkOrder.folio}`
-                          : `Ref. ${selectedWorkOrder.id.slice(0, 8)}…`}
-                      </Text>
-                    </View>
-
                     <Text style={styles.detailPageTitle}>{selectedWorkOrder.title}</Text>
 
                     <View style={styles.detailCard}>
@@ -2307,18 +2370,22 @@ function AppContent() {
                     {taskFiltersActive ? <View style={styles.taskFilterBadgeDot} /> : null}
                   </Pressable>
                 </View>
-                {ongoingTasksCountAll > 0 && taskListTab !== "in_progress" ? (
+                {ongoingTasksCountMine > 0 && taskListTab !== "in_progress" ? (
                   <Pressable
                     style={styles.ongoingTasksNotice}
                     onPress={() => setTaskListTab("in_progress")}
                     accessibilityRole="button"
-                    accessibilityLabel={`Hay ${ongoingTasksCountAll} tareas en progreso. Ver lista.`}
+                    accessibilityLabel={
+                      ongoingTasksCountMine === 1
+                        ? "Tienes 1 tarea en progreso. Ver lista."
+                        : `Tienes ${ongoingTasksCountMine} tareas en progreso. Ver lista.`
+                    }
                   >
                     <Ionicons name="flash-outline" size={18} color={theme.primary} />
                     <Text style={styles.ongoingTasksNoticeText}>
-                      {ongoingTasksCountAll === 1
-                        ? "Hay 1 tarea en progreso."
-                        : `Hay ${ongoingTasksCountAll} tareas en progreso.`}{" "}
+                      {ongoingTasksCountMine === 1
+                        ? "Tienes 1 tarea en progreso."
+                        : `Tienes ${ongoingTasksCountMine} tareas en progreso.`}{" "}
                       <Text style={styles.ongoingTasksNoticeLink}>Ver en progreso</Text>
                     </Text>
                     <Ionicons name="chevron-forward" size={18} color={theme.primary} />
@@ -2545,18 +2612,28 @@ function AppContent() {
                 <Modal
                   visible={taskFilterModalVisible}
                   transparent
-                  animationType="fade"
-                  onRequestClose={() => setTaskFilterModalVisible(false)}
+                  animationType="none"
+                  onRequestClose={closeTaskFilterModal}
                 >
                   <View style={styles.taskFilterModalRoot}>
-                    <Pressable
-                      style={styles.taskFilterModalBackdrop}
-                      onPress={() => setTaskFilterModalVisible(false)}
-                    />
-                    <View
+                    <Animated.View
+                      pointerEvents="box-none"
+                      style={[
+                        styles.taskFilterModalBackdropWrap,
+                        { opacity: taskFilterBackdropOpacity },
+                      ]}
+                    >
+                      <Pressable
+                        style={StyleSheet.absoluteFillObject}
+                        onPress={closeTaskFilterModal}
+                        accessibilityLabel="Cerrar filtros"
+                      />
+                    </Animated.View>
+                    <Animated.View
                       style={[
                         styles.taskFilterModalSheet,
                         { paddingBottom: Math.max(insets.bottom, 20) },
+                        { transform: [{ translateY: taskFilterSheetTranslateY }] },
                       ]}
                     >
                       <Text style={styles.taskFilterModalTitle}>Filtros</Text>
@@ -2670,12 +2747,12 @@ function AppContent() {
                         )}
                         <Pressable
                           style={styles.taskFilterModalDoneBtn}
-                          onPress={() => setTaskFilterModalVisible(false)}
+                          onPress={closeTaskFilterModal}
                         >
                           <Text style={styles.taskFilterModalDoneBtnText}>Listo</Text>
                         </Pressable>
                       </View>
-                    </View>
+                    </Animated.View>
                   </View>
                 </Modal>
               </View>
@@ -3090,16 +3167,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   headerAlertBadgeText: { color: theme.white, fontSize: 10, fontWeight: "700" },
-  backIconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.white,
-  },
   title: { fontSize: 22, fontWeight: "700", color: theme.zinc900 },
   subtitle: { fontSize: 14, color: theme.zinc600, marginBottom: 8 },
   logout: { color: theme.primary, fontWeight: "600" },
@@ -3238,13 +3305,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#CA8A04",
   },
-  detailTopBar: { marginBottom: 4, paddingTop: 4 },
   detailBreadcrumb: {
     flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
     gap: 4,
     marginBottom: 8,
+    width: "100%",
+  },
+  detailBreadcrumbBackTap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
   },
   detailBreadcrumbLink: {
     fontSize: 14,
@@ -3919,9 +3992,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
   },
-  taskFilterModalBackdrop: {
+  taskFilterModalBackdropWrap: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "#000",
   },
   taskFilterModalSheet: {
     backgroundColor: theme.white,

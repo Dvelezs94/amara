@@ -35,19 +35,80 @@ jobs:
         if: always()
         run: docker compose down -v --remove-orphans
 
+  mobile-android:
+    name: Build Android APK (Expo)
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_API_HOST: https://msa.saimco.mx
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install mobile dependencies
+        run: npm ci
+        working-directory: mobile
+
+      - name: Generate Android project from Expo config
+        run: npx expo prebuild --platform android --non-interactive
+        working-directory: mobile
+
+      - name: Build release APK
+        run: chmod +x ./gradlew && ./gradlew assembleRelease
+        working-directory: mobile/android
+
+      - name: Prepare APK output folders
+        run: |
+          mkdir -p downloads/android
+          mkdir -p /downloads/android || true
+
+      - name: Collect APK in downloads folder
+        run: |
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk downloads/android/msa-release.apk
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk /downloads/android/msa-release.apk || true
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: downloads/android/msa-release.apk
+          if-no-files-found: error
+
   deploy:
     name: Deploy over SSH
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, mobile-android]
     environment: production
     env:
       DEPLOY_HOST: 5.78.189.24
       DEPLOY_PORT: 22
       DEPLOY_USER: deploy
       DEPLOY_PATH: /var/www/msa
+      DEPLOY_APK_PATH: /var/www/downloads/android
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download Android APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: downloads/android
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -69,6 +130,13 @@ jobs:
             --exclude "coverage/" \
             -e "ssh -p ${DEPLOY_PORT:-22}" \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+
+      - name: Copy Android APK to server downloads route
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_APK_PATH}'"
+          rsync -az \
+            -e "ssh -p ${DEPLOY_PORT:-22}" \
+            downloads/android/msa-release.apk "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_APK_PATH}/msa-release.apk"
 
       - name: Restart Docker Compose and run migrations
         run: |
