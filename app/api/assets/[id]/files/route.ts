@@ -75,10 +75,17 @@ export async function POST(
   const baseName = sanitizeFilename(file.name.slice(0, file.name.length - ext.length));
   const uniqueName = `${createId()}${ext || ""}`;
   const dir = join(process.cwd(), UPLOAD_DIR_FS);
-  await mkdir(dir, { recursive: true });
   const filePath = join(dir, uniqueName);
-  const bytes = await file.arrayBuffer();
-  await writeFile(filePath, Buffer.from(bytes));
+  try {
+    await mkdir(dir, { recursive: true });
+    const bytes = await file.arrayBuffer();
+    await writeFile(filePath, Buffer.from(bytes));
+  } catch {
+    return NextResponse.json(
+      { error: "No se pudo guardar el archivo. Verifica permisos de /public/uploads/asset-files." },
+      { status: 500 }
+    );
+  }
 
   const fileUrl = `/${UPLOAD_DIR_PUBLIC}/${uniqueName}`;
   const id = createId();
