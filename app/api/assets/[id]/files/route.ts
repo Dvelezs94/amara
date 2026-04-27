@@ -38,9 +38,7 @@ export async function GET(
   return NextResponse.json(
     files.map((f) => ({
       ...f,
-      fileUrl: f.fileUrl.startsWith("/public/")
-        ? f.fileUrl.replace("/public/", "/")
-        : f.fileUrl,
+      fileUrl: `/api/asset-files/${f.id}`,
     }))
   );
 }

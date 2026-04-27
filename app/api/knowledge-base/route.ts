@@ -33,9 +33,7 @@ export async function GET(req: Request) {
   }
   const result = files.map((f) => ({
     ...f,
-    fileUrl: f.fileUrl.startsWith("/public/")
-      ? f.fileUrl.replace("/public/", "/")
-      : f.fileUrl,
+    fileUrl: `/api/asset-files/${f.id}`,
     asset: f.assetId ? assetMap.get(f.assetId) ?? null : null,
   }));
   return NextResponse.json(result);

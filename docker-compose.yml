@@ -38,6 +38,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ./public/uploads:/app/public/uploads
 
 volumes:
   postgres_data:
