@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AVAILABLE_USER_ROLES, type UserRole } from "@/lib/auth-shared";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Pencil, RefreshCw } from "lucide-react";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 type AdminUser = {
   id: string;
@@ -390,7 +391,9 @@ export function InviteUsersPanel() {
                   ) : null}
                   <p className="text-xs text-zinc-600">
                     Rol: {roleLabel[user.role]} - Alta:{" "}
-                    {new Date(user.createdAt).toLocaleDateString()}
+                    {new Date(user.createdAt).toLocaleDateString("es-MX", {
+                      timeZone: APP_TIME_ZONE,
+                    })}
                   </p>
                 </div>
               </div>

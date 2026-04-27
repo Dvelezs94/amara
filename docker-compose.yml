@@ -32,6 +32,7 @@ services:
       DATABASE_URL: postgresql://msa:msa@postgres:5432/msa
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-docker-compose-min-32chars}
       NODE_ENV: production
+      TZ: America/Monterrey
       # Allow http://localhost:3000 login without TLS (remove behind HTTPS in real prod).
       INSECURE_SESSION_COOKIES: "1"
     depends_on:

@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 function formatDate(s: string | Date) {
-  return new Date(s).toLocaleString("es");
+  return new Date(s).toLocaleString("es-MX", { timeZone: APP_TIME_ZONE });
 }
 
 const statusColors: Record<string, string> = {

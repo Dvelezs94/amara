@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronUp, ChevronsUp, Equal } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 const PAGE_SIZE = 5;
 
@@ -71,7 +72,12 @@ export function AssetWorkOrdersList({ workOrders }: { workOrders: WorkOrderItem[
                       : wo.status === "completed"
                         ? "Completada"
                         : wo.status}{" "}
-                  · Vence {wo.dueDate ? new Date(wo.dueDate).toLocaleDateString("es") : "—"}
+                  · Vence{" "}
+                  {wo.dueDate
+                    ? new Date(wo.dueDate).toLocaleDateString("es-MX", {
+                        timeZone: APP_TIME_ZONE,
+                      })
+                    : "—"}
                 </span>
                 {wo.assigneeName ? (
                   <div className="flex items-center gap-1.5 text-xs text-zinc-500">

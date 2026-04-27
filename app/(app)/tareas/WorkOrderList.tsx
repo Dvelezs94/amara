@@ -16,6 +16,7 @@ import {
 import { UserAvatar } from "@/components/UserAvatar";
 import { useRouter, useSearchParams } from "next/navigation";
 import { parseWorkOrderKind, workOrderKindLabel } from "@/lib/work-order-kind";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
   formatWorkOrderElapsedCompact,
   formatWorkOrderElapsedLabel,
@@ -102,6 +103,7 @@ function formatDate(s: string | null) {
     month: "short",
     day: "numeric",
     year: d.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined,
+    timeZone: APP_TIME_ZONE,
   });
 }
 
@@ -646,6 +648,7 @@ export function WorkOrderList() {
                                       day: "numeric",
                                       month: "long",
                                       year: "numeric",
+                                      timeZone: APP_TIME_ZONE,
                                     })
                                   : undefined
                               }

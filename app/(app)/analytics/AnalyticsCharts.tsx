@@ -18,6 +18,7 @@ import {
   Legend,
 } from "recharts";
 import { LayoutDashboard } from "lucide-react";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 type Template = { id: string; name: string };
 type ChecklistItem = {
@@ -117,6 +118,7 @@ export function AnalyticsCharts() {
             day: "2-digit",
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: APP_TIME_ZONE,
           }),
           value: Math.round(val * 100) / 100,
         });

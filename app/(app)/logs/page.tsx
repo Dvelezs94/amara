@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { auditLogs, users } from "@/lib/db/schema";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 import { desc, eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,9 @@ export default async function LogsPage() {
             {logs.map((log) => (
               <li key={log.id} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs">
                 <div className="col-span-3 text-zinc-500">
-                  {new Date(log.createdAt).toLocaleString()}
+                  {new Date(log.createdAt).toLocaleString("es-MX", {
+                    timeZone: APP_TIME_ZONE,
+                  })}
                 </div>
                 <div className="col-span-2 text-zinc-700">
                   {log.userName ??

@@ -38,6 +38,8 @@ import {
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
+const APP_TIME_ZONE = "America/Monterrey";
+
 type AppSection = "workOrders" | "knowledgeBase" | "notifications" | "profile";
 type WoStatus = "pending" | "in_progress" | "completed" | "cancelled";
 
@@ -150,7 +152,12 @@ function formatDateToChecklistIso(d: Date): string {
 function formatChecklistDateDisplay(value: unknown): string {
   if (value == null || String(value).trim() === "") return "";
   const d = parseChecklistDateValue(value);
-  return d.toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" });
+  return d.toLocaleDateString("es-MX", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: APP_TIME_ZONE,
+  });
 }
 
 type WorkOrderDetail = {
@@ -354,7 +361,11 @@ function calendarDaysFromToday(dueStr: string): number | null {
 function formatDueShortDate(s: string) {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("es", { month: "short", day: "numeric" });
+  return d.toLocaleDateString("es-MX", {
+    month: "short",
+    day: "numeric",
+    timeZone: APP_TIME_ZONE,
+  });
 }
 
 /** Spanish relative due copy (same idea as web `WorkOrderList` `formatDueRelative`) */
@@ -375,7 +386,11 @@ function formatWoDetailDate(s: string | number | Date | null | undefined) {
   if (s == null) return "—";
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
+  return d.toLocaleString("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: APP_TIME_ZONE,
+  });
 }
 
 function WorkOrderPriorityIconRN({ priority }: { priority: WoPriority }) {
@@ -2847,7 +2862,11 @@ function AppContent() {
                   >
                     <Text style={styles.cardTitle}>{item.title}</Text>
                     {item.body ? <Text style={styles.cardMeta}>{item.body}</Text> : null}
-                    <Text style={styles.helpText}>{new Date(item.createdAt).toLocaleString("es")}</Text>
+                    <Text style={styles.helpText}>
+                      {new Date(item.createdAt).toLocaleString("es-MX", {
+                        timeZone: APP_TIME_ZONE,
+                      })}
+                    </Text>
                   </Pressable>
                 )}
               />

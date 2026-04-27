@@ -109,6 +109,7 @@ cd mobile && npm install && npm run start
 
 - Web: standard Next env (e.g. `NODE_ENV`); **`DATABASE_URL`** for PostgreSQL (`lib/db/`)
 - Mobile: **`EXPO_PUBLIC_API_HOST`** required for real devices/simulators to reach the API
+- Timezone: app display/runtime is pinned to Saltillo using `America/Monterrey` (`lib/timezone.ts` on web, and `TZ=America/Monterrey` in Docker runtime)
 
 ---
 

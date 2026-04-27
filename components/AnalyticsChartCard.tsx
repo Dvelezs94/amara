@@ -16,6 +16,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 const COLORS = ["#02257D", "#F14C03", "#9E9F9F", "#000000", "#3355AA", "#E85A0A"];
 
@@ -134,6 +135,7 @@ export function AnalyticsChartCard({
             day: "2-digit",
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: APP_TIME_ZONE,
           }),
           value: Math.round(val * 100) / 100,
         });

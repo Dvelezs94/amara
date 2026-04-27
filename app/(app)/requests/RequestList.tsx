@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 type RequestRow = {
   id: string;
@@ -134,7 +135,9 @@ export function RequestList() {
                     <span className="text-xs text-zinc-500">{r.assetName}</span>
                   )}
                   <span className="text-xs text-zinc-400">
-                    {new Date(r.createdAt).toLocaleDateString("es")}
+                    {new Date(r.createdAt).toLocaleDateString("es-MX", {
+                      timeZone: APP_TIME_ZONE,
+                    })}
                   </span>
                 </div>
                 {r.workOrderId && (

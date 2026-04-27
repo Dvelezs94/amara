@@ -13,6 +13,7 @@ import {
   type DashboardQuickPreset,
 } from "@/lib/dashboard-quick-presets";
 import { useSheetModalPresence } from "@/lib/use-sheet-modal-presence";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -41,6 +42,7 @@ function formatMonthTitle(year: number, month0: number, locale = "es-MX") {
   return new Date(year, month0, 1).toLocaleDateString(locale, {
     month: "long",
     year: "numeric",
+    timeZone: APP_TIME_ZONE,
   });
 }
 
@@ -51,6 +53,7 @@ function formatRangeFooter(from: string, to: string, locale = "es-MX") {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: APP_TIME_ZONE,
   };
   return `${a.toLocaleDateString(locale, opts)} — ${b.toLocaleDateString(locale, opts)}`;
 }

@@ -13,6 +13,7 @@ import {
   toYmdLocal,
 } from "@/lib/maintenance-recurrence";
 import { useSheetModalPresence } from "@/lib/use-sheet-modal-presence";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 export type CalendarSchedulePayload = {
   id: string;
@@ -363,6 +364,7 @@ export function CalendarMonthView({
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: APP_TIME_ZONE,
     });
   }
 
@@ -451,19 +453,23 @@ export function CalendarMonthView({
             day: "2-digit",
             month: "long",
             year: "numeric",
+            timeZone: APP_TIME_ZONE,
           })
         : viewMode === "week"
           ? `${weekStart.toLocaleDateString("es-MX", {
               day: "2-digit",
               month: "short",
+              timeZone: APP_TIME_ZONE,
             })} - ${weekEnd.toLocaleDateString("es-MX", {
               day: "2-digit",
               month: "short",
               year: "numeric",
+              timeZone: APP_TIME_ZONE,
             })}`
           : monthStart.toLocaleDateString("es-MX", {
               month: "long",
               year: "numeric",
+              timeZone: APP_TIME_ZONE,
             });
 
   const periodNavAriaPrev =
@@ -585,6 +591,7 @@ export function CalendarMonthView({
                   <p className="cal-year-month-title border-b border-zinc-200 px-2 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-zinc-800">
                     {new Date(yearForView, monthIdx, 1).toLocaleDateString("es-MX", {
                       month: "long",
+                      timeZone: APP_TIME_ZONE,
                     })}
                   </p>
                   <div className="cal-year-dow-row grid grid-cols-7 border-b border-zinc-200 text-center text-[8px] font-semibold uppercase tracking-tight text-zinc-600">
@@ -638,6 +645,7 @@ export function CalendarMonthView({
                                         year: "numeric",
                                         month: "short",
                                         day: "numeric",
+                                        timeZone: APP_TIME_ZONE,
                                       }),
                                       dateYmd,
                                     });
@@ -701,6 +709,7 @@ export function CalendarMonthView({
                                 year: "numeric",
                                 month: "short",
                                 day: "numeric",
+                                timeZone: APP_TIME_ZONE,
                               })}
                             </td>
                             <td className="px-3 py-2">
@@ -716,6 +725,7 @@ export function CalendarMonthView({
                                       year: "numeric",
                                       month: "short",
                                       day: "numeric",
+                                      timeZone: APP_TIME_ZONE,
                                     }),
                                     dateYmd: row.ymd,
                                   })
@@ -820,6 +830,7 @@ export function CalendarMonthView({
                               year: "numeric",
                               month: "short",
                               day: "numeric",
+                              timeZone: APP_TIME_ZONE,
                             }),
                             dateYmd,
                           });
@@ -949,7 +960,11 @@ export function CalendarMonthView({
                           <div className="flex items-center justify-between gap-2 text-xs">
                             <p className="text-zinc-500">
                               {statusLabel(wo.status)} · Vence{" "}
-                              {wo.dueDate ? new Date(wo.dueDate).toLocaleDateString("es") : "—"}
+                              {wo.dueDate
+                                ? new Date(wo.dueDate).toLocaleDateString("es-MX", {
+                                    timeZone: APP_TIME_ZONE,
+                                  })
+                                : "—"}
                             </p>
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusBadgeClass(

@@ -16,6 +16,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
   parseWorkOrderKind,
   workOrderKindBadgeClass,
@@ -49,6 +50,7 @@ function formatDate(s: string | Date | null) {
   return new Date(s).toLocaleString("es", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: APP_TIME_ZONE,
   });
 }
 

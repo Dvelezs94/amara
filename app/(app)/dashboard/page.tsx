@@ -15,6 +15,7 @@ import {
 } from "@/lib/work-order-kind";
 import type { DashboardKpis } from "@/lib/dashboard-kpis";
 import { defaultLast30DaysRange, isDefaultLast30DaysRange } from "@/lib/dashboard-date-range";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 type Widget = {
   id: string;
@@ -157,6 +158,7 @@ export default function DashboardPage() {
       year: "numeric",
       month: "short",
       day: "numeric",
+      timeZone: APP_TIME_ZONE,
     });
   }
 
