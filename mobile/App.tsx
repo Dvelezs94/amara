@@ -473,6 +473,12 @@ function absoluteFileUrl(path: string) {
   return `${API_HOST}${path}`;
 }
 
+function ensureFileScheme(uri: string): string {
+  if (uri.startsWith("file://")) return uri;
+  if (uri.startsWith("/")) return `file://${uri}`;
+  return uri;
+}
+
 function looksLikePdf(filename: string | null | undefined, urlOrPath: string): boolean {
   const name = (filename ?? "").trim().toLowerCase();
   if (name.endsWith(".pdf")) return true;
@@ -816,6 +822,7 @@ function AppContent() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authBootstrapping, setAuthBootstrapping] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
@@ -1061,10 +1068,10 @@ function AppContent() {
       await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
       const localPath = `${dir}${item.id}_${kbSafeLocalName(item.filename)}`;
       const info = await FileSystem.getInfoAsync(localPath);
-      let localUri = localPath;
+      let localUri = ensureFileScheme(localPath);
       if (!info.exists) {
         const result = await FileSystem.downloadAsync(remoteUrl, localPath);
-        localUri = result.uri;
+        localUri = ensureFileScheme(result.uri);
       }
       const kind = knowledgeFileKind(item.filename, item.fileUrl);
       const title = item.filename?.trim() || "Documento";
@@ -1127,6 +1134,10 @@ function AppContent() {
     } finally {
       setNotificationsLoading(false);
     }
+  }
+
+  async function loadInitialData() {
+    await Promise.all([loadWorkOrders(), loadKnowledge(), loadMe(), loadNotifications(), loadUsers()]);
   }
 
   async function refreshWorkOrdersFeed() {
@@ -1195,7 +1206,7 @@ function AppContent() {
         body: JSON.stringify({ username, password }),
       });
       setIsLoggedIn(true);
-      await Promise.all([loadWorkOrders(), loadKnowledge(), loadMe(), loadNotifications(), loadUsers()]);
+      await loadInitialData();
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Error de autenticacion.");
     } finally {
@@ -1467,9 +1478,25 @@ function AppContent() {
   }
 
   useEffect(() => {
-    if (!isLoggedIn) return;
-    loadWorkOrders();
-  }, [isLoggedIn]);
+    let cancelled = false;
+    async function bootstrapAuth() {
+      try {
+        await apiFetch<CurrentUser>("/api/users/me");
+        if (cancelled) return;
+        setIsLoggedIn(true);
+        await loadInitialData();
+      } catch {
+        if (cancelled) return;
+        setIsLoggedIn(false);
+      } finally {
+        if (!cancelled) setAuthBootstrapping(false);
+      }
+    }
+    void bootstrapAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isLoggedIn || !me?.id || assigneeFilterDefaultAppliedRef.current) return;
@@ -1553,6 +1580,18 @@ function AppContent() {
 
   const detailSlideCompleteDisabled = detailSlideCompleteNeedsHint;
 
+  if (authBootstrapping) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
+        <View style={styles.authLoadingRoot}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={styles.authLoadingText}>Verificando sesion...</Text>
+        </View>
+        <StatusBar style="dark" />
+      </SafeAreaView>
+    );
+  }
+
   if (!isLoggedIn) {
     return (
       <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
@@ -1624,22 +1663,47 @@ function AppContent() {
             <Text style={styles.brandTitle}>{BRAND_MARK}</Text>
             <Text style={styles.headerGreeting}>{firstName}</Text>
           </View>
-          <Pressable
-            style={styles.headerAlertButton}
-            onPress={() => {
-              closeTaskDetail();
-              setActiveSection("notifications");
-            }}
-          >
-            <Ionicons name="notifications-outline" size={20} color={theme.zinc600} />
-            {unreadCount > 0 ? (
-              <View style={styles.headerAlertBadge}>
-                <Text style={styles.headerAlertBadgeText}>
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              style={[
+                styles.headerAlertButton,
+                activeSection === "notifications" ? styles.headerAlertButtonActive : null,
+              ]}
+              onPress={() => {
+                closeTaskDetail();
+                setActiveSection("notifications");
+              }}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={20}
+                color={activeSection === "notifications" ? theme.accent : theme.zinc600}
+              />
+              {unreadCount > 0 ? (
+                <View style={styles.headerAlertBadge}>
+                  <Text style={styles.headerAlertBadgeText}>
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+            <Pressable
+              style={[
+                styles.headerAlertButton,
+                activeSection === "profile" ? styles.headerAlertButtonActive : null,
+              ]}
+              onPress={() => {
+                closeTaskDetail();
+                setActiveSection("profile");
+              }}
+            >
+              <Ionicons
+                name="person-outline"
+                size={20}
+                color={activeSection === "profile" ? theme.accent : theme.zinc600}
+              />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.contentArea}>
@@ -2886,7 +2950,6 @@ function AppContent() {
                 <Text style={styles.cardMeta}>Usuario: {me?.username ?? username}</Text>
                 <Text style={styles.cardMeta}>Email: {me?.email ?? "Sin email"}</Text>
                 <Text style={styles.cardMeta}>Rol: {me?.role ?? "operator"}</Text>
-                <Text style={styles.cardMeta}>API Host: {API_HOST || "No configurado"}</Text>
               </View>
 
               <View style={[styles.surfaceCard, styles.sectionBlock]}>
@@ -2967,22 +3030,6 @@ function AppContent() {
               Biblioteca
             </Text>
           </Pressable>
-          <Pressable
-            style={styles.bottomNavItem}
-            onPress={() => {
-              closeTaskDetail();
-              setActiveSection("profile");
-            }}
-          >
-            <Ionicons
-              name="person-outline"
-              size={22}
-              color={activeSection === "profile" ? theme.accent : theme.zinc500}
-            />
-            <Text style={[styles.bottomNavText, activeSection === "profile" && styles.bottomNavTextActive]}>
-              Perfil
-            </Text>
-          </Pressable>
         </View>
         ) : null}
       </View>
@@ -3015,7 +3062,17 @@ function AppContent() {
               style={styles.pdfModalWeb}
               startInLoadingState
               originWhitelist={["*"]}
-              {...(Platform.OS === "android" ? { mixedContentMode: "always" as const } : {})}
+              {...(Platform.OS === "android"
+                ? {
+                    mixedContentMode: "always" as const,
+                    allowFileAccess: true,
+                    allowFileAccessFromFileURLs: true,
+                    allowUniversalAccessFromFileURLs: true,
+                  }
+                : {})}
+              {...(Platform.OS === "ios"
+                ? { allowingReadAccessToURL: ensureFileScheme(FileSystem.documentDirectory ?? "file:///") }
+                : {})}
               renderLoading={() => (
                 <View style={styles.pdfModalLoading}>
                   <ActivityIndicator size="large" color={theme.primary} />
@@ -3133,6 +3190,14 @@ const styles = StyleSheet.create({
   loginKeyboardAvoid: { flex: 1, backgroundColor: theme.surface },
   loginScroll: { backgroundColor: theme.surface },
   loginScrollContent: { flexGrow: 1, justifyContent: "center" },
+  authLoadingRoot: {
+    flex: 1,
+    backgroundColor: theme.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  authLoadingText: { color: theme.zinc600, fontWeight: "600" },
   topHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -3151,6 +3216,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerBrandBlock: { flex: 1, marginRight: 8 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandTitle: {
     fontSize: 22,
     fontWeight: "800",
@@ -3172,6 +3238,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.white,
     alignItems: "center",
     justifyContent: "center",
+  },
+  headerAlertButtonActive: {
+    borderColor: theme.accent,
+    backgroundColor: "#FFF7ED",
   },
   headerAlertBadge: {
     position: "absolute",
