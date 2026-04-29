@@ -49,7 +49,9 @@ export async function PUT(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json().catch(() => ({}));
-  const items = Array.isArray(body.items) ? body.items : [];
+  const items: Array<Record<string, unknown>> = Array.isArray(body.items)
+    ? (body.items as Array<Record<string, unknown>>)
+    : [];
   const previousItems = await db.query.checklistTemplateItems.findMany({
     where: eq(checklistTemplateItems.checklistTemplateId, templateId),
     orderBy: (item, { asc }) => [asc(item.sortOrder)],
@@ -61,7 +63,7 @@ export async function PUT(
     options: Array.isArray(it.options) ? (it.options as string[]) : null,
   }));
 
-  const nextItems: ItemSnapshot[] = items.map((it) => {
+  const nextItems: ItemSnapshot[] = items.map((it: Record<string, unknown>) => {
     const type =
       it.type === "custom_field"
         ? "custom_field"
@@ -90,14 +92,14 @@ export async function PUT(
 
   await db.delete(checklistTemplateItems).where(eq(checklistTemplateItems.checklistTemplateId, templateId));
   for (let i = 0; i < items.length; i++) {
-    const it = items[i];
+    const it: Record<string, unknown> = items[i]!;
     const type =
       it.type === "custom_field"
         ? "custom_field"
         : it.type === "text_block"
           ? "text_block"
           : "step";
-    const label = (
+    const label = String(
       it.label ??
       (type === "custom_field"
         ? "Campo"
@@ -105,17 +107,39 @@ export async function PUT(
           ? "Texto"
           : "Paso")
     ).trim();
-    const fieldType =
+    const rawFieldType = typeof it.fieldType === "string" ? it.fieldType : "";
+    const fieldType:
+      | "text"
+      | "number"
+      | "date"
+      | "dropdown"
+      | "checkbox"
+      | "photo"
+      | "title"
+      | "subtitle"
+      | "paragraph"
+      | null =
       type === "custom_field"
-        ? (it.fieldType ?? "text")
+        ? rawFieldType === "number" ||
+          rawFieldType === "date" ||
+          rawFieldType === "dropdown" ||
+          rawFieldType === "checkbox" ||
+          rawFieldType === "photo"
+          ? rawFieldType
+          : "text"
         : type === "text_block"
-          ? it.fieldType === "title" ||
-            it.fieldType === "subtitle" ||
-            it.fieldType === "paragraph"
-            ? it.fieldType
+          ? rawFieldType === "title" ||
+            rawFieldType === "subtitle" ||
+            rawFieldType === "paragraph"
+            ? rawFieldType
             : "paragraph"
           : null;
-    const options = type === "custom_field" && it.fieldType === "dropdown" && Array.isArray(it.options) ? it.options : null;
+    const options: string[] | null =
+      type === "custom_field" &&
+      fieldType === "dropdown" &&
+      Array.isArray(it.options)
+        ? (it.options as unknown[]).map((opt) => String(opt))
+        : null;
     await db.insert(checklistTemplateItems).values({
       id: createId(),
       checklistTemplateId: templateId,

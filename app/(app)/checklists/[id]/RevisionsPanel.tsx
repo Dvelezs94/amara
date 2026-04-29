@@ -184,26 +184,23 @@ function getFieldChanges(
   const keys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)]));
   return keys
     .filter((key) => key !== "items")
-    .map((key) => {
+    .reduce<FieldChange[]>((changes, key) => {
       const hasBefore = Object.prototype.hasOwnProperty.call(before, key);
       const hasAfter = Object.prototype.hasOwnProperty.call(after, key);
       if (hasBefore && hasAfter && before[key] !== after[key]) {
-        return {
-          kind: "edited" as const,
+        changes.push({
+          kind: "edited",
           field: key,
           before: before[key],
           after: after[key],
-        };
+        });
+      } else if (!hasBefore && hasAfter) {
+        changes.push({ kind: "added", field: key, after: after[key] });
+      } else if (hasBefore && !hasAfter) {
+        changes.push({ kind: "removed", field: key, before: before[key] });
       }
-      if (!hasBefore && hasAfter) {
-        return { kind: "added" as const, field: key, after: after[key] };
-      }
-      if (hasBefore && !hasAfter) {
-        return { kind: "removed" as const, field: key, before: before[key] };
-      }
-      return null;
-    })
-    .filter((item): item is FieldChange => item !== null);
+      return changes;
+    }, []);
 }
 
 function getAfterSnapshot(metadata: Record<string, unknown> | null): RevisionSnapshot | null {

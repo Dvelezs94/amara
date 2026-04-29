@@ -80,7 +80,7 @@ export async function GET(
     ])
   );
 
-  const uniqueUserIds = [...new Set(rows.map((row) => row.userId))];
+  const uniqueUserIds = Array.from(new Set(rows.map((row) => row.userId)));
   const authorRows = await db.query.users.findMany({
     where: (t, { inArray }) => inArray(t.id, uniqueUserIds),
     columns: {

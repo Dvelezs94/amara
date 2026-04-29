@@ -119,8 +119,10 @@ export async function POST(
   }
   const description =
     body.description === undefined ? null : (body.description?.trim() ?? null);
-  const rawItems = Array.isArray(body.items) ? body.items : [];
-  const items: RevisionItem[] = rawItems.map((it) => ({
+  const rawItems: Array<Record<string, unknown>> = Array.isArray(body.items)
+    ? (body.items as Array<Record<string, unknown>>)
+    : [];
+  const items: RevisionItem[] = rawItems.map((it: Record<string, unknown>) => ({
     type:
       it.type === "custom_field" || it.type === "text_block" || it.type === "step"
         ? it.type

@@ -180,7 +180,7 @@ export async function PATCH(
         }
         continue;
       }
-      if (item.type === "field") {
+      if (item.type === "custom_field") {
         if (item.fieldType === "checkbox") {
           if (typeof item.value !== "boolean") {
             return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
