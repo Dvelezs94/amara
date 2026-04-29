@@ -78,8 +78,10 @@ describe("isSupervisor*PathAllowed", () => {
     expect(isSupervisorApiPathAllowed("/api/work-orders")).toBe(true);
   });
 
-  it("blocks non-checklist supervisor paths", () => {
-    expect(isSupervisorAppPathAllowed("/tareas")).toBe(false);
-    expect(isSupervisorApiPathAllowed("/api/work-orders")).toBe(false);
+  it("blocks non-whitelisted supervisor paths", () => {
+    expect(isSupervisorAppPathAllowed("/calendario")).toBe(false);
+    expect(isSupervisorAppPathAllowed("/assets")).toBe(false);
+    expect(isSupervisorApiPathAllowed("/api/admin/users")).toBe(false);
+    expect(isSupervisorApiPathAllowed("/api/dashboard/overview")).toBe(false);
   });
 });
