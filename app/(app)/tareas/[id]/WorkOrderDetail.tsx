@@ -445,7 +445,7 @@ export function WorkOrderDetail({
       </header>
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
-        <div className="min-w-0 flex-1 space-y-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-6">
           <details
             open
             className="group rounded-xl border border-zinc-200 bg-white [&_summary::-webkit-details-marker]:hidden"
@@ -686,9 +686,9 @@ export function WorkOrderDetail({
         </section>
       )}
 
-          <section className="rounded-xl border border-zinc-200 bg-white p-3 md:p-4">
+          <section className="order-last rounded-xl border border-zinc-200 bg-white p-3 md:p-4 lg:order-none">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-zinc-900">Actividad y evidencias</h2>
+              <h2 className="text-sm font-semibold text-zinc-900">Comentarios y evidencias</h2>
             </div>
             <div className="space-y-1.5">
               <textarea

@@ -2112,132 +2112,6 @@ function AppContent() {
                       </View>
                     </View>
 
-                    <View style={styles.detailCard}>
-                      <View style={styles.detailCardHeader}>
-                        <Text style={styles.detailCardHeaderTitle}>Actividad y evidencias</Text>
-                        <Text style={styles.detailCardHeaderSub}>
-                          Comenta y adjunta archivos o imágenes.
-                        </Text>
-                      </View>
-                      <View style={styles.detailCardBody}>
-                        <View style={styles.commentComposerCard}>
-                          <TextInput
-                            value={detailCommentDraft}
-                            onChangeText={setDetailCommentDraft}
-                            placeholder="Escribe un comentario..."
-                            placeholderTextColor={theme.zinc400}
-                            multiline
-                            style={styles.commentComposerInput}
-                          />
-                          {detailCommentFiles.length > 0 ? (
-                            <Text style={styles.commentAttachmentCount}>
-                              {detailCommentFiles.length} archivo(s) seleccionado(s)
-                            </Text>
-                          ) : null}
-                          <View style={styles.commentComposerActions}>
-                            <Pressable
-                              style={styles.commentAttachBtn}
-                              onPress={openCommentAttachmentPicker}
-                              accessibilityRole="button"
-                            >
-                              <Ionicons name="attach-outline" size={16} color={theme.zinc700} />
-                              <Text style={styles.commentAttachBtnText}>Adjuntar</Text>
-                            </Pressable>
-                            <Pressable
-                              style={[
-                                styles.commentSendBtn,
-                                (detailCommentSaving ||
-                                  (detailCommentDraft.trim().length === 0 &&
-                                    detailCommentFiles.length === 0)) &&
-                                  styles.commentSendBtnDisabled,
-                              ]}
-                              disabled={
-                                detailCommentSaving ||
-                                (detailCommentDraft.trim().length === 0 &&
-                                  detailCommentFiles.length === 0)
-                              }
-                              onPress={() => void submitDetailComment()}
-                              accessibilityRole="button"
-                            >
-                              <Text style={styles.commentSendBtnText}>
-                                {detailCommentSaving ? "Enviando..." : "Comentar"}
-                              </Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                        {detailCommentsError ? (
-                          <Text style={styles.detailErrorText}>{detailCommentsError}</Text>
-                        ) : null}
-                        {detailCommentsLoading ? (
-                          <Text style={styles.detailRowMuted}>Cargando comentarios...</Text>
-                        ) : detailComments.length === 0 ? (
-                          <Text style={styles.detailRowMuted}>Aún no hay comentarios.</Text>
-                        ) : (
-                          <View style={styles.commentList}>
-                            {detailComments.map((comment) => {
-                              const parsed = parseCommentBodyWithAttachments(comment.body);
-                              return (
-                                <View key={comment.id} style={styles.commentItem}>
-                                  <View style={styles.commentHeader}>
-                                    <Text style={styles.commentAuthor}>
-                                      {comment.user?.name ?? "Usuario"}
-                                    </Text>
-                                    <Text style={styles.commentDate}>
-                                      {formatWoDetailDate(comment.createdAt)}
-                                    </Text>
-                                  </View>
-                                  {parsed.text ? (
-                                    <Text style={styles.commentBody}>{parsed.text}</Text>
-                                  ) : null}
-                                  {parsed.attachments.length > 0 ? (
-                                    <View style={styles.attachmentGrid}>
-                                      {parsed.attachments.map((a, idx) => (
-                                        <Pressable
-                                          key={`${comment.id}-${a.fileUrl}-${idx}`}
-                                          style={styles.attachmentCell}
-                                          onPress={() => openAttachmentUrl(a.fileUrl, a.filename)}
-                                        >
-                                          {looksLikePdf(a.filename, a.fileUrl) ? (
-                                            <View
-                                              style={[styles.attachmentThumb, styles.attachmentPdfThumb]}
-                                            >
-                                              <Ionicons
-                                                name="document-text"
-                                                size={32}
-                                                color={theme.primary}
-                                              />
-                                            </View>
-                                          ) : (
-                                            <View
-                                              style={[styles.attachmentThumb, styles.attachmentPdfThumb]}
-                                            >
-                                              <Ionicons
-                                                name={
-                                                  looksLikeImageFilename(a.filename) &&
-                                                  !isLikelyInternalDownloadUrl(a.fileUrl)
-                                                    ? "image-outline"
-                                                    : "document-attach"
-                                                }
-                                                size={32}
-                                                color={theme.primary}
-                                              />
-                                            </View>
-                                          )}
-                                          <Text style={styles.attachmentCaption} numberOfLines={1}>
-                                            {a.filename}
-                                          </Text>
-                                        </Pressable>
-                                      ))}
-                                    </View>
-                                  ) : null}
-                                </View>
-                              );
-                            })}
-                          </View>
-                        )}
-                      </View>
-                    </View>
-
                     {selectedWorkOrder.checklist.length > 0 ? (
                       <View style={styles.detailCard}>
                         <View style={styles.detailCardHeader}>
@@ -2473,6 +2347,132 @@ function AppContent() {
                         </View>
                       </View>
                     ) : null}
+
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Text style={styles.detailCardHeaderTitle}>Comentarios y evidencias</Text>
+                        <Text style={styles.detailCardHeaderSub}>
+                          Comenta y adjunta archivos o imágenes.
+                        </Text>
+                      </View>
+                      <View style={styles.detailCardBody}>
+                        <View style={styles.commentComposerCard}>
+                          <TextInput
+                            value={detailCommentDraft}
+                            onChangeText={setDetailCommentDraft}
+                            placeholder="Escribe un comentario..."
+                            placeholderTextColor={theme.zinc400}
+                            multiline
+                            style={styles.commentComposerInput}
+                          />
+                          {detailCommentFiles.length > 0 ? (
+                            <Text style={styles.commentAttachmentCount}>
+                              {detailCommentFiles.length} archivo(s) seleccionado(s)
+                            </Text>
+                          ) : null}
+                          <View style={styles.commentComposerActions}>
+                            <Pressable
+                              style={styles.commentAttachBtn}
+                              onPress={openCommentAttachmentPicker}
+                              accessibilityRole="button"
+                            >
+                              <Ionicons name="attach-outline" size={16} color={theme.zinc700} />
+                              <Text style={styles.commentAttachBtnText}>Adjuntar</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[
+                                styles.commentSendBtn,
+                                (detailCommentSaving ||
+                                  (detailCommentDraft.trim().length === 0 &&
+                                    detailCommentFiles.length === 0)) &&
+                                  styles.commentSendBtnDisabled,
+                              ]}
+                              disabled={
+                                detailCommentSaving ||
+                                (detailCommentDraft.trim().length === 0 &&
+                                  detailCommentFiles.length === 0)
+                              }
+                              onPress={() => void submitDetailComment()}
+                              accessibilityRole="button"
+                            >
+                              <Text style={styles.commentSendBtnText}>
+                                {detailCommentSaving ? "Enviando..." : "Comentar"}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                        {detailCommentsError ? (
+                          <Text style={styles.detailErrorText}>{detailCommentsError}</Text>
+                        ) : null}
+                        {detailCommentsLoading ? (
+                          <Text style={styles.detailRowMuted}>Cargando comentarios...</Text>
+                        ) : detailComments.length === 0 ? (
+                          <Text style={styles.detailRowMuted}>Aún no hay comentarios.</Text>
+                        ) : (
+                          <View style={styles.commentList}>
+                            {detailComments.map((comment) => {
+                              const parsed = parseCommentBodyWithAttachments(comment.body);
+                              return (
+                                <View key={comment.id} style={styles.commentItem}>
+                                  <View style={styles.commentHeader}>
+                                    <Text style={styles.commentAuthor}>
+                                      {comment.user?.name ?? "Usuario"}
+                                    </Text>
+                                    <Text style={styles.commentDate}>
+                                      {formatWoDetailDate(comment.createdAt)}
+                                    </Text>
+                                  </View>
+                                  {parsed.text ? (
+                                    <Text style={styles.commentBody}>{parsed.text}</Text>
+                                  ) : null}
+                                  {parsed.attachments.length > 0 ? (
+                                    <View style={styles.attachmentGrid}>
+                                      {parsed.attachments.map((a, idx) => (
+                                        <Pressable
+                                          key={`${comment.id}-${a.fileUrl}-${idx}`}
+                                          style={styles.attachmentCell}
+                                          onPress={() => openAttachmentUrl(a.fileUrl, a.filename)}
+                                        >
+                                          {looksLikePdf(a.filename, a.fileUrl) ? (
+                                            <View
+                                              style={[styles.attachmentThumb, styles.attachmentPdfThumb]}
+                                            >
+                                              <Ionicons
+                                                name="document-text"
+                                                size={32}
+                                                color={theme.primary}
+                                              />
+                                            </View>
+                                          ) : (
+                                            <View
+                                              style={[styles.attachmentThumb, styles.attachmentPdfThumb]}
+                                            >
+                                              <Ionicons
+                                                name={
+                                                  looksLikeImageFilename(a.filename) &&
+                                                  !isLikelyInternalDownloadUrl(a.fileUrl)
+                                                    ? "image-outline"
+                                                    : "document-attach"
+                                                }
+                                                size={32}
+                                                color={theme.primary}
+                                              />
+                                            </View>
+                                          )}
+                                          <Text style={styles.attachmentCaption} numberOfLines={1}>
+                                            {a.filename}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  ) : null}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        )}
+                      </View>
+                    </View>
                   </>
                 ) : null}
                 </ScrollView>
