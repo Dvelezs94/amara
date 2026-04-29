@@ -10,6 +10,8 @@ type S3Config = {
   forcePathStyle: boolean;
 };
 
+const DEFAULT_S3_ENDPOINT = "https://s3.us-east-1.amazonaws.com";
+
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -19,8 +21,9 @@ function requiredEnv(name: string): string {
 }
 
 function readConfig(): S3Config {
+  const endpoint = process.env.S3_ENDPOINT?.trim() || DEFAULT_S3_ENDPOINT;
   return {
-    endpoint: requiredEnv("S3_ENDPOINT").replace(/\/+$/, ""),
+    endpoint: endpoint.replace(/\/+$/, ""),
     region: requiredEnv("S3_REGION"),
     bucket: requiredEnv("S3_BUCKET"),
     accessKeyId: requiredEnv("S3_ACCESS_KEY_ID"),
