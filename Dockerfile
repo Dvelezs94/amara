@@ -30,9 +30,8 @@ RUN npm install drizzle-kit tsx drizzle-orm pg bcryptjs
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/* 
+  && rm -rf /var/lib/apt/lists/* && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 RUN mkdir -p /app/public
-COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
