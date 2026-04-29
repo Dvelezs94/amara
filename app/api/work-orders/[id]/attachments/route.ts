@@ -6,13 +6,7 @@ import { attachments } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
-import { join } from "path";
-import { writeFile, mkdir } from "fs/promises";
-
-const UPLOAD_DIR_FS = "public/uploads/work-orders";
-const UPLOAD_DIR_PUBLIC = "uploads/work-orders";
-
-const ALLOWED_PREFIX = "image/";
+import { uploadFileToS3 } from "@/lib/s3-storage";
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
@@ -41,9 +35,7 @@ export async function GET(
   return NextResponse.json(
     rows.map((r) => ({
       ...r,
-      fileUrl: r.fileUrl.startsWith("/public/")
-        ? r.fileUrl.replace("/public/", "/")
-        : r.fileUrl,
+      fileUrl: `/api/work-orders/${workOrderId}/attachments/${r.id}/download`,
     }))
   );
 }
@@ -80,28 +72,20 @@ export async function POST(
   if (!file || file.size === 0) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
-  const mime = file.type || "";
-  if (!mime.startsWith(ALLOWED_PREFIX)) {
-    return NextResponse.json(
-      { error: "Solo se permiten archivos de imagen" },
-      { status: 400 }
-    );
-  }
-
   const ext = file.name.includes(".")
     ? file.name.slice(file.name.lastIndexOf("."))
-    : ".jpg";
+    : ".bin";
   const baseName = sanitizeFilename(
     file.name.slice(0, file.name.length - ext.length)
   );
   const uniqueName = `${createId()}${ext}`;
-  const dir = join(process.cwd(), UPLOAD_DIR_FS);
-  await mkdir(dir, { recursive: true });
-  const filePath = join(dir, uniqueName);
+  const objectKey = `work-orders/${uniqueName}`;
   const bytes = await file.arrayBuffer();
-  await writeFile(filePath, Buffer.from(bytes));
-
-  const fileUrl = `/${UPLOAD_DIR_PUBLIC}/${uniqueName}`;
+  const fileUrl = await uploadFileToS3({
+    objectKey,
+    bytes: Buffer.from(bytes),
+    contentType: file.type || "application/octet-stream",
+  });
   const id = createId();
   const displayName = baseName + ext || file.name;
 
@@ -116,7 +100,7 @@ export async function POST(
   await recordAuditLog({
     entityType: "work_order_attachment",
     entityId: id,
-    action: "photo_uploaded",
+    action: "file_uploaded",
     userId: session.id,
     metadata: {
       workOrderId,
@@ -128,7 +112,7 @@ export async function POST(
   return NextResponse.json({
     id,
     workOrderId,
-    fileUrl,
+    fileUrl: `/api/work-orders/${workOrderId}/attachments/${id}/download`,
     filename: displayName,
     createdAt: new Date().toISOString(),
   });

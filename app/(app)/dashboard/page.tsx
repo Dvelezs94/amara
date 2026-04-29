@@ -2,7 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { GripVertical, Trash2, Plus, CircleHelp, CalendarDays } from "lucide-react";
+import {
+  GripVertical,
+  Trash2,
+  Plus,
+  CircleHelp,
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUp,
+  Equal,
+  Minus,
+} from "lucide-react";
 import { AnalyticsChartCard } from "@/components/AnalyticsChartCard";
 import {
   DashboardDateRangeModal,
@@ -54,6 +65,23 @@ const statusColors: Record<PendingOrder["status"], string> = {
   in_progress: "bg-blue-100 text-blue-800",
   completed: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-zinc-100 text-zinc-600",
+};
+
+const priorityVisual: Record<
+  PendingOrder["priority"],
+  { Icon: typeof Equal; className: string; label: string }
+> = {
+  low: { Icon: ChevronDown, className: "text-[#0065FF]", label: "Prioridad baja" },
+  medium: { Icon: Equal, className: "text-[#E2A100]", label: "Prioridad media" },
+  high: { Icon: ChevronUp, className: "text-[#FF8B00]", label: "Prioridad alta" },
+  urgent: { Icon: ChevronsUp, className: "text-[#BF2600]", label: "Prioridad urgente" },
+};
+
+const priorityLabelEs: Record<PendingOrder["priority"], string> = {
+  low: "Baja",
+  medium: "Media",
+  high: "Alta",
+  urgent: "Urgente",
 };
 
 export default function DashboardPage() {
@@ -153,7 +181,7 @@ export default function DashboardPage() {
   }
 
   function formatDate(value: string | null) {
-    if (!value) return "Sin fecha";
+    if (!value) return "-";
     return new Date(value).toLocaleDateString("es-MX", {
       year: "numeric",
       month: "short",
@@ -167,6 +195,20 @@ export default function DashboardPage() {
     if (status === "in_progress") return "En progreso";
     if (status === "completed") return "Completada";
     return "Cancelada";
+  }
+
+  function renderPriorityIcon(priority: PendingOrder["priority"]) {
+    const p = priorityVisual[priority] ?? {
+      Icon: Minus,
+      className: "text-zinc-400",
+      label: `Prioridad: ${priority}`,
+    };
+    const Icon = p.Icon;
+    return (
+      <span className="inline-flex shrink-0" title={p.label} aria-label={p.label}>
+        <Icon className={`h-4 w-4 ${p.className}`} strokeWidth={2.5} aria-hidden />
+      </span>
+    );
   }
 
   function formatKpiValue(
@@ -358,9 +400,16 @@ export default function DashboardPage() {
                         {statusLabel(order.status)}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      Prioridad: {order.priority} · Vence: {formatDate(order.dueDate)}
-                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <p className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
+                        <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        <span className="truncate">Vence: {formatDate(order.dueDate)}</span>
+                      </p>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-zinc-600">
+                        {renderPriorityIcon(order.priority)}
+                        <span>{priorityLabelEs[order.priority]}</span>
+                      </span>
+                    </div>
                     {order.assetName && (
                       <p className="mt-1 text-xs text-zinc-500">Activo: {order.assetName}</p>
                     )}

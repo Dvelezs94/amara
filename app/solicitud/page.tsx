@@ -122,11 +122,12 @@ export default function SolicitudPage() {
               htmlFor="nombreContacto"
               className="mb-1 block text-sm font-medium text-zinc-700"
             >
-              Nombre de contacto (opcional)
+              Nombre de contacto *
             </label>
             <input
               id="nombreContacto"
               name="nombreContacto"
+              required
               type="text"
               className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             />

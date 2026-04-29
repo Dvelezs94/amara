@@ -16,7 +16,7 @@ export const users = pgTable("users", {
   email: text("email").unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
-  role: text("role", { enum: ["operator", "admin"] })
+  role: text("role", { enum: ["operator", "admin", "supervisor"] })
     .notNull()
     .default("operator"),
   avatarUrl: text("avatar_url"),
@@ -110,13 +110,68 @@ export const checklistTemplateItems = pgTable("checklist_template_items", {
   checklistTemplateId: text("checklist_template_id")
     .notNull()
     .references(() => checklistTemplates.id, { onDelete: "cascade" }),
-  type: text("type", { enum: ["step", "custom_field"] }).notNull(),
+  type: text("type", { enum: ["step", "custom_field", "text_block"] }).notNull(),
   label: text("label").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   fieldType: text("field_type", {
-    enum: ["text", "number", "date", "dropdown", "checkbox", "photo"],
+    enum: [
+      "text",
+      "number",
+      "date",
+      "dropdown",
+      "checkbox",
+      "photo",
+      "title",
+      "subtitle",
+      "paragraph",
+    ],
   }),
   options: jsonb("options").$type<string[]>(), // for dropdown: string[]
+});
+
+export const checklistTemplateRevisions = pgTable("checklist_template_revisions", {
+  id: text("id").primaryKey(),
+  checklistTemplateId: text("checklist_template_id")
+    .notNull()
+    .references(() => checklistTemplates.id, { onDelete: "cascade" }),
+  revisionNumber: integer("revision_number").notNull(),
+  name: text("name").notNull(),
+  status: text("status", { enum: ["approved", "proposed", "rejected"] })
+    .notNull()
+    .default("proposed"),
+  proposedByUserId: text("proposed_by_user_id")
+    .notNull()
+    .references(() => users.id),
+  reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true, mode: "date" }),
+  reviewComment: text("review_comment"),
+  snapshot: jsonb("snapshot")
+    .$type<{
+      before?: {
+        name: string;
+        description: string | null;
+        items: Array<{
+          type: string;
+          label: string;
+          fieldType: string | null;
+          options: string[] | null;
+        }>;
+      };
+      after: {
+        name: string;
+        description: string | null;
+        items: Array<{
+          type: string;
+          label: string;
+          fieldType: string | null;
+          options: string[] | null;
+        }>;
+      };
+    }>()
+    .notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
 });
 
 export const workOrderChecklist = pgTable("work_order_checklist", {
@@ -125,13 +180,23 @@ export const workOrderChecklist = pgTable("work_order_checklist", {
     .notNull()
     .references(() => workOrders.id, { onDelete: "cascade" }),
   checklistTemplateId: text("checklist_template_id"),
-  type: text("type", { enum: ["step", "custom_field"] }).notNull(),
+  type: text("type", { enum: ["step", "custom_field", "text_block"] }).notNull(),
   label: text("label").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   completed: boolean("completed").notNull().default(false),
   value: jsonb("value"), // for custom_field
   fieldType: text("field_type", {
-    enum: ["text", "number", "date", "dropdown", "checkbox", "photo"],
+    enum: [
+      "text",
+      "number",
+      "date",
+      "dropdown",
+      "checkbox",
+      "photo",
+      "title",
+      "subtitle",
+      "paragraph",
+    ],
   }),
   options: jsonb("options").$type<string[]>(),
 });

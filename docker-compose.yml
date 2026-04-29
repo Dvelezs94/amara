@@ -23,12 +23,13 @@ services:
       dockerfile: Dockerfile
       args:
         # Build-time only (no DB connection required for `next build`). Must be a valid URL string.
-        DATABASE_URL: postgresql://msa:msa@127.0.0.1:5432/msa
+        DATABASE_URL: postgresql://msa:msa@postgres:5432/msa
     image: msa-web:local
     restart: unless-stopped
-    user: "1000:1000"
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://msa:msa@postgres:5432/msa
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-docker-compose-min-32chars}

@@ -53,7 +53,13 @@ export type CalendarCell = {
   date: Date;
   inMonth: boolean;
   isToday: boolean;
-  events: { id: string; name: string; recurrence: string; color?: string | null }[];
+  events: {
+    id: string;
+    name: string;
+    recurrence: string;
+    color?: string | null;
+    hasWorkOrder?: boolean;
+  }[];
 };
 
 function buildMonthCells(
@@ -252,6 +258,26 @@ export function CalendarMonthView({
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalDate, setCreateModalDate] = useState<string | undefined>(undefined);
+  const [workOrderMarkerKeys, setWorkOrderMarkerKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!detailModalMounted && !createModalOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (createModalOpen) {
+        setCreateModalOpen(false);
+        return;
+      }
+      if (detailModalMounted) {
+        setSelectedEvent(null);
+        setCreateWorkOrderError(null);
+        setActionsOpen(false);
+        setAssigneePromptOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [detailModalMounted, createModalOpen]);
 
   useEffect(() => {
     if (!detailModalMounted) return;
@@ -275,7 +301,9 @@ export function CalendarMonthView({
     let cancelled = false;
     setLoadingLinkedWorkOrders(true);
     fetch(
-      `/api/maintenance-schedules/${panelEvent.id}/work-orders?limit=${LINKED_WO_PAGE_SIZE}&offset=0`
+      `/api/maintenance-schedules/${panelEvent.id}/work-orders?dateYmd=${encodeURIComponent(
+        panelEvent.dateYmd
+      )}&limit=${LINKED_WO_PAGE_SIZE}&offset=0`
     )
       .then((r) => r.json())
       .then((data) => {
@@ -372,8 +400,50 @@ export function CalendarMonthView({
     () => buildMonthCells(year, month, schedules, new Date()),
     [schedules, year, month]
   );
-
   const yearForView = currentDate.getFullYear();
+
+  const markerRange = useMemo(() => {
+    if (viewMode === "year") {
+      return {
+        from: `${yearForView}-01-01`,
+        to: `${yearForView}-12-31`,
+      };
+    }
+    if (dayEvents.length === 0) return null;
+    return {
+      from: toYmdLocal(dayEvents[0]!.date),
+      to: toYmdLocal(dayEvents[dayEvents.length - 1]!.date),
+    };
+  }, [viewMode, yearForView, dayEvents]);
+
+  useEffect(() => {
+    if (!markerRange) {
+      setWorkOrderMarkerKeys(new Set());
+      return;
+    }
+    let cancelled = false;
+    fetch(
+      `/api/maintenance-schedules/work-order-markers?from=${encodeURIComponent(
+        markerRange.from
+      )}&to=${encodeURIComponent(markerRange.to)}`
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const keys = Array.isArray(data?.keys)
+          ? data.keys.filter((k: unknown): k is string => typeof k === "string")
+          : [];
+        setWorkOrderMarkerKeys(new Set(keys));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWorkOrderMarkerKeys(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [markerRange]);
+
   const yearMiniMonths = useMemo(() => {
     if (viewMode !== "year") return [] as CalendarCell[][];
     const now = new Date();
@@ -652,7 +722,15 @@ export function CalendarMonthView({
                                   }}
                                   onMouseDown={(e) => e.stopPropagation()}
                                   className="h-2 w-2 shrink-0 rounded-full"
-                                  style={{ backgroundColor: ev.color ?? "#02257D" }}
+                                  style={
+                                    workOrderMarkerKeys.has(`${ev.id}|${dateYmd}`)
+                                      ? {
+                                          background: `linear-gradient(90deg, ${
+                                            ev.color ?? "#02257D"
+                                          } 0 50%, #86efac 50% 100%)`,
+                                        }
+                                      : { backgroundColor: ev.color ?? "#02257D" }
+                                  }
                                   aria-label={ev.name}
                                 />
                               ))}
@@ -815,7 +893,9 @@ export function CalendarMonthView({
                     {cell.date.getDate()}
                   </div>
                   <div className="space-y-1">
-                    {visibleEvents.map((ev) => (
+                    {visibleEvents.map((ev) => {
+                      const hasWorkOrder = workOrderMarkerKeys.has(`${ev.id}|${dateYmd}`);
+                      return (
                       <button
                         key={`${ev.id}-${i}`}
                         type="button"
@@ -836,13 +916,21 @@ export function CalendarMonthView({
                           });
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="block w-full truncate rounded-sm px-1.5 py-0.5 text-left text-[10px] font-semibold uppercase tracking-wide text-white"
+                        className="flex w-full items-center gap-1 truncate rounded-sm px-1.5 py-0.5 text-left text-[10px] font-semibold uppercase tracking-wide text-white"
                         style={{ backgroundColor: ev.color ?? "#02257D" }}
                         title={ev.name}
                       >
-                        {ev.name}
+                        <span className="truncate">{ev.name}</span>
+                        {hasWorkOrder ? (
+                          <span
+                            className="ml-auto inline-flex h-2 w-2 shrink-0 rounded-full bg-emerald-300 ring-1 ring-white/70"
+                            title="Tiene tarea creada para este día"
+                            aria-label="Tiene tarea creada para este día"
+                          />
+                        ) : null}
                       </button>
-                    ))}
+                    );
+                    })}
                     {hiddenCount > 0 ? (
                       <button
                         type="button"
@@ -917,14 +1005,13 @@ export function CalendarMonthView({
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                 {formatRecurrenceLabel(panelEvent.recurrence)}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">{panelEvent.dateLabel}</p>
               {createWorkOrderError ? (
                 <p className="mb-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
                   {createWorkOrderError}
                 </p>
               ) : null}
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
-                Tareas asociadas
+                Tareas asociadas en {panelEvent.dateLabel}
               </p>
               {loadingLinkedWorkOrders ? (
                 <p className="mt-1 text-xs text-zinc-600">Cargando...</p>
@@ -1006,7 +1093,9 @@ export function CalendarMonthView({
                     try {
                       const offset = linkedWorkOrders.length;
                       const res = await fetch(
-                        `/api/maintenance-schedules/${panelEvent.id}/work-orders?limit=${LINKED_WO_PAGE_SIZE}&offset=${offset}`
+                        `/api/maintenance-schedules/${panelEvent.id}/work-orders?dateYmd=${encodeURIComponent(
+                          panelEvent.dateYmd
+                        )}&limit=${LINKED_WO_PAGE_SIZE}&offset=${offset}`
                       );
                       const data = await res.json().catch(() => ({}));
                       const items = Array.isArray(data?.items) ? data.items : [];

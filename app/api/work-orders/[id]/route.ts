@@ -6,7 +6,9 @@ import { workOrderChecklist } from "@/lib/db/schema";
 import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
 import { attachments } from "@/lib/db/schema";
-import { eq, desc, max } from "drizzle-orm";
+import { checklistTemplates } from "@/lib/db/schema";
+import { checklistTemplateRevisions } from "@/lib/db/schema";
+import { and, eq, desc, max } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
 import { createNotification } from "@/lib/notifications";
 
@@ -57,6 +59,24 @@ export async function GET(
     where: eq(workOrderChecklist.workOrderId, id),
     orderBy: (items, { asc }) => [asc(items.sortOrder)],
   });
+  const checklistTemplateId =
+    checklist.find((item) => item.checklistTemplateId != null)?.checklistTemplateId ?? null;
+  const [checklistTemplate, approvedRevision] = await Promise.all([
+    checklistTemplateId
+      ? db.query.checklistTemplates.findFirst({
+          where: eq(checklistTemplates.id, checklistTemplateId),
+        })
+      : null,
+    checklistTemplateId
+      ? db.query.checklistTemplateRevisions.findFirst({
+          where: and(
+            eq(checklistTemplateRevisions.checklistTemplateId, checklistTemplateId),
+            eq(checklistTemplateRevisions.status, "approved")
+          ),
+          orderBy: (rev, { desc }) => [desc(rev.revisionNumber)],
+        })
+      : null,
+  ]);
   const attachmentList = await db.query.attachments.findMany({
     where: eq(attachments.workOrderId, id),
     orderBy: [desc(attachments.createdAt)],
@@ -68,8 +88,19 @@ export async function GET(
       : null,
     assignee: assignee ?? null,
     requester: requester ?? null,
+    checklistMeta:
+      checklistTemplate != null
+        ? {
+            templateName: checklistTemplate.name,
+            revisionName: approvedRevision?.name ?? null,
+            revisionNumber: approvedRevision?.revisionNumber ?? null,
+          }
+        : null,
     checklist,
-    attachments: attachmentList,
+    attachments: attachmentList.map((row) => ({
+      ...row,
+      fileUrl: `/api/work-orders/${id}/attachments/${row.id}/download`,
+    })),
   });
 }
 
@@ -135,6 +166,42 @@ export async function PATCH(
   if (body.assigneeId !== undefined) updates.assigneeId = body.assigneeId || null;
   if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
   const isCompleting = body.status === "completed";
+  if (isCompleting) {
+    const checklistItems = await db.query.workOrderChecklist.findMany({
+      where: eq(workOrderChecklist.workOrderId, id),
+      orderBy: (items, { asc }) => [asc(items.sortOrder)],
+    });
+    const checklistCompletionError =
+      "No se puede completar la tarea: marca todos los pasos y completa todos los campos del checklist.";
+    for (const item of checklistItems) {
+      if (item.type === "step") {
+        if (item.completed !== true) {
+          return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
+        }
+        continue;
+      }
+      if (item.type === "field") {
+        if (item.fieldType === "checkbox") {
+          if (typeof item.value !== "boolean") {
+            return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
+          }
+          continue;
+        }
+        if (item.value == null) {
+          return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
+        }
+        if (typeof item.value === "number" && Number.isNaN(item.value)) {
+          return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
+        }
+        if (typeof item.value !== "number") {
+          const valueAsText = String(item.value).trim();
+          if (valueAsText === "") {
+            return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
+          }
+        }
+      }
+    }
+  }
   if (body.status === "completed") updates.completedAt = new Date();
   if (
     body.status === "in_progress" &&

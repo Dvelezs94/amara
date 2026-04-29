@@ -14,6 +14,9 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (session.role !== "supervisor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await params;
   const template = await db.query.checklistTemplates.findFirst({
     where: eq(checklistTemplates.id, id),
@@ -36,6 +39,9 @@ export async function PATCH(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (session.role !== "supervisor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await params;
   const template = await db.query.checklistTemplates.findFirst({
     where: eq(checklistTemplates.id, id),
@@ -45,10 +51,19 @@ export async function PATCH(
   }
   const body = await req.json().catch(() => ({}));
   const updates: { name?: string; description?: string | null } = {};
-  if (body.name !== undefined) updates.name = body.name.trim();
-  if (body.description !== undefined) updates.description = body.description?.trim() ?? null;
+  if (body.name !== undefined) {
+    const nextName = String(body.name).trim();
+    if (nextName !== template.name) updates.name = nextName;
+  }
+  if (body.description !== undefined) {
+    const nextDescription = body.description?.trim() ?? null;
+    if (nextDescription !== template.description) updates.description = nextDescription;
+  }
   if (Object.keys(updates).length > 0) {
-    await db.update(checklistTemplates).set(updates).where(eq(checklistTemplates.id, id));
+    await db
+      .update(checklistTemplates)
+      .set(updates)
+      .where(eq(checklistTemplates.id, id));
     await recordAuditLog({
       entityType: "checklist_template",
       entityId: id,

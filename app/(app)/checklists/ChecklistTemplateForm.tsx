@@ -14,13 +14,19 @@ const FIELD_TYPES = [
   { value: "photo", label: "Foto" },
 ] as const;
 
+const TEXT_STYLES = [
+  { value: "paragraph", label: "Párrafo" },
+  { value: "subtitle", label: "Subtítulo" },
+  { value: "title", label: "Título" },
+] as const;
+
 function makeItemId() {
   return `item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 type Item = {
   id: string;
-  type: "step" | "custom_field";
+  type: "step" | "custom_field" | "text_block";
   label: string;
   fieldType?: string;
   options?: string[];
@@ -40,14 +46,21 @@ export function ChecklistTemplateForm({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [revisionName, setRevisionName] = useState("");
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [items, setItems] = useState<Item[]>(
     (initial?.items ?? []).map((i, idx) => ({
       id: makeItemId(),
-      type: i.type as "step" | "custom_field",
+      type:
+        i.type === "custom_field" || i.type === "text_block" || i.type === "step"
+          ? i.type
+          : "custom_field",
       label: i.label,
-      fieldType: i.fieldType ?? "text",
+      fieldType:
+        i.type === "text_block"
+          ? i.fieldType ?? "paragraph"
+          : i.fieldType ?? "text",
       options: Array.isArray(i.options) ? (i.options as string[]).map((o) => String(o)) : [],
     }))
   );
@@ -57,7 +70,7 @@ export function ChecklistTemplateForm({
   function addStep() {
     setItems((prev) => [
       ...prev,
-      { id: makeItemId(), type: "custom_field", label: "Nuevo texto", fieldType: "text" },
+      { id: makeItemId(), type: "text_block", label: "Nuevo texto", fieldType: "paragraph" },
     ]);
   }
 
@@ -165,15 +178,13 @@ export function ChecklistTemplateForm({
     }
     try {
       if (templateId) {
-        await fetch(`/api/checklist-templates/${templateId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: nameTrim, description: description.trim() || null }),
-        });
-        await fetch(`/api/checklist-templates/${templateId}/items`, {
-          method: "PUT",
+        const res = await fetch(`/api/checklist-templates/${templateId}/revisions`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            revisionName: revisionName.trim() || "Sin nombre",
+            name: nameTrim,
+            description: description.trim() || null,
             items: items.map((it) =>
               it.type === "custom_field"
                 ? {
@@ -182,16 +193,62 @@ export function ChecklistTemplateForm({
                     fieldType: it.fieldType ?? "text",
                     options: it.fieldType === "dropdown" ? it.options : undefined,
                   }
-                : { type: "step", label: it.label.trim() || "Paso" }
+                : it.type === "text_block"
+                  ? {
+                      type: "text_block",
+                      label: it.label.trim() || "Nuevo texto",
+                      fieldType:
+                        it.fieldType === "title" ||
+                        it.fieldType === "subtitle" ||
+                        it.fieldType === "paragraph"
+                          ? it.fieldType
+                          : "paragraph",
+                    }
+                  : { type: "step", label: it.label.trim() || "Paso" }
             ),
           }),
         });
-        router.push("/checklists");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(data.error ?? "No se pudo crear la revisión");
+          setLoading(false);
+          return;
+        }
+        if (data.status === "proposed") {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          router.push(`/checklists/${templateId}?mode=view&notice=revision_submitted`);
+        } else {
+          router.push(`/checklists/${templateId}`);
+        }
       } else {
         const res = await fetch("/api/checklist-templates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: nameTrim, description: description.trim() || null }),
+          body: JSON.stringify({
+            name: nameTrim,
+            description: description.trim() || null,
+            items: items.map((it) =>
+              it.type === "custom_field"
+                ? {
+                    type: "custom_field",
+                    label: it.label.trim() || "Campo",
+                    fieldType: it.fieldType ?? "text",
+                    options: it.fieldType === "dropdown" ? it.options : undefined,
+                  }
+                : it.type === "text_block"
+                  ? {
+                      type: "text_block",
+                      label: it.label.trim() || "Nuevo texto",
+                      fieldType:
+                        it.fieldType === "title" ||
+                        it.fieldType === "subtitle" ||
+                        it.fieldType === "paragraph"
+                          ? it.fieldType
+                          : "paragraph",
+                    }
+                  : { type: "step", label: it.label.trim() || "Paso" }
+            ),
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -200,22 +257,6 @@ export function ChecklistTemplateForm({
           return;
         }
         const id = data.id;
-        await fetch(`/api/checklist-templates/${id}/items`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            items: items.map((it) =>
-              it.type === "custom_field"
-                ? {
-                    type: "custom_field",
-                    label: it.label.trim() || "Campo",
-                    fieldType: it.fieldType ?? "text",
-                    options: it.fieldType === "dropdown" ? it.options : undefined,
-                  }
-                : { type: "step", label: it.label.trim() || "Paso" }
-            ),
-          }),
-        });
         router.push(`/checklists/${id}`);
       }
       router.refresh();
@@ -255,6 +296,22 @@ export function ChecklistTemplateForm({
           className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
       </div>
+      {templateId && (
+        <div>
+          <label htmlFor="revisionName" className="block text-sm font-medium text-zinc-700 mb-1">
+            Nombre de la revisión *
+          </label>
+          <input
+            id="revisionName"
+            type="text"
+            value={revisionName}
+            onChange={(e) => setRevisionName(e.target.value)}
+            placeholder="Ej. Ajuste mensual de inspección"
+            required
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          />
+        </div>
+      )}
 
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -355,6 +412,19 @@ export function ChecklistTemplateForm({
                       </div>
                     )}
                   </>
+                )}
+                {item.type === "text_block" && (
+                  <select
+                    value={item.fieldType ?? "paragraph"}
+                    onChange={(e) => updateItem(index, { fieldType: e.target.value })}
+                    className="rounded-lg border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+                  >
+                    {TEXT_STYLES.map((style) => (
+                      <option key={style.value} value={style.value}>
+                        {style.label}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
               <button

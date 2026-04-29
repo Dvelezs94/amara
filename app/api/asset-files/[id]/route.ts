@@ -3,20 +3,7 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { assetFiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { readFile, unlink } from "fs/promises";
-import { toDiskPathFromFileUrl } from "@/lib/file-storage";
-
-function contentTypeFromFilename(name: string): string {
-  const n = name.toLowerCase();
-  if (n.endsWith(".pdf")) return "application/pdf";
-  if (n.endsWith(".png")) return "image/png";
-  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
-  if (n.endsWith(".gif")) return "image/gif";
-  if (n.endsWith(".webp")) return "image/webp";
-  if (n.endsWith(".bmp")) return "image/bmp";
-  if (n.endsWith(".txt")) return "text/plain; charset=utf-8";
-  return "application/octet-stream";
-}
+import { deleteFileFromS3ByPublicUrl, presignS3PublicUrl } from "@/lib/s3-storage";
 
 export async function GET(
   _req: Request,
@@ -33,16 +20,7 @@ export async function GET(
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const filePath = toDiskPathFromFileUrl(row.fileUrl);
-  try {
-    const bytes = await readFile(filePath);
-    const headers = new Headers();
-    headers.set("Content-Type", contentTypeFromFilename(row.filename));
-    headers.set("Content-Disposition", `inline; filename="${row.filename.replace(/"/g, "")}"`);
-    return new NextResponse(bytes, { status: 200, headers });
-  } catch {
-    return NextResponse.json({ error: "Archivo no encontrado en almacenamiento." }, { status: 404 });
-  }
+  return NextResponse.redirect(presignS3PublicUrl(row.fileUrl), { status: 302 });
 }
 
 export async function DELETE(
@@ -66,11 +44,10 @@ export async function DELETE(
       { status: 403 }
     );
   }
-  const filePath = toDiskPathFromFileUrl(row.fileUrl);
   try {
-    await unlink(filePath);
+    await deleteFileFromS3ByPublicUrl(row.fileUrl);
   } catch {
-    // ignore if file already missing
+    // ignore storage deletion failures; DB row will still be removed
   }
   await db.delete(assetFiles).where(eq(assetFiles.id, id));
   return NextResponse.json({ ok: true });

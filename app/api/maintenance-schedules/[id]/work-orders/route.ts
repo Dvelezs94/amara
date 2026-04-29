@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { desc, eq, like } from "drizzle-orm";
+import { and, desc, eq, gte, like, lte } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { users, workOrders } from "@/lib/db/schema";
@@ -18,6 +18,7 @@ export async function GET(
 
   const { id } = await params;
   const url = new URL(req.url);
+  const dateYmd = url.searchParams.get("dateYmd")?.trim() ?? "";
   const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_PAGE_SIZE);
   const offsetRaw = Number(url.searchParams.get("offset") ?? "0");
   const pageSize = Math.min(
@@ -27,6 +28,22 @@ export async function GET(
   const offset = Math.max(0, Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0);
   /** Fetch one extra row to know if another page exists. */
   const fetchLimit = pageSize + 1;
+
+  let dueDateFilter:
+    | ReturnType<typeof and>
+    | ReturnType<typeof gte>
+    | null = null;
+  if (dateYmd) {
+    const dayStart = new Date(`${dateYmd}T00:00:00`);
+    const dayEnd = new Date(`${dateYmd}T23:59:59.999`);
+    if (Number.isNaN(dayStart.getTime()) || Number.isNaN(dayEnd.getTime())) {
+      return NextResponse.json({ error: "dateYmd inválida" }, { status: 400 });
+    }
+    dueDateFilter = and(
+      gte(workOrders.dueDate, dayStart),
+      lte(workOrders.dueDate, dayEnd)
+    );
+  }
 
   const rows = await db
     .select({
@@ -44,10 +61,12 @@ export async function GET(
     .from(workOrders)
     .leftJoin(users, eq(workOrders.assigneeId, users.id))
     .where(
-      like(
-        workOrders.description,
-        `%calendario de mantenimiento (${id})%`
-      )
+      dueDateFilter
+        ? and(
+            like(workOrders.description, `%calendario de mantenimiento (${id})%`),
+            dueDateFilter
+          )
+        : like(workOrders.description, `%calendario de mantenimiento (${id})%`)
     )
     .orderBy(desc(workOrders.createdAt), desc(workOrders.id))
     .limit(fetchLimit)

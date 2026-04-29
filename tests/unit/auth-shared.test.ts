@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { AVAILABLE_USER_ROLES } from "@/lib/auth-shared";
 
 describe("AVAILABLE_USER_ROLES", () => {
-  it("includes operator and admin", () => {
+  it("includes operator, admin and supervisor", () => {
     expect(AVAILABLE_USER_ROLES).toContain("operator");
     expect(AVAILABLE_USER_ROLES).toContain("admin");
-    expect(AVAILABLE_USER_ROLES).toHaveLength(2);
+    expect(AVAILABLE_USER_ROLES).toContain("supervisor");
+    expect(AVAILABLE_USER_ROLES).toHaveLength(3);
   });
 });

@@ -5,6 +5,8 @@ import {
   decodeSessionRoleFromCookie,
   isOperatorApiPathAllowed,
   isOperatorAppPathAllowed,
+  isSupervisorApiPathAllowed,
+  isSupervisorAppPathAllowed,
 } from "@/lib/middleware-rules";
 
 export function middleware(req: NextRequest) {
@@ -32,7 +34,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  if (role !== "admin" && role !== "operator") {
+  if (role !== "admin" && role !== "operator" && role !== "supervisor") {
     if (path.startsWith("/api/")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -51,6 +53,20 @@ export function middleware(req: NextRequest) {
       return NextResponse.next();
     }
     return NextResponse.redirect(new URL("/tareas", req.url));
+  }
+
+  if (role === "supervisor") {
+    if (path.startsWith("/api/")) {
+      if (isSupervisorApiPathAllowed(path)) {
+        return NextResponse.next();
+      }
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (isSupervisorAppPathAllowed(path)) {
+      return NextResponse.next();
+    }
+    return NextResponse.redirect(new URL("/checklists", req.url));
   }
 
   return NextResponse.next();

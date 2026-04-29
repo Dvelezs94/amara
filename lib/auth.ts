@@ -15,7 +15,9 @@ const SESSION_COOKIE = "session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 function normalizeRole(role: string | null | undefined): UserRole {
-  return role === "admin" ? "admin" : "operator";
+  if (role === "admin") return "admin";
+  if (role === "supervisor") return "supervisor";
+  return "operator";
 }
 
 export async function getSession(): Promise<SessionUser | null> {

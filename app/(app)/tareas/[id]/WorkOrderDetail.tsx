@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   Check,
@@ -14,6 +14,7 @@ import {
   X,
   Pencil,
   ArrowLeft,
+  FileText,
 } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
 import { APP_TIME_ZONE } from "@/lib/timezone";
@@ -64,41 +65,51 @@ type ChecklistItem = {
   options?: string[] | null | unknown;
 };
 
-/** Stored file paths from the app (work-order uploads live under `public/uploads/...`). */
-function isWorkOrderStoredUploadPath(s: string): boolean {
-  const p = s.trim();
-  return p.startsWith("/uploads/");
+type WorkOrderComment = {
+  id: string;
+  body: string;
+  createdAt: string | Date;
+  user:
+    | {
+        id: string;
+        name: string;
+        avatarUrl?: string | null;
+        avatarBackgroundColor?: string | null;
+      }
+    | null;
+};
+
+function isImageAttachment(filename: string, fileUrl: string): boolean {
+  const raw = `${filename} ${fileUrl}`.toLowerCase();
+  return (
+    raw.includes(".jpg") ||
+    raw.includes(".jpeg") ||
+    raw.includes(".png") ||
+    raw.includes(".gif") ||
+    raw.includes(".webp") ||
+    raw.includes(".bmp") ||
+    raw.includes(".svg") ||
+    raw.includes(".avif")
+  );
 }
 
-/**
- * Adjuntos table + checklist photo fields (mobile uploads via `/attachments` and/or saves URL on checklist).
- */
-function mergeAttachmentsWithChecklistPhotos(
-  attachmentRows: { id: string; fileUrl: string; filename: string }[],
-  checklistItems: ChecklistItem[]
-): { id: string; fileUrl: string; filename: string }[] {
-  const seen = new Set<string>();
-  const out: { id: string; fileUrl: string; filename: string }[] = [];
-  for (const a of attachmentRows) {
-    const url = a.fileUrl.trim();
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    out.push({ id: a.id, fileUrl: url, filename: a.filename });
-  }
-  for (const item of checklistItems) {
-    if (item.fieldType !== "photo") continue;
-    const v = item.value;
-    if (typeof v !== "string" || !isWorkOrderStoredUploadPath(v)) continue;
-    const url = v.trim();
-    if (seen.has(url)) continue;
-    seen.add(url);
-    out.push({
-      id: `checklist-photo-${item.id}`,
-      fileUrl: url,
-      filename: item.label ? `${item.label} (checklist)` : "Evidencia checklist",
-    });
-  }
-  return out;
+function isLikelyInternalDownloadUrl(url: string): boolean {
+  return url.startsWith("/api/work-orders/");
+}
+
+const COMMENT_ATTACHMENT_REGEX = /\[\[file:([^|\]]+)\|([^\]]+)\]\]/g;
+
+function parseCommentBody(body: string): {
+  text: string;
+  attachments: { filename: string; fileUrl: string }[];
+} {
+  const attachments: { filename: string; fileUrl: string }[] = [];
+  const text = body.replace(COMMENT_ATTACHMENT_REGEX, (_full, encodedName: string, fileUrl: string) => {
+    const filename = decodeURIComponent(encodedName);
+    attachments.push({ filename, fileUrl });
+    return "";
+  });
+  return { text: text.trim(), attachments };
 }
 
 export function WorkOrderDetail({
@@ -120,6 +131,11 @@ export function WorkOrderDetail({
     asset: { id: string; name: string; assetId: string } | null;
     assignee: { id: string; name: string; avatarUrl?: string | null } | null;
     requester: { id: string; name: string; avatarUrl?: string | null } | null;
+    checklistMeta: {
+      templateName: string;
+      revisionName: string | null;
+      revisionNumber: number | null;
+    } | null;
     checklist: ChecklistItem[];
     attachments: {
       id: string;
@@ -131,7 +147,6 @@ export function WorkOrderDetail({
   canEditAssignee?: boolean;
 }) {
   const [checklist, setChecklist] = useState(initial.checklist);
-  const [attachments, setAttachments] = useState(initial.attachments);
   const [assigneeId, setAssigneeId] = useState(initial.assignee?.id ?? "");
   const [assigneeUsers, setAssigneeUsers] = useState<Array<{ id: string; name: string }>>([]);
   const [assigneeSaving, setAssigneeSaving] = useState(false);
@@ -140,11 +155,17 @@ export function WorkOrderDetail({
   const [imageLightbox, setImageLightbox] = useState<{ src: string; alt: string } | null>(
     null
   );
-  const woPhotoInputRef = useRef<HTMLInputElement>(null);
+  const commentFilesInputRef = useRef<HTMLInputElement>(null);
   const isCompleted = initial.status === "completed";
   const checklistUnlocked = initial.status === "in_progress";
   const kind = parseWorkOrderKind(initial.kind);
   const [durationTick, setDurationTick] = useState(0);
+  const [comments, setComments] = useState<WorkOrderComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(true);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentSaving, setCommentSaving] = useState(false);
+  const [commentFiles, setCommentFiles] = useState<File[]>([]);
 
   const needsLiveDuration = initial.status === "in_progress";
 
@@ -187,6 +208,43 @@ export function WorkOrderDetail({
     };
   }, [imageLightbox]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadComments() {
+      setCommentsLoading(true);
+      setCommentsError(null);
+      try {
+        const res = await fetch(`/api/work-orders/${initial.id}/notes`, {
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => []);
+        if (!res.ok) {
+          throw new Error(
+            (data as { error?: string })?.error ?? "No se pudieron cargar los comentarios."
+          );
+        }
+        if (!cancelled) {
+          setComments(Array.isArray(data) ? (data as WorkOrderComment[]) : []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCommentsError(
+            error instanceof Error ? error.message : "No se pudieron cargar los comentarios."
+          );
+          setComments([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setCommentsLoading(false);
+        }
+      }
+    }
+    void loadComments();
+    return () => {
+      cancelled = true;
+    };
+  }, [initial.id]);
+
   async function uploadWorkOrderPhoto(file: File) {
     const fd = new FormData();
     fd.append("file", file);
@@ -206,31 +264,6 @@ export function WorkOrderDetail({
     };
   }
 
-  async function onWorkOrderPhotosSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (!files?.length) return;
-    setUploadError(null);
-    setUploading(true);
-    try {
-      const newItems: typeof attachments = [];
-      for (let i = 0; i < files.length; i += 1) {
-        const row = await uploadWorkOrderPhoto(files[i]);
-        newItems.push({
-          id: row.id,
-          fileUrl: row.fileUrl,
-          filename: row.filename,
-          createdAt: row.createdAt,
-        });
-      }
-      setAttachments((prev) => [...newItems, ...prev]);
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Error al subir");
-    } finally {
-      setUploading(false);
-      e.target.value = "";
-    }
-  }
-
   async function onChecklistPhotoSelected(itemId: string, e: React.ChangeEvent<HTMLInputElement>) {
     if (!checklistUnlocked) return;
     const file = e.target.files?.[0];
@@ -239,18 +272,6 @@ export function WorkOrderDetail({
     setUploading(true);
     try {
       const row = await uploadWorkOrderPhoto(file);
-      setAttachments((prev) => {
-        if (prev.some((p) => p.fileUrl === row.fileUrl)) return prev;
-        return [
-          {
-            id: row.id,
-            fileUrl: row.fileUrl,
-            filename: row.filename,
-            createdAt: row.createdAt,
-          },
-          ...prev,
-        ];
-      });
       setChecklist((prev) =>
         prev.map((i) =>
           i.id === itemId ? { ...i, value: row.fileUrl } : i
@@ -323,6 +344,38 @@ export function WorkOrderDetail({
     }
   }
 
+  async function submitComment() {
+    const body = commentDraft.trim();
+    if ((!body && commentFiles.length === 0) || commentSaving) return;
+    setCommentSaving(true);
+    setCommentsError(null);
+    try {
+      const formData = new FormData();
+      formData.append("body", body);
+      for (const file of commentFiles) {
+        formData.append("files", file);
+      }
+      const res = await fetch(`/api/work-orders/${initial.id}/notes`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          (data as { error?: string })?.error ?? "No se pudo guardar el comentario."
+        );
+      }
+      setCommentDraft("");
+      setCommentFiles([]);
+      if (commentFilesInputRef.current) commentFilesInputRef.current.value = "";
+      setComments((prev) => [data as WorkOrderComment, ...prev]);
+    } catch (error) {
+      setCommentsError(error instanceof Error ? error.message : "No se pudo guardar el comentario.");
+    } finally {
+      setCommentSaving(false);
+    }
+  }
+
   const pr = priorityDetail[initial.priority] ?? {
     Icon: Equal,
     className: "text-zinc-400",
@@ -345,11 +398,6 @@ export function WorkOrderDetail({
           : initial.status === "cancelled"
             ? "Cancelada"
             : initial.status.replace("_", " ");
-
-  const adjuntosDisplay = useMemo(
-    () => mergeAttachmentsWithChecklistPhotos(attachments, checklist),
-    [attachments, checklist]
-  );
 
   return (
     <div className="space-y-6">
@@ -415,69 +463,17 @@ export function WorkOrderDetail({
             </div>
           </details>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-zinc-900">Adjuntos</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 mb-2">
-          Fotos y evidencias de la tarea
-        </p>
-        {uploadError && (
-          <p className="mb-2 text-sm text-red-600">{uploadError}</p>
-        )}
-        {!isCompleted && (
-          <div className="mb-3">
-            <input
-              ref={woPhotoInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={onWorkOrderPhotosSelected}
-            />
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={() => woPhotoInputRef.current?.click()}
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 tap-target disabled:opacity-50"
-            >
-              <ImagePlus className="h-4 w-4" />
-              {uploading ? "Subiendo…" : "Subir fotos"}
-            </button>
-            <p className="mt-1 text-xs text-zinc-500">
-              Imagenes JPEG, PNG, WebP, etc.
-            </p>
-          </div>
-        )}
-        {adjuntosDisplay.length === 0 ? (
-          <p className="text-sm text-zinc-500">Aún no hay fotos adjuntas.</p>
-        ) : (
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {adjuntosDisplay.map((a) => (
-              <li key={a.id} className="overflow-hidden rounded-lg border border-zinc-200">
-                <button
-                  type="button"
-                  onClick={() => setImageLightbox({ src: a.fileUrl, alt: a.filename })}
-                  className="tap-target block aspect-square w-full bg-zinc-100 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                  aria-label={`Ampliar: ${a.filename}`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={a.fileUrl}
-                    alt=""
-                    className="pointer-events-none h-full w-full object-cover"
-                  />
-                </button>
-                <p title={a.filename} className="truncate px-1 py-1 text-xs text-zinc-500">
-                  {a.filename}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       {checklist.length > 0 && (
         <section className="max-w-none rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-zinc-900">Checklist</h2>
+          <h2 className="text-sm font-semibold text-zinc-900">
+            Checklist
+            {initial.checklistMeta ? ` · ${initial.checklistMeta.templateName}` : ""}
+            {initial.checklistMeta?.revisionName
+              ? ` · Revisión ${initial.checklistMeta.revisionName}`
+              : initial.checklistMeta?.revisionNumber != null
+                ? ` · Revisión ${initial.checklistMeta.revisionNumber}`
+                : ""}
+          </h2>
           {!checklistUnlocked && initial.status === "pending" && (
             <p className="mb-2 mt-1 text-xs text-amber-700">
               Cambia el estado a <strong>En curso</strong> en el panel derecho para
@@ -522,6 +518,19 @@ export function WorkOrderDetail({
                   >
                     {item.label}
                   </span>
+                </li>
+              ) : item.type === "text_block" ? (
+                <li
+                  key={item.id}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-zinc-900"
+                >
+                  {item.fieldType === "title" ? (
+                    <h3 className="text-lg font-semibold text-zinc-900">{item.label}</h3>
+                  ) : item.fieldType === "subtitle" ? (
+                    <h4 className="text-base font-semibold text-zinc-800">{item.label}</h4>
+                  ) : (
+                    <p className="text-sm leading-relaxed text-zinc-700">{item.label}</p>
+                  )}
                 </li>
               ) : (
                 <li
@@ -676,6 +685,129 @@ export function WorkOrderDetail({
           )}
         </section>
       )}
+
+          <section className="rounded-xl border border-zinc-200 bg-white p-3 md:p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-zinc-900">Actividad y evidencias</h2>
+            </div>
+            <div className="space-y-1.5">
+              <textarea
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                placeholder="Escribe un comentario..."
+                rows={2}
+                className="w-full rounded-lg border border-zinc-300 px-2.5 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={commentFilesInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = e.target.files;
+                      if (!files) return;
+                      setCommentFiles(Array.from(files));
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => commentFilesInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 tap-target"
+                  >
+                    <ImagePlus className="h-3.5 w-3.5" />
+                    Adjuntar
+                  </button>
+                  {commentFiles.length > 0 ? (
+                    <span className="text-xs text-zinc-500">
+                      {commentFiles.length} archivo(s) seleccionado(s)
+                    </span>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void submitComment()}
+                  disabled={commentSaving || (commentDraft.trim().length === 0 && commentFiles.length === 0)}
+                  className="rounded-lg bg-[#F14C03] px-2.5 py-1.5 text-xs font-medium text-white tap-target hover:bg-[#D84402] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {commentSaving ? "Enviando..." : "Comentar"}
+                </button>
+              </div>
+            </div>
+            {commentsError ? <p className="mt-2 text-xs text-red-600">{commentsError}</p> : null}
+            <div className="mt-2 max-h-72 overflow-y-auto pr-1">
+              {commentsLoading ? (
+                <p className="text-xs text-zinc-500">Cargando comentarios...</p>
+              ) : comments.length === 0 ? (
+                <p className="text-xs text-zinc-500">Aún no hay comentarios.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {comments.map((comment) => {
+                    const parsed = parseCommentBody(comment.body);
+                    return (
+                      <li key={comment.id} className="rounded-lg border border-zinc-200 p-2">
+                        <div className="flex items-start gap-2">
+                          <UserAvatar
+                            userId={comment.user?.id ?? comment.id}
+                            name={comment.user?.name ?? "Usuario"}
+                            avatarUrl={comment.user?.avatarUrl ?? null}
+                            size="sm"
+                            className="!h-7 !w-7 !text-[9px]"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-zinc-500">
+                              <span className="font-medium text-zinc-800">
+                                {comment.user?.name ?? "Usuario"}
+                              </span>
+                              <span>•</span>
+                              <span>{formatDate(comment.createdAt)}</span>
+                            </div>
+                            {parsed.text ? (
+                              <p className="mt-0.5 whitespace-pre-wrap text-xs text-zinc-800">
+                                {parsed.text}
+                              </p>
+                            ) : null}
+                            {parsed.attachments.length > 0 ? (
+                              <ul className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                                {parsed.attachments.map((attachment) => (
+                                  <li
+                                    key={`${comment.id}-${attachment.fileUrl}`}
+                                    className="overflow-hidden rounded-md border border-zinc-200"
+                                  >
+                                    <a
+                                      href={attachment.fileUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="tap-target flex aspect-square w-full flex-col items-center justify-center gap-1 bg-zinc-50 px-2 text-zinc-600 hover:bg-zinc-100"
+                                    >
+                                      <FileText className="h-5 w-5 text-zinc-500" aria-hidden />
+                                      <span className="line-clamp-2 text-center text-[10px] font-medium">
+                                        {isImageAttachment(attachment.filename, attachment.fileUrl) &&
+                                        !isLikelyInternalDownloadUrl(attachment.fileUrl)
+                                          ? "Imagen"
+                                          : "Archivo"}
+                                      </span>
+                                    </a>
+                                    <p
+                                      title={attachment.filename}
+                                      className="truncate px-1 py-0.5 text-[10px] text-zinc-500"
+                                    >
+                                      {attachment.filename}
+                                    </p>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </section>
 
         </div>
 

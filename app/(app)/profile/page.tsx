@@ -4,6 +4,7 @@ import { ProfilePhotoUpload } from "./ProfilePhotoUpload";
 function roleLabel(role: string) {
   if (role === "operator") return "Operador";
   if (role === "admin") return "Administrador";
+  if (role === "supervisor") return "Supervisor";
   return role;
 }
 

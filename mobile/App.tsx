@@ -187,6 +187,24 @@ type WorkOrderDetail = {
   attachments?: { id: string; fileUrl: string; filename: string; createdAt: string }[];
 };
 
+type WorkOrderComment = {
+  id: string;
+  body: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    avatarBackgroundColor?: string | null;
+  } | null;
+};
+
+type PendingCommentFile = {
+  uri: string;
+  filename: string;
+  mimeType: string;
+};
+
 type KnowledgeItem = {
   id: string;
   filename: string;
@@ -488,6 +506,10 @@ function looksLikePdf(filename: string | null | undefined, urlOrPath: string): b
 
 function looksLikeImageFilename(filename: string): boolean {
   return /\.(jpe?g|png|gif|webp|bmp)$/i.test(filename.trim());
+}
+
+function isLikelyInternalDownloadUrl(urlOrPath: string): boolean {
+  return urlOrPath.startsWith("/api/work-orders/");
 }
 
 type KnowledgeFileKind = "pdf" | "image" | "other";
@@ -800,12 +822,31 @@ function sanitizeUploadFilename(name: string): string {
   return n || "foto.jpg";
 }
 
+function buildCommentAttachmentToken(filename: string, fileUrl: string): string {
+  return `[[file:${encodeURIComponent(filename)}|${fileUrl}]]`;
+}
+
+const COMMENT_ATTACHMENT_REGEX = /\[\[file:([^|\]]+)\|([^\]]+)\]\]/g;
+
+function parseCommentBodyWithAttachments(body: string): {
+  text: string;
+  attachments: { filename: string; fileUrl: string }[];
+} {
+  const attachments: { filename: string; fileUrl: string }[] = [];
+  const text = body.replace(COMMENT_ATTACHMENT_REGEX, (_full, encodedName: string, fileUrl: string) => {
+    const filename = decodeURIComponent(encodedName);
+    attachments.push({ filename, fileUrl });
+    return "";
+  });
+  return { text: text.trim(), attachments };
+}
+
 /**
  * ImagePicker often returns `content://` (Android) or non-file URIs that React Native's
  * `fetch`+FormData cannot read — that surfaces as "Network request failed". Copy to a
  * real `file://` path first; then use expo-file-system multipart upload (reliable on device).
  */
-async function prepareImageFileForUpload(fileUri: string, filename: string): Promise<{
+async function prepareFileForUpload(fileUri: string, filename: string): Promise<{
   localUri: string;
   removeAfter: boolean;
 }> {
@@ -822,17 +863,17 @@ async function prepareImageFileForUpload(fileUri: string, filename: string): Pro
   return { localUri: dest, removeAfter: true };
 }
 
-async function apiUploadWorkOrderImage(
+async function apiUploadWorkOrderFile(
   workOrderId: string,
   fileUri: string,
   filename: string,
   mimeType: string
 ): Promise<WorkOrderAttachmentUploadResponse> {
   const safeName = sanitizeUploadFilename(filename);
-  const mime = mimeType?.trim() || "image/jpeg";
+  const mime = mimeType?.trim() || "application/octet-stream";
   const url = apiUrl(`/api/work-orders/${workOrderId}/attachments`);
 
-  const { localUri, removeAfter } = await prepareImageFileForUpload(fileUri, safeName);
+  const { localUri, removeAfter } = await prepareFileForUpload(fileUri, safeName);
   try {
     const form = new FormData();
     form.append(
@@ -908,6 +949,12 @@ function AppContent() {
     options: string[];
   } | null>(null);
   const [checklistPhotoUploadingId, setChecklistPhotoUploadingId] = useState<string | null>(null);
+  const [detailComments, setDetailComments] = useState<WorkOrderComment[]>([]);
+  const [detailCommentsLoading, setDetailCommentsLoading] = useState(false);
+  const [detailCommentsError, setDetailCommentsError] = useState<string | null>(null);
+  const [detailCommentDraft, setDetailCommentDraft] = useState("");
+  const [detailCommentFiles, setDetailCommentFiles] = useState<PendingCommentFile[]>([]);
+  const [detailCommentSaving, setDetailCommentSaving] = useState(false);
   const [checklistDatePicker, setChecklistDatePicker] = useState<{
     itemId: string;
     draft: Date;
@@ -1244,6 +1291,10 @@ function AppContent() {
     setSelectedWorkOrderId(null);
     setSelectedWorkOrder(null);
     setDetailError(null);
+    setDetailComments([]);
+    setDetailCommentsError(null);
+    setDetailCommentDraft("");
+    setDetailCommentFiles([]);
   }, []);
 
   const clearClientSession = useCallback(
@@ -1276,15 +1327,25 @@ function AppContent() {
       setDetailLoading(true);
       setDetailError(null);
     }
+    setDetailCommentsLoading(true);
+    setDetailCommentsError(null);
     try {
-      const data = await apiFetch<WorkOrderDetail>(`/api/work-orders/${id}`);
+      const [data, notes] = await Promise.all([
+        apiFetch<WorkOrderDetail>(`/api/work-orders/${id}`),
+        apiFetch<WorkOrderComment[]>(`/api/work-orders/${id}/notes`),
+      ]);
       setSelectedWorkOrder({ ...data, status: normalizeWoStatus(data.status) });
+      setDetailComments(Array.isArray(notes) ? notes : []);
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : "No se pudo cargar detalle.");
+      setDetailCommentsError(
+        error instanceof Error ? error.message : "No se pudieron cargar comentarios."
+      );
       if (!silent) {
         setSelectedWorkOrder(null);
       }
     } finally {
+      setDetailCommentsLoading(false);
       if (!silent) {
         setDetailLoading(false);
       }
@@ -1340,6 +1401,28 @@ function AppContent() {
     }
   }
 
+  function parseChecklistNumberDraftValue(raw: string): number | null {
+    const trimmed = raw.trim();
+    if (trimmed === "") return null;
+    const n = Number(trimmed.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  async function flushChecklistNumberDrafts(workOrderId: string): Promise<void> {
+    if (selectedWorkOrderId !== workOrderId || selectedWorkOrder == null) return;
+    const pending = Object.entries(checklistNumberDraft);
+    if (pending.length === 0) return;
+
+    setChecklistNumberDraft({});
+    await Promise.all(
+      pending.map(([itemId, text]) =>
+        updateChecklist(itemId, {
+          value: parseChecklistNumberDraftValue(text),
+        })
+      )
+    );
+  }
+
   async function updateWorkOrderStatusById(id: string, next: WoStatus) {
     setOrdersError(null);
     setDetailError(null);
@@ -1347,6 +1430,7 @@ function AppContent() {
       selectedWorkOrderId === id && selectedWorkOrder != null ? selectedWorkOrder : null;
     try {
       if (next === "completed") {
+        await flushChecklistNumberDrafts(id);
         const checklistOk = await ensureChecklistCompleteBeforeClose(id);
         if (!checklistOk) return;
       }
@@ -1435,7 +1519,7 @@ function AppContent() {
         const ext = mime.includes("png") ? ".png" : mime.includes("webp") ? ".webp" : ".jpg";
         filename = `evidencia${ext}`;
       }
-      const uploaded = await apiUploadWorkOrderImage(wo.id, asset.uri, filename, mime);
+      const uploaded = await apiUploadWorkOrderFile(wo.id, asset.uri, filename, mime);
       await updateChecklist(itemId, { value: uploaded.fileUrl });
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : "No se pudo subir la foto.");
@@ -1476,6 +1560,76 @@ function AppContent() {
       { text: "Camara", onPress: () => void pickChecklistPhotoFromCamera(itemId) },
       { text: "Galeria", onPress: () => void pickChecklistPhotoFromLibrary(itemId) },
     ]);
+  }
+
+  async function pickCommentImagesFromLibrary() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permiso", "Se necesita acceso a la galería para elegir imágenes.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const files = result.assets.map((asset, idx) => {
+      const mime = asset.mimeType?.trim() || "image/jpeg";
+      const fallbackExt = mime.includes("png") ? ".png" : mime.includes("webp") ? ".webp" : ".jpg";
+      const filename =
+        asset.fileName?.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "").slice(0, 120) ||
+        `imagen-${Date.now()}-${idx}${fallbackExt}`;
+      return {
+        uri: asset.uri,
+        filename,
+        mimeType: mime,
+      } satisfies PendingCommentFile;
+    });
+    setDetailCommentFiles((prev) => [...prev, ...files]);
+  }
+
+  function openCommentAttachmentPicker() {
+    Alert.alert("Adjuntar en comentario", "Elige imágenes para adjuntar al comentario", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Imágenes", onPress: () => void pickCommentImagesFromLibrary() },
+    ]);
+  }
+
+  async function submitDetailComment() {
+    if (!selectedWorkOrder || detailCommentSaving) return;
+    const bodyText = detailCommentDraft.trim();
+    if (!bodyText && detailCommentFiles.length === 0) return;
+    setDetailCommentSaving(true);
+    setDetailCommentsError(null);
+    setDetailError(null);
+    try {
+      const uploadedTokens: string[] = [];
+      for (const file of detailCommentFiles) {
+        const uploaded = await apiUploadWorkOrderFile(
+          selectedWorkOrder.id,
+          file.uri,
+          file.filename,
+          file.mimeType
+        );
+        uploadedTokens.push(buildCommentAttachmentToken(uploaded.filename, uploaded.fileUrl));
+      }
+      const composedBody = [bodyText, ...uploadedTokens].filter((x) => x.trim() !== "").join("\n");
+      const created = await apiFetch<WorkOrderComment>(`/api/work-orders/${selectedWorkOrder.id}/notes`, {
+        method: "POST",
+        body: JSON.stringify({ body: composedBody }),
+      });
+      setDetailComments((prev) => [created, ...prev]);
+      setDetailCommentDraft("");
+      setDetailCommentFiles([]);
+      void openWorkOrder(selectedWorkOrder.id, { silent: true });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "No se pudo enviar el comentario.";
+      setDetailCommentsError(msg);
+      setDetailError(msg);
+    } finally {
+      setDetailCommentSaving(false);
+    }
   }
 
   async function updateMyPassword() {
@@ -1958,42 +2112,131 @@ function AppContent() {
                       </View>
                     </View>
 
-                    {(selectedWorkOrder.attachments?.length ?? 0) > 0 ? (
-                      <View style={styles.detailCard}>
-                        <View style={styles.detailCardHeader}>
-                          <Text style={styles.detailCardHeaderTitle}>Adjuntos</Text>
-                          <Text style={styles.detailCardHeaderSub}>
-                            Fotos y evidencias de la tarea
-                          </Text>
-                        </View>
-                        <View style={styles.detailCardBody}>
-                          <View style={styles.attachmentGrid}>
-                            {(selectedWorkOrder.attachments ?? []).map((a) => (
-                              <Pressable
-                                key={a.id}
-                                style={styles.attachmentCell}
-                                onPress={() => openAttachmentUrl(a.fileUrl, a.filename)}
-                              >
-                                {looksLikePdf(a.filename, a.fileUrl) ? (
-                                  <View style={[styles.attachmentThumb, styles.attachmentPdfThumb]}>
-                                    <Ionicons name="document-text" size={32} color={theme.primary} />
-                                  </View>
-                                ) : (
-                                  <Image
-                                    source={{ uri: absoluteFileUrl(a.fileUrl) }}
-                                    style={styles.attachmentThumb}
-                                    resizeMode="cover"
-                                  />
-                                )}
-                                <Text style={styles.attachmentCaption} numberOfLines={1}>
-                                  {a.filename}
-                                </Text>
-                              </Pressable>
-                            ))}
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Text style={styles.detailCardHeaderTitle}>Actividad y evidencias</Text>
+                        <Text style={styles.detailCardHeaderSub}>
+                          Comenta y adjunta archivos o imágenes.
+                        </Text>
+                      </View>
+                      <View style={styles.detailCardBody}>
+                        <View style={styles.commentComposerCard}>
+                          <TextInput
+                            value={detailCommentDraft}
+                            onChangeText={setDetailCommentDraft}
+                            placeholder="Escribe un comentario..."
+                            placeholderTextColor={theme.zinc400}
+                            multiline
+                            style={styles.commentComposerInput}
+                          />
+                          {detailCommentFiles.length > 0 ? (
+                            <Text style={styles.commentAttachmentCount}>
+                              {detailCommentFiles.length} archivo(s) seleccionado(s)
+                            </Text>
+                          ) : null}
+                          <View style={styles.commentComposerActions}>
+                            <Pressable
+                              style={styles.commentAttachBtn}
+                              onPress={openCommentAttachmentPicker}
+                              accessibilityRole="button"
+                            >
+                              <Ionicons name="attach-outline" size={16} color={theme.zinc700} />
+                              <Text style={styles.commentAttachBtnText}>Adjuntar</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[
+                                styles.commentSendBtn,
+                                (detailCommentSaving ||
+                                  (detailCommentDraft.trim().length === 0 &&
+                                    detailCommentFiles.length === 0)) &&
+                                  styles.commentSendBtnDisabled,
+                              ]}
+                              disabled={
+                                detailCommentSaving ||
+                                (detailCommentDraft.trim().length === 0 &&
+                                  detailCommentFiles.length === 0)
+                              }
+                              onPress={() => void submitDetailComment()}
+                              accessibilityRole="button"
+                            >
+                              <Text style={styles.commentSendBtnText}>
+                                {detailCommentSaving ? "Enviando..." : "Comentar"}
+                              </Text>
+                            </Pressable>
                           </View>
                         </View>
+                        {detailCommentsError ? (
+                          <Text style={styles.detailErrorText}>{detailCommentsError}</Text>
+                        ) : null}
+                        {detailCommentsLoading ? (
+                          <Text style={styles.detailRowMuted}>Cargando comentarios...</Text>
+                        ) : detailComments.length === 0 ? (
+                          <Text style={styles.detailRowMuted}>Aún no hay comentarios.</Text>
+                        ) : (
+                          <View style={styles.commentList}>
+                            {detailComments.map((comment) => {
+                              const parsed = parseCommentBodyWithAttachments(comment.body);
+                              return (
+                                <View key={comment.id} style={styles.commentItem}>
+                                  <View style={styles.commentHeader}>
+                                    <Text style={styles.commentAuthor}>
+                                      {comment.user?.name ?? "Usuario"}
+                                    </Text>
+                                    <Text style={styles.commentDate}>
+                                      {formatWoDetailDate(comment.createdAt)}
+                                    </Text>
+                                  </View>
+                                  {parsed.text ? (
+                                    <Text style={styles.commentBody}>{parsed.text}</Text>
+                                  ) : null}
+                                  {parsed.attachments.length > 0 ? (
+                                    <View style={styles.attachmentGrid}>
+                                      {parsed.attachments.map((a, idx) => (
+                                        <Pressable
+                                          key={`${comment.id}-${a.fileUrl}-${idx}`}
+                                          style={styles.attachmentCell}
+                                          onPress={() => openAttachmentUrl(a.fileUrl, a.filename)}
+                                        >
+                                          {looksLikePdf(a.filename, a.fileUrl) ? (
+                                            <View
+                                              style={[styles.attachmentThumb, styles.attachmentPdfThumb]}
+                                            >
+                                              <Ionicons
+                                                name="document-text"
+                                                size={32}
+                                                color={theme.primary}
+                                              />
+                                            </View>
+                                          ) : (
+                                            <View
+                                              style={[styles.attachmentThumb, styles.attachmentPdfThumb]}
+                                            >
+                                              <Ionicons
+                                                name={
+                                                  looksLikeImageFilename(a.filename) &&
+                                                  !isLikelyInternalDownloadUrl(a.fileUrl)
+                                                    ? "image-outline"
+                                                    : "document-attach"
+                                                }
+                                                size={32}
+                                                color={theme.primary}
+                                              />
+                                            </View>
+                                          )}
+                                          <Text style={styles.attachmentCaption} numberOfLines={1}>
+                                            {a.filename}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  ) : null}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        )}
                       </View>
-                    ) : null}
+                    </View>
 
                     {selectedWorkOrder.checklist.length > 0 ? (
                       <View style={styles.detailCard}>
@@ -2109,21 +2352,15 @@ function AppContent() {
                                     onChangeText={(text) => {
                                       setChecklistNumberDraft((d) => ({ ...d, [item.id]: text }));
                                     }}
-                                    onBlur={() => {
-                                      const text = checklistNumberDraft[item.id] ?? "";
+                                    onEndEditing={(event) => {
+                                      const text = event.nativeEvent.text ?? checklistNumberDraft[item.id] ?? "";
                                       setChecklistNumberDraft((d) => {
                                         const next = { ...d };
                                         delete next[item.id];
                                         return next;
                                       });
-                                      const trimmed = text.trim();
-                                      if (trimmed === "") {
-                                        void updateChecklist(item.id, { value: null });
-                                        return;
-                                      }
-                                      const n = Number(trimmed.replace(",", "."));
                                       void updateChecklist(item.id, {
-                                        value: Number.isFinite(n) ? n : null,
+                                        value: parseChecklistNumberDraftValue(text),
                                       });
                                     }}
                                     placeholder="Número"
@@ -3613,6 +3850,104 @@ const styles = StyleSheet.create({
   attachmentThumb: { width: "100%", aspectRatio: 1, backgroundColor: theme.zinc100 },
   attachmentPdfThumb: { alignItems: "center", justifyContent: "center" },
   attachmentCaption: { fontSize: 11, color: theme.zinc500, paddingHorizontal: 6, paddingVertical: 4 },
+  detailErrorText: {
+    fontSize: 12,
+    color: theme.red600,
+    marginTop: 8,
+  },
+  commentComposerCard: {
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    borderRadius: 10,
+    backgroundColor: theme.zinc50,
+    padding: 10,
+    gap: 8,
+  },
+  commentComposerInput: {
+    minHeight: 64,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    borderRadius: 8,
+    backgroundColor: theme.white,
+    color: theme.zinc900,
+    fontSize: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    textAlignVertical: "top",
+  },
+  commentAttachmentCount: {
+    fontSize: 12,
+    color: theme.zinc500,
+  },
+  commentComposerActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+  },
+  commentAttachBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    borderRadius: 8,
+    backgroundColor: theme.white,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  commentAttachBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: theme.zinc700,
+  },
+  commentSendBtn: {
+    borderRadius: 8,
+    backgroundColor: theme.accent,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  commentSendBtnDisabled: {
+    opacity: 0.6,
+  },
+  commentSendBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.white,
+  },
+  commentList: {
+    gap: 8,
+    marginTop: 10,
+  },
+  commentItem: {
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    borderRadius: 10,
+    backgroundColor: theme.white,
+    padding: 10,
+    gap: 6,
+  },
+  commentHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  commentAuthor: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.zinc900,
+    flexShrink: 1,
+  },
+  commentDate: {
+    fontSize: 11,
+    color: theme.zinc500,
+  },
+  commentBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: theme.zinc800,
+  },
   dashboardScroll: { flex: 1 },
   dashboardScrollContent: { paddingBottom: 24, flexGrow: 1 },
   dashboardSectionHeader: {

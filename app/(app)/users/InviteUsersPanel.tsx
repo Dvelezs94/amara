@@ -20,6 +20,7 @@ type AdminUser = {
 const roleLabel: Record<UserRole, string> = {
   operator: "Operador",
   admin: "Administrador",
+  supervisor: "Supervisor",
 };
 
 function generatePassword() {

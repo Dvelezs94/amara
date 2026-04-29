@@ -9,6 +9,7 @@ import { users } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { AssetFilesSection } from "./AssetFilesSection";
 import { AssetWorkOrdersList } from "./AssetWorkOrdersList";
+import { AssetActions } from "./AssetActions";
 
 async function getAsset(id: string) {
   const asset = await db.query.assets.findFirst({
@@ -51,18 +52,21 @@ export default async function AssetDetailPage({
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/assets"
-            className="inline-flex items-center gap-1 text-sm font-medium text-[#F14C03] hover:underline"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Maquinas
-          </Link>
-          <span aria-hidden className="text-zinc-400">
-            /
-          </span>
-          <h1 className="text-xl font-semibold text-zinc-900">{asset.name}</h1>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Link
+              href="/assets"
+              className="inline-flex items-center gap-1 text-sm font-medium text-[#F14C03] hover:underline"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Maquinas
+            </Link>
+            <span aria-hidden className="text-zinc-400">
+              /
+            </span>
+            <h1 className="text-xl font-semibold text-zinc-900">{asset.name}</h1>
+          </div>
+          <AssetActions id={asset.id} name={asset.name} />
         </div>
         <p className="text-zinc-500">{asset.assetId}</p>
       </div>

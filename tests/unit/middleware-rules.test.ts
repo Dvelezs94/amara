@@ -4,6 +4,8 @@ import {
   isOperatorApiPathAllowed,
   isOperatorAppPathAllowed,
   isPathUnderAnyPrefix,
+  isSupervisorApiPathAllowed,
+  isSupervisorAppPathAllowed,
 } from "@/lib/middleware-rules";
 
 function makeSessionCookie(role: string) {
@@ -19,6 +21,9 @@ describe("decodeSessionRoleFromCookie", () => {
       "operator"
     );
     expect(decodeSessionRoleFromCookie(makeSessionCookie("admin"))).toBe("admin");
+    expect(decodeSessionRoleFromCookie(makeSessionCookie("supervisor"))).toBe(
+      "supervisor"
+    );
   });
   it("returns null for malformed token", () => {
     expect(decodeSessionRoleFromCookie("")).toBeNull();
@@ -57,5 +62,24 @@ describe("isOperatorAppPathAllowed", () => {
   it("blocks admin-only sections", () => {
     expect(isOperatorAppPathAllowed("/calendario")).toBe(false);
     expect(isOperatorAppPathAllowed("/assets")).toBe(false);
+  });
+});
+
+describe("isSupervisor*PathAllowed", () => {
+  it("allows supervisor checklist app and api paths", () => {
+    expect(isSupervisorAppPathAllowed("/checklists")).toBe(true);
+    expect(isSupervisorAppPathAllowed("/checklists/abc")).toBe(true);
+    expect(isSupervisorAppPathAllowed("/tareas")).toBe(true);
+    expect(isSupervisorAppPathAllowed("/tareas/abc")).toBe(true);
+    expect(isSupervisorApiPathAllowed("/api/checklist-templates")).toBe(true);
+    expect(isSupervisorApiPathAllowed("/api/checklist-templates/abc/revisions")).toBe(
+      true
+    );
+    expect(isSupervisorApiPathAllowed("/api/work-orders")).toBe(true);
+  });
+
+  it("blocks non-checklist supervisor paths", () => {
+    expect(isSupervisorAppPathAllowed("/tareas")).toBe(false);
+    expect(isSupervisorApiPathAllowed("/api/work-orders")).toBe(false);
   });
 });

@@ -20,9 +20,9 @@ export async function POST(req: Request) {
   const nombreContacto = (body.nombreContacto ?? "").trim();
   const emailContacto = (body.emailContacto ?? "").trim().toLowerCase();
 
-  if (!titulo || !descripcion) {
+  if (!titulo || !descripcion || !nombreContacto) {
     return NextResponse.json(
-      { error: "Titulo y descripcion son obligatorios" },
+      { error: "Titulo, descripcion y nombre de contacto son obligatorios" },
       { status: 400 }
     );
   }
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
       source: "/solicitud",
       title: titulo,
       priority: prioridad,
-      hasContact: Boolean(nombreContacto || emailContacto),
+      hasContact: Boolean(nombreContacto),
     },
   });
 

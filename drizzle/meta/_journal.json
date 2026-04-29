@@ -29,6 +29,13 @@
       "when": 1775808374264,
       "tag": "0003_absurd_blonde_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1777398000000,
+      "tag": "0004_checklist_revisions",
+      "breakpoints": true
     }
   ]
 }

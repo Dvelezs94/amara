@@ -5,12 +5,8 @@ import { assets } from "@/lib/db/schema";
 import { assetFiles } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { createId } from "@/lib/id";
-import { join } from "path";
-import { writeFile, mkdir } from "fs/promises";
 import { recordAuditLog } from "@/lib/audit";
-
-const UPLOAD_DIR_FS = "public/uploads/asset-files";
-const UPLOAD_DIR_PUBLIC = "uploads/asset-files";
+import { uploadFileToS3 } from "@/lib/s3-storage";
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
@@ -74,20 +70,12 @@ export async function POST(
   const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
   const baseName = sanitizeFilename(file.name.slice(0, file.name.length - ext.length));
   const uniqueName = `${createId()}${ext || ""}`;
-  const dir = join(process.cwd(), UPLOAD_DIR_FS);
-  const filePath = join(dir, uniqueName);
-  try {
-    await mkdir(dir, { recursive: true });
-    const bytes = await file.arrayBuffer();
-    await writeFile(filePath, Buffer.from(bytes));
-  } catch {
-    return NextResponse.json(
-      { error: "No se pudo guardar el archivo. Verifica permisos de /public/uploads/asset-files." },
-      { status: 500 }
-    );
-  }
-
-  const fileUrl = `/${UPLOAD_DIR_PUBLIC}/${uniqueName}`;
+  const bytes = await file.arrayBuffer();
+  const fileUrl = await uploadFileToS3({
+    objectKey: `asset-files/${uniqueName}`,
+    bytes: Buffer.from(bytes),
+    contentType: file.type || "application/octet-stream",
+  });
   const id = createId();
   await db.insert(assetFiles).values({
     id,

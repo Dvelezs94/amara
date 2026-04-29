@@ -10,6 +10,8 @@ const FREQUENCY_OPTIONS: { value: string; label: string }[] = [
   { value: "daily", label: "Diario" },
   { value: "weekly", label: "Semanal" },
   { value: "monthly", label: "Mensual" },
+  { value: "quarterly", label: "Trimestral" },
+  { value: "semiannual", label: "Semestral" },
   { value: "yearly", label: "Anual" },
 ];
 
@@ -64,9 +66,18 @@ export function CreateMaintenanceEventForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const showInterval = frequency !== "none";
-  const showWeekdayPick =
-    frequency === "weekly" && interval === 1;
+  const effectiveFrequency = useMemo(() => {
+    if (frequency === "quarterly" || frequency === "semiannual") return "monthly";
+    return frequency;
+  }, [frequency]);
+  const effectiveInterval = useMemo(() => {
+    if (frequency === "quarterly") return 3;
+    if (frequency === "semiannual") return 6;
+    return interval;
+  }, [frequency, interval]);
+
+  const showInterval = effectiveFrequency !== "none";
+  const showWeekdayPick = effectiveFrequency === "weekly" && effectiveInterval === 1;
 
   const bodyWeekdays = useMemo(() => {
     if (!showWeekdayPick) return undefined;
@@ -96,8 +107,8 @@ export function CreateMaintenanceEventForm({
         body: JSON.stringify({
           name,
           startDate,
-          frequency,
-          interval: showInterval ? interval : 1,
+          frequency: effectiveFrequency,
+          interval: showInterval ? effectiveInterval : 1,
           ...(bodyWeekdays ? { weekdays: bodyWeekdays } : {}),
           until: until.trim() || null,
           assetId: assetId || null,
@@ -188,7 +199,7 @@ export function CreateMaintenanceEventForm({
               ? "N días"
               : frequency === "weekly"
                 ? "N semanas"
-                : frequency === "monthly"
+                : effectiveFrequency === "monthly"
                   ? "N meses"
                   : "N años"}
           </label>
@@ -196,13 +207,14 @@ export function CreateMaintenanceEventForm({
             type="number"
             min={1}
             max={99}
-            value={interval}
+            value={effectiveInterval}
             onChange={(e) =>
               setInterval(Math.max(1, parseInt(e.target.value, 10) || 1))
             }
+            disabled={frequency === "quarterly" || frequency === "semiannual"}
             className="w-full max-w-[120px] rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
-          {frequency === "weekly" && interval > 1 && (
+          {effectiveFrequency === "weekly" && effectiveInterval > 1 && (
             <p className="text-xs text-amber-700">
               Con intervalo mayor a 1 semana solo se usa el primer día marcado
               abajo (o el día de la fecha de inicio).

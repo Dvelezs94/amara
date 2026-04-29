@@ -45,6 +45,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 
 - **`admin`** — Full app routes and APIs (see `middleware.ts` for the full picture)
 - **`operator`** — Restricted to **app paths** like `/tareas`, `/knowledge-base`, `/profile` and a **whitelist of API prefixes** (work orders, knowledge base, notifications, users list for assignees, assets, checklists, avatars, etc.). Anything else is **403** or redirect to `/tareas`
+- **`supervisor`** — Restricted to **checklists/revisions** only (`/checklists` and checklist template/revision APIs). Supervisor can approve/reject proposed checklist revisions.
 
 **Middleware** (`middleware.ts`) enforces auth and operator scope; keep it in sync when adding new operator-facing pages or APIs.
 
@@ -52,6 +53,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 
 - **`AppShell.tsx`** — Main chrome: desktop sidebar (orange active items, MSA branding), light gray main background (`zinc-200`), white cards, mobile bottom navigation with orange active state
 - **Work orders** — Kanban-style board in `app/(app)/tareas/WorkOrderList.tsx`; detail in `WorkOrderDetail.tsx`
+- **Checklist revisions** — Checklist edits create named proposed revisions (starting from baseline revision `0`). Revisions are reviewed in the right-side panel on checklist detail, and supervisors can approve/reject proposals.
 - **Touch** — `.tap-target` in globals for minimum touch size on coarse pointers
 
 ### Data layer

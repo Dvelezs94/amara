@@ -4,7 +4,9 @@ import { workOrderChecklist } from "@/lib/db/schema";
 import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
 import { attachments } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { checklistTemplates } from "@/lib/db/schema";
+import { checklistTemplateRevisions } from "@/lib/db/schema";
+import { and, eq, desc } from "drizzle-orm";
 
 export async function getWorkOrderById(id: string) {
   const wo = await db.query.workOrders.findFirst({
@@ -43,6 +45,24 @@ export async function getWorkOrderById(id: string) {
     where: eq(workOrderChecklist.workOrderId, id),
     orderBy: (items, { asc }) => [asc(items.sortOrder)],
   });
+  const checklistTemplateId =
+    checklist.find((item) => item.checklistTemplateId != null)?.checklistTemplateId ?? null;
+  const [checklistTemplate, approvedRevision] = await Promise.all([
+    checklistTemplateId
+      ? db.query.checklistTemplates.findFirst({
+          where: eq(checklistTemplates.id, checklistTemplateId),
+        })
+      : null,
+    checklistTemplateId
+      ? db.query.checklistTemplateRevisions.findFirst({
+          where: and(
+            eq(checklistTemplateRevisions.checklistTemplateId, checklistTemplateId),
+            eq(checklistTemplateRevisions.status, "approved")
+          ),
+          orderBy: (rev, { desc }) => [desc(rev.revisionNumber)],
+        })
+      : null,
+  ]);
   const attachmentList = await db.query.attachments.findMany({
     where: eq(attachments.workOrderId, id),
     orderBy: [desc(attachments.createdAt)],
@@ -54,7 +74,18 @@ export async function getWorkOrderById(id: string) {
       : null,
     assignee: assignee ?? null,
     requester: requester ?? null,
+    checklistMeta:
+      checklistTemplate != null
+        ? {
+            templateName: checklistTemplate.name,
+            revisionName: approvedRevision?.name ?? null,
+            revisionNumber: approvedRevision?.revisionNumber ?? null,
+          }
+        : null,
     checklist,
-    attachments: attachmentList,
+    attachments: attachmentList.map((row) => ({
+      ...row,
+      fileUrl: `/api/work-orders/${id}/attachments/${row.id}/download`,
+    })),
   };
 }

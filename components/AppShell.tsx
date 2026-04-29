@@ -58,26 +58,31 @@ const baseNavSections: { type: string; items: NavItem[] }[] = [
 function roleLabel(role: string) {
  if (role === "admin") return "Administrador";
  if (role === "operator") return "Operador";
+ if (role === "supervisor") return "Supervisor";
  return role;
 }
 
 function ProfileSubmenu({
+ role,
  onClose,
 }: {
+ role: SessionUser["role"];
  onClose: () => void;
 }) {
  return (
   <div
    className="w-full rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
   >
-   <Link
-    href="/profile"
-    onClick={onClose}
-    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-100 tap-target"
-   >
-    <Settings className="h-4 w-4 shrink-0" />
-    Ajustes
-   </Link>
+   {role !== "supervisor" && (
+    <Link
+     href="/profile"
+     onClick={onClose}
+     className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-100 tap-target"
+    >
+     <Settings className="h-4 w-4 shrink-0" />
+     Ajustes
+    </Link>
+   )}
    <form action="/api/auth/logout" method="POST" className="border-t border-zinc-100">
     <button
      type="submit"
@@ -105,28 +110,46 @@ export function AppShell({
  const navSections = [
   ...(user.role === "admin"
    ? baseNavSections
-   : [
-     {
-      type: "Operaciones",
-      items: [
-       {
-        href: "/tareas",
-        label: "Tareas",
-        icon: ClipboardList,
-       } satisfies NavItem,
-      ],
-     },
-     {
-      type: "Contenido",
-      items: [
-       {
-        href: "/knowledge-base",
-        label: "Base de conocimiento",
-        icon: BookOpen,
-       } satisfies NavItem,
-      ],
-     },
-    ]),
+   : user.role === "supervisor"
+    ? [
+      {
+       type: "Operaciones",
+       items: [
+        {
+         href: "/tareas",
+         label: "Tareas",
+         icon: ClipboardList,
+        } satisfies NavItem,
+        {
+         href: "/checklists",
+         label: "Checklist",
+         icon: ListChecks,
+        } satisfies NavItem,
+       ],
+      },
+     ]
+    : [
+      {
+       type: "Operaciones",
+       items: [
+        {
+         href: "/tareas",
+         label: "Tareas",
+         icon: ClipboardList,
+        } satisfies NavItem,
+       ],
+      },
+      {
+       type: "Contenido",
+       items: [
+        {
+         href: "/knowledge-base",
+         label: "Base de conocimiento",
+         icon: BookOpen,
+        } satisfies NavItem,
+       ],
+      },
+     ]),
   ...(user.role === "admin"
    ? [
      {
@@ -154,12 +177,15 @@ export function AppShell({
    body: string | null;
    type: "assignment" | "work_order_update" | "mention";
    workOrderId: string | null;
+  noteId: string | null;
    readAt: string | null;
    createdAt: string;
   }>
  >([]);
  const [unreadCount, setUnreadCount] = useState(0);
  const [searchQuery, setSearchQuery] = useState("");
+ const canUseTaskFeatures =
+  user.role === "admin" || user.role === "operator" || user.role === "supervisor";
  const showBackButton =
   pathname.startsWith("/tareas/") ||
   pathname.startsWith("/checklists/") ||
@@ -211,6 +237,7 @@ export function AppShell({
  }, [profileMenuOpen, notificationsOpen]);
 
  useEffect(() => {
+  if (!canUseTaskFeatures) return;
   let cancelled = false;
   async function loadNotifications() {
    setNotificationsLoading(true);
@@ -233,7 +260,7 @@ export function AppShell({
    cancelled = true;
    clearInterval(timer);
   };
- }, []);
+ }, [canUseTaskFeatures]);
 
  function submitSearch() {
   const q = searchQuery.trim();
@@ -253,6 +280,26 @@ export function AppShell({
    prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() }))
   );
   setUnreadCount(0);
+ }
+
+ function parseChecklistNotification(body: string | null) {
+  if (!body) return null;
+  const match = body.match(/^\[checklist:([^\]]+)\]\s*/);
+  if (!match) return null;
+  return { checklistId: match[1] ?? "", cleanBody: body.replace(match[0], "") };
+ }
+
+ function notificationHref(n: {
+  title: string;
+  workOrderId: string | null;
+  noteId: string | null;
+  body: string | null;
+ }) {
+  const parsed = parseChecklistNotification(n.body);
+  if (n.title === "Nueva revisión de checklist" && parsed?.checklistId) {
+   return `/checklists/${parsed.checklistId}?mode=view`;
+  }
+  return n.workOrderId ? `/tareas/${n.workOrderId}` : "/tareas";
  }
 
  const profileAreaActive =
@@ -382,7 +429,7 @@ export function AppShell({
          : "mt-1 pl-2"
        }
       >
-       <ProfileSubmenu onClose={() => setProfileMenuOpen(false)} />
+       <ProfileSubmenu role={user.role} onClose={() => setProfileMenuOpen(false)} />
       </div>
      )}
     </div>
@@ -459,6 +506,7 @@ export function AppShell({
       MSA
      </Link>
      <div className="ml-auto flex items-center gap-2">
+      {canUseTaskFeatures && (
       <div className="relative md:hidden" ref={notificationsMobileRef}>
        <button
         type="button"
@@ -496,7 +544,7 @@ export function AppShell({
            notifications.map((n) => (
             <Link
              key={n.id}
-             href={n.workOrderId ? `/tareas/${n.workOrderId}` : "/tareas"}
+             href={notificationHref(n)}
              onClick={async () => {
               await fetch(`/api/notifications/${n.id}`, {
                method: "PATCH",
@@ -518,7 +566,11 @@ export function AppShell({
              }`}
             >
              <p className="font-semibold">{n.title}</p>
-             {n.body && <p className="mt-0.5 truncate">{n.body}</p>}
+             {n.body && (
+              <p className="mt-0.5 truncate">
+               {parseChecklistNotification(n.body)?.cleanBody ?? n.body}
+              </p>
+             )}
             </Link>
            ))
           )}
@@ -526,6 +578,7 @@ export function AppShell({
         </div>
        )}
       </div>
+      )}
       <div className="relative md:hidden" ref={profileHeaderRef}>
        <button
         type="button"
@@ -547,10 +600,11 @@ export function AppShell({
        </button>
        {profileMenuOpen && (
         <div className="absolute right-0 z-40 mt-2 w-48">
-         <ProfileSubmenu onClose={() => setProfileMenuOpen(false)} />
+         <ProfileSubmenu role={user.role} onClose={() => setProfileMenuOpen(false)} />
         </div>
        )}
       </div>
+      {canUseTaskFeatures && (
       <div className="hidden min-w-[260px] items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 md:flex">
        <Search className="h-4 w-4 text-neutral-400" />
        <input
@@ -571,6 +625,8 @@ export function AppShell({
         }
        />
       </div>
+      )}
+      {canUseTaskFeatures && (
       <button
        type="button"
        onClick={submitSearch}
@@ -579,6 +635,8 @@ export function AppShell({
       >
        <Search className="h-4 w-4" />
       </button>
+      )}
+      {canUseTaskFeatures && (
       <div className="relative hidden md:block" ref={notificationsRef}>
        <button
         type="button"
@@ -616,7 +674,7 @@ export function AppShell({
            notifications.map((n) => (
             <Link
              key={n.id}
-             href={n.workOrderId ? `/tareas/${n.workOrderId}` : "/tareas"}
+             href={notificationHref(n)}
              onClick={async () => {
               await fetch(`/api/notifications/${n.id}`, {
                method: "PATCH",
@@ -638,7 +696,11 @@ export function AppShell({
              }`}
             >
              <p className="font-semibold">{n.title}</p>
-             {n.body && <p className="mt-0.5 truncate">{n.body}</p>}
+             {n.body && (
+              <p className="mt-0.5 truncate">
+               {parseChecklistNotification(n.body)?.cleanBody ?? n.body}
+              </p>
+             )}
             </Link>
            ))
           )}
@@ -646,6 +708,7 @@ export function AppShell({
         </div>
        )}
       </div>
+      )}
      </div>
     </header>
 
