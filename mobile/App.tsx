@@ -528,6 +528,39 @@ function kbFileIonIcon(kind: KnowledgeFileKind): ComponentProps<typeof Ionicons>
 
 const KB_CACHE_SUBDIR = "kb-cache";
 let onAuthExpired: (() => void) | null = null;
+let sessionCookieHeader: string | null = null;
+const SESSION_STORAGE_FILE = `${FileSystem.documentDirectory ?? ""}mobile-session.json`;
+
+function extractSessionCookieHeader(setCookie: string | null): string | null {
+  if (!setCookie) return null;
+  const match = setCookie.match(/(?:^|,\s*)(session=[^;,\s]+)/i);
+  return match?.[1]?.trim() ?? null;
+}
+
+async function persistSessionCookieHeader(next: string | null): Promise<void> {
+  if (!FileSystem.documentDirectory) return;
+  if (next == null) {
+    await FileSystem.deleteAsync(SESSION_STORAGE_FILE, { idempotent: true }).catch(() => undefined);
+    return;
+  }
+  await FileSystem.writeAsStringAsync(
+    SESSION_STORAGE_FILE,
+    JSON.stringify({ sessionCookieHeader: next }),
+    { encoding: FileSystem.EncodingType.UTF8 }
+  );
+}
+
+async function loadPersistedSessionCookieHeader(): Promise<string | null> {
+  if (!FileSystem.documentDirectory) return null;
+  const info = await FileSystem.getInfoAsync(SESSION_STORAGE_FILE);
+  if (!info.exists) return null;
+  const raw = await FileSystem.readAsStringAsync(SESSION_STORAGE_FILE, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
+  const parsed = JSON.parse(raw) as { sessionCookieHeader?: unknown };
+  const value = parsed.sessionCookieHeader;
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
 
 function kbSafeLocalName(filename: string): string {
   const base = filename.trim() || "archivo";
@@ -791,14 +824,24 @@ function SlideToConfirm({ label, onConfirm, disabled, variant = "primary", reset
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers ?? {});
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (sessionCookieHeader && !headers.has("Cookie")) {
+    headers.set("Cookie", sessionCookieHeader);
+  }
   const res = await fetch(apiUrl(path), {
     ...init,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
+  const setCookie = res.headers.get("set-cookie");
+  const session = extractSessionCookieHeader(setCookie);
+  if (session) {
+    sessionCookieHeader = session;
+    await persistSessionCookieHeader(session);
+  }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) {
     onAuthExpired?.();
@@ -883,6 +926,7 @@ async function apiUploadWorkOrderFile(
     const res = await fetch(url, {
       method: "POST",
       credentials: "include",
+      headers: sessionCookieHeader ? { Cookie: sessionCookieHeader } : undefined,
       body: form,
     });
     const data = await res.json().catch(() => ({}));
@@ -912,6 +956,7 @@ function AppContent() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authHydrating, setAuthHydrating] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
@@ -1299,6 +1344,8 @@ function AppContent() {
 
   const clearClientSession = useCallback(
     (authMessage?: string) => {
+      sessionCookieHeader = null;
+      void persistSessionCookieHeader(null);
       setIsLoggedIn(false);
       closeTaskDetail();
       setPassword("");
@@ -1726,6 +1773,30 @@ function AppContent() {
   }, [clearClientSession]);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const persistedCookie = await loadPersistedSessionCookieHeader();
+        if (!persistedCookie) return;
+        sessionCookieHeader = persistedCookie;
+        const meData = await apiFetch<CurrentUser>("/api/users/me");
+        if (cancelled) return;
+        setIsLoggedIn(true);
+        setMe(meData);
+        await Promise.all([loadWorkOrders(), loadKnowledge(), loadNotifications(), loadUsers()]);
+      } catch {
+        sessionCookieHeader = null;
+        await persistSessionCookieHeader(null).catch(() => undefined);
+      } finally {
+        if (!cancelled) setAuthHydrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isLoggedIn || !me?.id || assigneeFilterDefaultAppliedRef.current) return;
     assigneeFilterDefaultAppliedRef.current = true;
     setFilterAssigneeId(me.id);
@@ -1806,6 +1877,18 @@ function AppContent() {
     !isChecklistFullyComplete(selectedWorkOrder.checklist);
 
   const detailSlideCompleteDisabled = detailSlideCompleteNeedsHint;
+
+  if (authHydrating) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
+        <View style={styles.loginHydrationState}>
+          <ActivityIndicator color={theme.primary} />
+          <Text style={styles.loginHydrationText}>Restaurando sesion...</Text>
+        </View>
+        <StatusBar style="dark" />
+      </SafeAreaView>
+    );
+  }
 
   if (!isLoggedIn) {
     return (
@@ -3489,6 +3572,13 @@ const styles = StyleSheet.create({
   loginKeyboardAvoid: { flex: 1, backgroundColor: theme.surface },
   loginScroll: { backgroundColor: theme.surface },
   loginScrollContent: { flexGrow: 1, justifyContent: "center" },
+  loginHydrationState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  loginHydrationText: { color: theme.zinc600, fontSize: 14, fontWeight: "500" },
   topHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
