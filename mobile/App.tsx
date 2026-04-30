@@ -1817,7 +1817,10 @@ function AppContent() {
         >
           <ScrollView
             style={styles.loginScroll}
-            contentContainerStyle={styles.loginScrollContent}
+            contentContainerStyle={[
+              styles.loginScrollContent,
+              Platform.OS === "android" ? styles.loginScrollContentAndroid : null,
+            ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
@@ -1826,6 +1829,17 @@ function AppContent() {
               <Text style={styles.loginBrandMark}>{BRAND_MARK}</Text>
               <Text style={styles.loginBrandTagline}>{BRAND_TAGLINE}</Text>
               <Text style={styles.loginTitle}>Iniciar sesion</Text>
+
+              {Platform.OS === "android" ? (
+                <Pressable
+                  style={styles.loginDownloadAppButton}
+                  onPress={() => void Linking.openURL(apiUrl("/downloads/android/msa-release.apk"))}
+                  accessibilityRole="button"
+                  accessibilityLabel="Descargar la aplicación"
+                >
+                  <Text style={styles.loginDownloadAppButtonText}>Descargar app</Text>
+                </Pressable>
+              ) : null}
 
               <View style={styles.loginFieldBlock}>
                 <Text style={styles.loginLabel}>Usuario</Text>
@@ -1862,16 +1876,6 @@ function AppContent() {
                   {loggingIn ? "Iniciando sesion..." : "Iniciar sesion"}
                 </Text>
               </Pressable>
-              {Platform.OS === "android" ? (
-                <Pressable
-                  style={styles.loginDownloadAppButton}
-                  onPress={() => void Linking.openURL(apiUrl("/downloads/android/msa-release.apk"))}
-                  accessibilityRole="button"
-                  accessibilityLabel="Descargar la aplicación"
-                >
-                  <Text style={styles.loginDownloadAppButtonText}>Descargar app</Text>
-                </Pressable>
-              ) : null}
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -3496,8 +3500,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8,
   },
+  loginScrollContentAndroid: {
+    justifyContent: "flex-start",
+    paddingTop: 8,
+    paddingBottom: 32,
+  },
   loginDownloadAppButton: {
-    marginTop: 16,
+    marginTop: 12,
+    marginBottom: 4,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: theme.zinc300,
