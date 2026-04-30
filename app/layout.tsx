@@ -14,8 +14,8 @@ export const metadata: Metadata = {
   description: "Maintenance Software Assistant — gestión de mantenimiento",
   manifest: "/manifest.json",
   icons: {
-    icon: "/uploads/favicon.ico",
-    shortcut: "/uploads/favicon.ico",
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
   },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "MSA" },
 };
