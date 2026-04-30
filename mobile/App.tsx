@@ -1883,7 +1883,7 @@ function AppContent() {
       <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
         <View style={styles.loginHydrationState}>
           <ActivityIndicator color={theme.primary} />
-          <Text style={styles.loginHydrationText}>Restaurando sesion...</Text>
+          <Text style={styles.loginHydrationText}>Cargando...</Text>
         </View>
         <StatusBar style="dark" />
       </SafeAreaView>

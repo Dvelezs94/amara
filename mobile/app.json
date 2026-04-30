@@ -4,10 +4,10 @@
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/android/mipmap-xxxhdpi/ic_launcher.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/android/mipmap-xxxhdpi/ic_launcher.png",
       "resizeMode": "contain",
       "backgroundColor": "#F8FAFC"
     },
@@ -18,9 +18,7 @@
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/android/mipmap-xxxhdpi/ic_launcher.png"
       },
       "predictiveBackGestureEnabled": false
     },
