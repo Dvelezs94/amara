@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { AndroidAppDownloadLink } from "@/components/AndroidAppDownloadLink";
 import Link from "next/link";
 
 export default async function HomePage() {
@@ -32,6 +33,7 @@ export default async function HomePage() {
         >
           Consultar orden por folio
         </Link>
+        <AndroidAppDownloadLink />
       </div>
     </div>
   );

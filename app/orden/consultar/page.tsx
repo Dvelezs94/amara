@@ -158,9 +158,7 @@ function ConsultarOrdenForm() {
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold text-zinc-900">Consultar orden por folio</h1>
         <p className="text-sm text-zinc-600">
-          Solo aplica a ordenes registradas desde esta web (no tareas internas ni mantenimiento
-          programado). Puedes ver estado y comentarios del equipo (con sus archivos o imagenes)
-          sin iniciar sesion.
+          Consulta ordenes de mantenimiento por folio.
         </p>
       </header>
 

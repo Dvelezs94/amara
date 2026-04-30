@@ -12,6 +12,7 @@ import {
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   if (path.startsWith("/uploads/")) return NextResponse.next();
+  if (path.startsWith("/downloads/")) return NextResponse.next();
   if (
     path === "/" ||
     path === "/login" ||
