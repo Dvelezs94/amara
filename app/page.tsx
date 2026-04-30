@@ -21,10 +21,16 @@ export default async function HomePage() {
           Iniciar sesión
         </Link>
         <Link
-          href="/solicitud"
+          href="/orden"
           className="rounded-xl border border-zinc-300 py-3 px-4 text-center font-medium tap-target text-zinc-700"
         >
-          Abrir solicitud
+          Abrir orden
+        </Link>
+        <Link
+          href="/orden/consultar"
+          className="rounded-xl border border-primary-200 bg-primary-50 py-3 px-4 text-center font-medium text-primary-800 tap-target hover:bg-primary-100"
+        >
+          Consultar orden por folio
         </Link>
       </div>
     </div>

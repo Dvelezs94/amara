@@ -35,10 +35,10 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 
 ### Route groups (`app/`)
 
-- **`app/page.tsx`** — Public landing (MSA); links to login and public request form
+- **`app/page.tsx`** — Public landing (MSA); links to login and public order form (`/orden`)
 - **`app/(auth)/`** — Login, signup (unauthenticated flows)
 - **`app/(app)/`** — Authenticated shell: layout loads session and wraps children in **`components/AppShell.tsx`** (sidebar, mobile header, bottom nav, notifications)
-- **`app/solicitud/`** — Public maintenance request form; related API often **`/api/solicitud`**
+- **`app/orden/`** — Public maintenance order form and folio lookup (`/orden`, `/orden/consultar`); **`/solicitud`** redirects here. API remains **`/api/solicitud`** (POST create, GET lookup by folio)
 - **`app/api/*`** — Route handlers (JSON APIs, file uploads, auth)
 
 ### Roles and access

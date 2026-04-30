@@ -12,11 +12,21 @@ import {
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   if (path.startsWith("/uploads/")) return NextResponse.next();
-  if (path === "/" || path === "/login" || path === "/solicitud")
+  if (
+    path === "/" ||
+    path === "/login" ||
+    path === "/orden" ||
+    path === "/orden/consultar" ||
+    path === "/solicitud" ||
+    path === "/solicitud/consultar"
+  ) {
     return NextResponse.next();
+  }
   if (path.startsWith(API_AUTH_PUBLIC_PREFIX)) return NextResponse.next();
-  /** Public form: crear orden sin sesión (misma ruta sirve con sesión de operador/admin) */
-  if (path === "/api/solicitud") return NextResponse.next();
+  /** Public: crear orden, consulta por folio, descarga de adjuntos con `?folio=` */
+  if (path === "/api/solicitud" || path.startsWith("/api/solicitud/attachments/")) {
+    return NextResponse.next();
+  }
   const session = req.cookies.get("session")?.value;
   if (!session) {
     const login = new URL("/login", req.url);

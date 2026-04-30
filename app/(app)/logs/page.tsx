@@ -72,7 +72,7 @@ export default async function LogsPage() {
                 <div className="col-span-2 text-zinc-700">
                   {log.userName ??
                     (log.action === "created_from_public_form"
-                      ? "Público (/solicitud)"
+                      ? "Público (/orden)"
                       : "Sistema")}
                 </div>
                 <div className="col-span-2 text-zinc-700">

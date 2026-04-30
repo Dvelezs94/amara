@@ -40,7 +40,7 @@ export async function GET(req: Request) {
 
 export async function POST() {
   return NextResponse.json(
-    { error: "Las solicitudes nuevas solo se crean desde /solicitud" },
+    { error: "Las ordenes nuevas solo se crean desde /orden" },
     { status: 403 }
   );
 }
