@@ -1817,10 +1817,7 @@ function AppContent() {
         >
           <ScrollView
             style={styles.loginScroll}
-            contentContainerStyle={[
-              styles.loginScrollContent,
-              Platform.OS === "android" ? styles.loginScrollContentAndroid : null,
-            ]}
+            contentContainerStyle={styles.loginScrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
@@ -1829,17 +1826,6 @@ function AppContent() {
               <Text style={styles.loginBrandMark}>{BRAND_MARK}</Text>
               <Text style={styles.loginBrandTagline}>{BRAND_TAGLINE}</Text>
               <Text style={styles.loginTitle}>Iniciar sesion</Text>
-
-              {Platform.OS === "android" ? (
-                <Pressable
-                  style={styles.loginDownloadAppButton}
-                  onPress={() => void Linking.openURL(apiUrl("/downloads/android/msa-release.apk"))}
-                  accessibilityRole="button"
-                  accessibilityLabel="Descargar la aplicación"
-                >
-                  <Text style={styles.loginDownloadAppButtonText}>Descargar app</Text>
-                </Pressable>
-              ) : null}
 
               <View style={styles.loginFieldBlock}>
                 <Text style={styles.loginLabel}>Usuario</Text>
@@ -3499,26 +3485,6 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: "center",
     marginTop: 8,
-  },
-  loginScrollContentAndroid: {
-    justifyContent: "flex-start",
-    paddingTop: 8,
-    paddingBottom: 32,
-  },
-  loginDownloadAppButton: {
-    marginTop: 12,
-    marginBottom: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.zinc300,
-    backgroundColor: theme.white,
-    paddingVertical: 13,
-    alignItems: "center",
-  },
-  loginDownloadAppButtonText: {
-    color: theme.primary,
-    fontSize: 15,
-    fontWeight: "600",
   },
   loginKeyboardAvoid: { flex: 1, backgroundColor: theme.surface },
   loginScroll: { backgroundColor: theme.surface },
