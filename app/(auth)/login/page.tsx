@@ -12,11 +12,11 @@ export default async function LoginPage() {
       <h1 className="text-xl font-semibold text-zinc-900 mb-6">Iniciar sesión</h1>
       <div className="flex w-full max-w-xs flex-col gap-3">
         <LoginForm />
-        <AndroidAppDownloadLink />
       </div>
       <Link href="/orden" className="mt-6 text-sm font-medium text-primary-600">
         Crear una orden sin iniciar sesión
       </Link>
+      <AndroidAppDownloadLink />
     </div>
   );
 }

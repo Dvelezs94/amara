@@ -33,8 +33,8 @@ export default async function HomePage() {
         >
           Consultar orden por folio
         </Link>
-        <AndroidAppDownloadLink />
       </div>
+      <AndroidAppDownloadLink />
     </div>
   );
 }
