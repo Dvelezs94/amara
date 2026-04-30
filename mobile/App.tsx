@@ -1862,6 +1862,16 @@ function AppContent() {
                   {loggingIn ? "Iniciando sesion..." : "Iniciar sesion"}
                 </Text>
               </Pressable>
+              {Platform.OS === "android" ? (
+                <Pressable
+                  style={styles.loginDownloadAppButton}
+                  onPress={() => void Linking.openURL(apiUrl("/downloads/android/msa-release.apk"))}
+                  accessibilityRole="button"
+                  accessibilityLabel="Descargar la aplicación"
+                >
+                  <Text style={styles.loginDownloadAppButtonText}>Descargar app</Text>
+                </Pressable>
+              ) : null}
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -3485,6 +3495,20 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: "center",
     marginTop: 8,
+  },
+  loginDownloadAppButton: {
+    marginTop: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  loginDownloadAppButtonText: {
+    color: theme.primary,
+    fontSize: 15,
+    fontWeight: "600",
   },
   loginKeyboardAvoid: { flex: 1, backgroundColor: theme.surface },
   loginScroll: { backgroundColor: theme.surface },
