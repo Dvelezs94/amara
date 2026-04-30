@@ -217,16 +217,8 @@ function ConsultarOrdenForm() {
                 <dd>{PRIORITY_LABEL[lookupResult.priority] ?? lookupResult.priority}</dd>
               </div>
               <div className="flex flex-wrap justify-between gap-2">
-                <dt className="text-zinc-500">Tipo</dt>
-                <dd>{KIND_LABEL[lookupResult.kind] ?? lookupResult.kind}</dd>
-              </div>
-              <div className="flex flex-wrap justify-between gap-2">
                 <dt className="text-zinc-500">Registro</dt>
                 <dd className="text-right">{formatPublicDate(lookupResult.createdAt)}</dd>
-              </div>
-              <div className="flex flex-wrap justify-between gap-2">
-                <dt className="text-zinc-500">Vencimiento</dt>
-                <dd className="text-right">{formatPublicDate(lookupResult.dueDate)}</dd>
               </div>
               {lookupResult.startedAt ? (
                 <div className="flex flex-wrap justify-between gap-2">
