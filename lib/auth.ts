@@ -37,11 +37,12 @@ export async function getSession(): Promise<SessionUser | null> {
         email: true,
         name: true,
         role: true,
+        isDisabled: true,
         avatarUrl: true,
         avatarBackgroundColor: true,
       },
     });
-    if (!user) return null;
+    if (!user || user.isDisabled) return null;
     return {
       id: user.id,
       username: user.username,
@@ -100,7 +101,7 @@ export async function verifyPassword(
     // Backward compatibility: allow old email-based logins.
     where: or(eq(users.username, username), eq(users.email, username)),
   });
-  if (!user || !(await bcrypt.compare(password, user.passwordHash)))
+  if (!user || user.isDisabled || !(await bcrypt.compare(password, user.passwordHash)))
     return null;
   return {
     id: user.id,

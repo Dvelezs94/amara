@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import { Eye } from "lucide-react";
+import { Eye, Pencil } from "lucide-react";
 import { PrintChecklistButton } from "./PrintChecklistButton";
 
 type Revision = {
@@ -223,11 +223,13 @@ export function RevisionsPanel({
   checklistId,
   mode,
   canReview,
+  allowEdit = true,
 }: {
   revisions: Revision[];
   checklistId: string;
   mode: "view" | "edit";
   canReview: boolean;
+  allowEdit?: boolean;
 }) {
   const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -296,16 +298,18 @@ export function RevisionsPanel({
               >
                 Visualizar
               </Link>
-              <Link
-                href={`/checklists/${checklistId}?mode=edit`}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                  mode === "edit"
-                    ? "bg-zinc-900 text-white"
-                    : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-                }`}
-              >
-                Editar
-              </Link>
+              {allowEdit && (
+                <Link
+                  href={`/checklists/${checklistId}?mode=edit`}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                    mode === "edit"
+                      ? "bg-zinc-900 text-white"
+                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                  }`}
+                >
+                  Editar
+                </Link>
+              )}
             </div>
           </div>
           <h2 className="text-sm font-semibold text-zinc-900">Revisiones</h2>
@@ -327,6 +331,8 @@ export function RevisionsPanel({
                   className={`mt-1 text-xs ${
                     rev.status === "approved"
                       ? "text-emerald-700"
+                      : rev.status === "draft"
+                        ? "text-blue-700"
                       : rev.status === "rejected"
                         ? "text-red-700"
                         : "text-amber-700"
@@ -335,6 +341,8 @@ export function RevisionsPanel({
                   Estado:{" "}
                   {rev.status === "approved"
                     ? "Aprobada"
+                    : rev.status === "draft"
+                      ? "No enviada"
                     : rev.status === "rejected"
                       ? "Rechazada"
                       : "Propuesta"}
@@ -344,15 +352,30 @@ export function RevisionsPanel({
                     {summarizeRevisionChange(rev.action, rev.metadata)}
                   </p>
                 )}
-                {mode === "view" && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRevisionId(rev.id)}
-                    className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline"
-                  >
-                    <Eye className="h-3.5 w-3.5" aria-hidden />
-                    Ver revisión
-                  </button>
+                {(mode === "view" || (allowEdit && rev.status === "draft")) && (
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    {mode === "view" ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRevisionId(rev.id)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline"
+                      >
+                        <Eye className="h-3.5 w-3.5" aria-hidden />
+                        Ver revisión
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    {allowEdit && rev.status === "draft" && (
+                      <Link
+                        href={`/checklists/${checklistId}?mode=edit&draftRevisionId=${rev.id}`}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline"
+                      >
+                        <Pencil className="h-3.5 w-3.5" aria-hidden />
+                        {mode === "edit" ? "Editando" : "Continuar editando"}
+                      </Link>
+                    )}
+                  </div>
                 )}
                 {canReview && rev.status === "proposed" && (
                   <div className="mt-2 flex gap-2">

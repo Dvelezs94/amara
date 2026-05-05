@@ -12,6 +12,7 @@ type AdminUser = {
   name: string;
   email: string | null;
   role: UserRole;
+  isDisabled: boolean;
   createdAt: string;
   avatarUrl: string | null;
   avatarBackgroundColor: string | null;
@@ -47,6 +48,7 @@ export function InviteUsersPanel() {
   const [editingNameUserId, setEditingNameUserId] = useState<string | null>(null);
   const [editingNameValue, setEditingNameValue] = useState("");
   const [savingNameUserId, setSavingNameUserId] = useState<string | null>(null);
+  const [togglingDisabledUserId, setTogglingDisabledUserId] = useState<string | null>(null);
   const [resetModalUser, setResetModalUser] = useState<AdminUser | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
 
@@ -210,6 +212,38 @@ export function InviteUsersPanel() {
       setError("No se pudo actualizar el nombre");
     } finally {
       setSavingNameUserId(null);
+    }
+  }
+
+  async function toggleDisabledForUser(user: AdminUser) {
+    setError(null);
+    setSuccess(null);
+    setTogglingDisabledUserId(user.id);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDisabled: !user.isDisabled }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo actualizar el estado del usuario");
+        return;
+      }
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === user.id ? { ...u, isDisabled: !user.isDisabled } : u
+        )
+      );
+      setSuccess(
+        !user.isDisabled
+          ? `${user.name} deshabilitado correctamente.`
+          : `${user.name} habilitado correctamente.`
+      );
+    } catch {
+      setError("No se pudo actualizar el estado del usuario");
+    } finally {
+      setTogglingDisabledUserId(null);
     }
   }
 
@@ -396,6 +430,13 @@ export function InviteUsersPanel() {
                       timeZone: APP_TIME_ZONE,
                     })}
                   </p>
+                  <p
+                    className={`text-xs font-medium ${
+                      user.isDisabled ? "text-red-600" : "text-emerald-600"
+                    }`}
+                  >
+                    Estado: {user.isDisabled ? "Deshabilitado" : "Activo"}
+                  </p>
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -429,6 +470,22 @@ export function InviteUsersPanel() {
                     }}
                   />
                 </label>
+                <button
+                  type="button"
+                  onClick={() => toggleDisabledForUser(user)}
+                  disabled={togglingDisabledUserId === user.id}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-60 ${
+                    user.isDisabled
+                      ? "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      : "border-red-300 text-red-700 hover:bg-red-50"
+                  }`}
+                >
+                  {togglingDisabledUserId === user.id
+                    ? "Actualizando..."
+                    : user.isDisabled
+                      ? "Habilitar usuario"
+                      : "Deshabilitar usuario"}
+                </button>
               </div>
             </li>
           ))}

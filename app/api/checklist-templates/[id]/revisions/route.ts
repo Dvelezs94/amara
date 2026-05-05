@@ -78,6 +78,9 @@ export async function POST(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (session.role === "supervisor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id: templateId } = await params;
   const template = await db.query.checklistTemplates.findFirst({
     where: eq(checklistTemplates.id, templateId),
@@ -87,30 +90,13 @@ export async function POST(
   }
 
   const body = await req.json().catch(() => ({}));
+  const submissionAction =
+    body.submissionAction === "submit_review" ? "submit_review" : "save";
   const revisionName = String(body.revisionName ?? "").trim();
   if (!revisionName) {
     return NextResponse.json(
       { error: "Nombre de revision requerido" },
       { status: 400 }
-    );
-  }
-  const existingRevisions = await db
-    .select({ name: checklistTemplateRevisions.name })
-    .from(checklistTemplateRevisions)
-    .where(
-      and(
-        eq(checklistTemplateRevisions.checklistTemplateId, templateId),
-        eq(checklistTemplateRevisions.status, "approved")
-      )
-    );
-  const normalizedName = revisionName.toLocaleLowerCase("es-MX");
-  const nameTaken = existingRevisions.some(
-    (rev) => rev.name.trim().toLocaleLowerCase("es-MX") === normalizedName
-  );
-  if (nameTaken) {
-    return NextResponse.json(
-      { error: "Ya existe una revisión con ese nombre" },
-      { status: 409 }
     );
   }
   const name = String(body.name ?? "").trim();
@@ -140,89 +126,112 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const [{ value: maxRevision }] = await db
-    .select({
-      value: max(checklistTemplateRevisions.revisionNumber),
-    })
+  const now = new Date();
+  const status = submissionAction === "submit_review" ? "proposed" : "draft";
+  const existingDraft = await db.query.checklistTemplateRevisions.findFirst({
+    where: and(
+      eq(checklistTemplateRevisions.checklistTemplateId, templateId),
+      eq(checklistTemplateRevisions.proposedByUserId, session.id),
+      eq(checklistTemplateRevisions.status, "draft")
+    ),
+    orderBy: [desc(checklistTemplateRevisions.createdAt)],
+  });
+  const normalizedName = revisionName.toLocaleLowerCase("es-MX");
+  const existingRevisions = await db
+    .select({ id: checklistTemplateRevisions.id, name: checklistTemplateRevisions.name })
     .from(checklistTemplateRevisions)
     .where(eq(checklistTemplateRevisions.checklistTemplateId, templateId));
-
-  const nextRevisionNumber = (maxRevision ?? -1) + 1;
-  const now = new Date();
-  const status = session.role === "supervisor" ? "approved" : "proposed";
-  await db.insert(checklistTemplateRevisions).values({
-    id: createId(),
-    checklistTemplateId: templateId,
-    revisionNumber: nextRevisionNumber,
-    name: revisionName,
-    status,
-    proposedByUserId: session.id,
-    reviewedByUserId: status === "approved" ? session.id : null,
-    reviewedAt: status === "approved" ? now : null,
-    snapshot: {
-      before,
-      after: { name, description, items },
-    },
-    createdAt: now,
+  const duplicateName = existingRevisions.some((rev) => {
+    if (existingDraft && rev.id === existingDraft.id) return false;
+    return rev.name.trim().toLocaleLowerCase("es-MX") === normalizedName;
   });
+  if (duplicateName) {
+    return NextResponse.json(
+      { error: "Ya existe una revisión con ese número" },
+      { status: 409 }
+    );
+  }
+
+  let revisionNumber = existingDraft?.revisionNumber ?? null;
+  let revisionId = existingDraft?.id ?? null;
+  if (existingDraft) {
+    await db
+      .update(checklistTemplateRevisions)
+      .set({
+        name: revisionName,
+        status,
+        reviewedByUserId: null,
+        reviewedAt: null,
+        reviewComment: null,
+        snapshot: {
+          before,
+          after: { name, description, items },
+        },
+        createdAt: now,
+      })
+      .where(eq(checklistTemplateRevisions.id, existingDraft.id));
+  } else {
+    const [{ value: maxRevision }] = await db
+      .select({
+        value: max(checklistTemplateRevisions.revisionNumber),
+      })
+      .from(checklistTemplateRevisions)
+      .where(eq(checklistTemplateRevisions.checklistTemplateId, templateId));
+
+    const nextRevisionNumber = (maxRevision ?? -1) + 1;
+    const createdId = createId();
+    await db.insert(checklistTemplateRevisions).values({
+      id: createdId,
+      checklistTemplateId: templateId,
+      revisionNumber: nextRevisionNumber,
+      name: revisionName,
+      status,
+      proposedByUserId: session.id,
+      reviewedByUserId: null,
+      reviewedAt: null,
+      snapshot: {
+        before,
+        after: { name, description, items },
+      },
+      createdAt: now,
+    });
+    revisionNumber = nextRevisionNumber;
+    revisionId = createdId;
+  }
 
   await recordAuditLog({
     entityType: "checklist_template",
     entityId: templateId,
-    action: status === "approved" ? "revision_approved" : "revision_proposed",
+    action: status === "proposed" ? "revision_proposed" : "revision_draft_saved",
     userId: session.id,
     metadata: {
-      revisionNumber: nextRevisionNumber,
+      revisionId,
+      revisionNumber,
       revisionName,
       status,
     },
   });
 
-  const supervisors = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.role, "supervisor"));
-  try {
-    await Promise.all(
-      supervisors.map((sup) =>
-        createNotification({
-          userId: sup.id,
-          type: "work_order_update",
-          title: "Nueva revisión de checklist",
-          body: `[checklist:${templateId}] ${template.name} · Revision ${revisionName}`,
-        })
-      )
-    );
-  } catch {
-    // Do not fail revision creation if notifications fail.
-  }
-
-  if (status === "approved") {
-    await db.update(checklistTemplates).set({ name, description }).where(eq(checklistTemplates.id, templateId));
-    await db.delete(checklistTemplateItems).where(eq(checklistTemplateItems.checklistTemplateId, templateId));
-    for (let i = 0; i < items.length; i += 1) {
-      const it = items[i]!;
-      await db.insert(checklistTemplateItems).values({
-        id: createId(),
-        checklistTemplateId: templateId,
-        type: it.type as "step" | "custom_field" | "text_block",
-        label: it.label,
-        sortOrder: i,
-        fieldType: it.fieldType as
-          | "text"
-          | "number"
-          | "date"
-          | "dropdown"
-          | "checkbox"
-          | "photo"
-          | "title"
-          | "subtitle"
-          | "paragraph"
-          | null,
-        options: it.options,
-      });
+  if (status === "proposed") {
+    const supervisors = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.role, "supervisor"));
+    try {
+      await Promise.all(
+        supervisors.map((sup) =>
+          createNotification({
+            userId: sup.id,
+            type: "work_order_update",
+            title: "Nueva revisión de checklist",
+            body: `[checklist:${templateId}] ${template.name} · Revision ${revisionName}`,
+          })
+        )
+      );
+    } catch {
+      // Do not fail revision creation if notifications fail.
     }
   }
 
-  return NextResponse.json({ ok: true, status, revisionNumber: nextRevisionNumber });
+  return NextResponse.json({ ok: true, status, revisionNumber });
 }

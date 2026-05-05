@@ -1,7 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { getChecklistTemplateById } from "@/lib/checklist-templates";
 import { db } from "@/lib/db";
@@ -86,15 +86,65 @@ export default async function EditChecklistPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ mode?: string; notice?: string }>;
+  searchParams?: Promise<{ mode?: string; notice?: string; draftRevisionId?: string; source?: string }>;
 }) {
   const { id } = await params;
   const session = await getSession();
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const mode = resolvedSearchParams?.mode === "edit" ? "edit" : "view";
+  const wantsEditFromUrl =
+    resolvedSearchParams?.mode === "edit" ||
+    Boolean(resolvedSearchParams?.draftRevisionId?.trim()) ||
+    resolvedSearchParams?.source === "live";
+  if (session?.role === "supervisor" && wantsEditFromUrl) {
+    redirect(`/checklists/${id}`);
+  }
+  const mode =
+    session?.role === "supervisor"
+      ? "view"
+      : resolvedSearchParams?.mode === "edit"
+        ? "edit"
+        : "view";
   const notice = resolvedSearchParams?.notice;
+  const draftRevisionId = resolvedSearchParams?.draftRevisionId?.trim();
+  const source = resolvedSearchParams?.source;
+  const forceLiveTemplate = mode === "edit" && source === "live";
   const template = await getChecklistTemplateById(id);
   if (!template) notFound();
+  const draftRevision =
+    session?.role === "admin" && mode === "edit" && !forceLiveTemplate
+      ? await db.query.checklistTemplateRevisions.findFirst({
+          where: and(
+            eq(checklistTemplateRevisions.checklistTemplateId, id),
+            eq(checklistTemplateRevisions.proposedByUserId, session.id),
+            eq(checklistTemplateRevisions.status, "draft"),
+            draftRevisionId
+              ? eq(checklistTemplateRevisions.id, draftRevisionId)
+              : eq(checklistTemplateRevisions.checklistTemplateId, id)
+          ),
+          orderBy: [desc(checklistTemplateRevisions.createdAt)],
+        })
+      : null;
+  const wantsDraftEdit = mode === "edit" && Boolean(draftRevision);
+  const draftAfter = draftRevision?.snapshot?.after;
+  const initialForEdit =
+    draftAfter && typeof draftAfter === "object"
+      ? {
+          name:
+            typeof draftAfter.name === "string" ? draftAfter.name : template.name,
+          description:
+            typeof draftAfter.description === "string" || draftAfter.description === null
+              ? draftAfter.description
+              : template.description ?? null,
+          items: Array.isArray(draftAfter.items)
+            ? draftAfter.items.map((item) => ({
+                type: String(item.type ?? "custom_field"),
+                label: String(item.label ?? ""),
+                fieldType: item.fieldType ? String(item.fieldType) : null,
+                options: Array.isArray(item.options) ? item.options.map((opt) => String(opt)) : null,
+              }))
+            : template.items,
+        }
+      : template;
   const revisions = await getChecklistRevisions(id);
   const revisionsForClient = revisions.map((rev) => ({
     ...rev,
@@ -117,17 +167,42 @@ export default async function EditChecklistPage({
         <span className="text-zinc-600">{template.name}</span>
       </nav>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold text-zinc-900">Plantilla de checklist</h1>
+        <h1 className="text-xl font-semibold text-zinc-900">
+          {mode === "edit" ? "Edicion de revision de checklist" : "Plantilla de checklist"}
+        </h1>
       </div>
       {notice === "revision_submitted" && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           Revisión enviada. Esta propuesta requiere revisión y aprobación de un supervisor.
         </p>
       )}
+      {notice === "draft_saved" && (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Cambios guardados como borrador. No se aplican hasta ser aprobados.
+        </p>
+      )}
+      {mode === "edit" && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          {wantsDraftEdit && draftRevision ? (
+            <>
+              <p>
+                Editando borrador no enviado: <span className="font-semibold">{draftRevision.name}</span>
+              </p>
+            </>
+          ) : (
+            <p>Editando version actual de la plantilla</p>
+          )}
+        </div>
+      )}
 
       <section className="min-w-0 lg:pr-4">
         {mode === "edit" ? (
-          <ChecklistTemplateForm templateId={id} initial={template} />
+          <ChecklistTemplateForm
+            templateId={id}
+            initial={wantsDraftEdit ? initialForEdit : template}
+            initialRevisionName={wantsDraftEdit ? draftRevision?.name : undefined}
+            draftRevisionId={wantsDraftEdit ? draftRevision?.id : undefined}
+          />
         ) : (
           <div id="checklist-visualization" className="space-y-4">
               <div className="rounded-xl border border-zinc-200 bg-white p-4">
@@ -244,6 +319,7 @@ export default async function EditChecklistPage({
           checklistId={id}
           mode={mode}
           canReview={session?.role === "supervisor"}
+          allowEdit={session?.role !== "supervisor"}
         />
       </div>
 
@@ -253,6 +329,7 @@ export default async function EditChecklistPage({
           checklistId={id}
           mode={mode}
           canReview={session?.role === "supervisor"}
+          allowEdit={session?.role !== "supervisor"}
         />
       </div>
     </div>

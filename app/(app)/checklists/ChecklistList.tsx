@@ -6,7 +6,7 @@ import { ChevronRight } from "lucide-react";
 
 type Template = { id: string; name: string; description: string | null };
 
-export function ChecklistList() {
+export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
   const [items, setItems] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,9 +39,11 @@ export function ChecklistList() {
         <p className="text-sm text-zinc-400 mt-1">
           Crea plantillas con pasos y campos (texto, número, fecha, lista, casilla) y asígnalas a órdenes de trabajo.
         </p>
-        <Link href="/checklists/new" className="mt-3 inline-block text-primary-600 font-medium">
-          Crear una
-        </Link>
+        {canCreate ? (
+          <Link href="/checklists/new" className="mt-3 inline-block text-primary-600 font-medium">
+            Crear una
+          </Link>
+        ) : null}
       </div>
     );
   }

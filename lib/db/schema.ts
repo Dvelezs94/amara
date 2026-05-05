@@ -19,6 +19,7 @@ export const users = pgTable("users", {
   role: text("role", { enum: ["operator", "admin", "supervisor"] })
     .notNull()
     .default("operator"),
+  isDisabled: boolean("is_disabled").notNull().default(false),
   avatarUrl: text("avatar_url"),
   /** Fondo del avatar con iniciales (#RRGGBB); null = derivar de id en cliente */
   avatarBackgroundColor: text("avatar_background_color"),
@@ -136,7 +137,7 @@ export const checklistTemplateRevisions = pgTable("checklist_template_revisions"
     .references(() => checklistTemplates.id, { onDelete: "cascade" }),
   revisionNumber: integer("revision_number").notNull(),
   name: text("name").notNull(),
-  status: text("status", { enum: ["approved", "proposed", "rejected"] })
+  status: text("status", { enum: ["approved", "proposed", "rejected", "draft"] })
     .notNull()
     .default("proposed"),
   proposedByUserId: text("proposed_by_user_id")

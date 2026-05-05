@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function GET() {
   const session = await getSession();
@@ -17,6 +18,7 @@ export async function GET() {
       avatarBackgroundColor: users.avatarBackgroundColor,
     })
     .from(users)
+    .where(eq(users.isDisabled, false))
     .orderBy(users.name);
   return NextResponse.json(list);
 }

@@ -34,6 +34,7 @@ export async function PATCH(
     role: UserRole;
     passwordHash: string;
     avatarBackgroundColor: string | null;
+    isDisabled: boolean;
   }> = {};
 
   const hexAvatarBg = /^#[0-9a-fA-F]{6}$/;
@@ -93,6 +94,18 @@ export async function PATCH(
       updates.avatarBackgroundColor = s;
     }
   }
+  if (body.isDisabled !== undefined) {
+    if (typeof body.isDisabled !== "boolean") {
+      return NextResponse.json({ error: "Valor invalido para deshabilitar" }, { status: 400 });
+    }
+    if (targetId === session.id && body.isDisabled) {
+      return NextResponse.json(
+        { error: "No puedes deshabilitar tu propio usuario" },
+        { status: 400 }
+      );
+    }
+    updates.isDisabled = body.isDisabled;
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
@@ -111,6 +124,7 @@ export async function PATCH(
         name: target.name,
         email: target.email,
         role: target.role,
+        isDisabled: target.isDisabled,
       },
       after: updates,
       passwordUpdated: Boolean(body.password !== undefined),

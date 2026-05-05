@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Trash2, GripVertical } from "lucide-react";
+import { Plus, Trash2, GripVertical, ChevronDown } from "lucide-react";
 
 const FIELD_TYPES = [
   { value: "text", label: "Texto" },
@@ -35,6 +35,8 @@ type Item = {
 export function ChecklistTemplateForm({
   templateId,
   initial,
+  initialRevisionName,
+  draftRevisionId,
 }: {
   templateId?: string;
   initial?: {
@@ -42,11 +44,16 @@ export function ChecklistTemplateForm({
     description?: string | null;
     items?: { type: string; label: string; fieldType?: string | null; options?: string[] | null | unknown }[];
   };
+  initialRevisionName?: string;
+  draftRevisionId?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [revisionName, setRevisionName] = useState("");
+  const [submitAction, setSubmitAction] = useState<"save" | "submit_review">("save");
+  const [showSubmitMenu, setShowSubmitMenu] = useState(false);
+  const submitMenuRef = useRef<HTMLDivElement | null>(null);
+  const [revisionName, setRevisionName] = useState(initialRevisionName ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [items, setItems] = useState<Item[]>(
@@ -166,13 +173,25 @@ export function ChecklistTemplateForm({
     });
   }
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!submitMenuRef.current) return;
+      if (!submitMenuRef.current.contains(event.target as Node)) {
+        setShowSubmitMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  async function submitTemplate(requestedAction: "save" | "submit_review") {
+    setSubmitAction(requestedAction);
     setError(null);
     setLoading(true);
     const nameTrim = name.trim();
     if (!nameTrim) {
       setError("El nombre es obligatorio");
+      window.scrollTo({ top: 0, behavior: "smooth" });
       setLoading(false);
       return;
     }
@@ -182,6 +201,7 @@ export function ChecklistTemplateForm({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            submissionAction: requestedAction,
             revisionName: revisionName.trim() || "Sin nombre",
             name: nameTrim,
             description: description.trim() || null,
@@ -211,12 +231,18 @@ export function ChecklistTemplateForm({
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           setError(data.error ?? "No se pudo crear la revisión");
+          window.scrollTo({ top: 0, behavior: "smooth" });
           setLoading(false);
           return;
         }
         if (data.status === "proposed") {
           window.scrollTo({ top: 0, behavior: "smooth" });
           router.push(`/checklists/${templateId}?mode=view&notice=revision_submitted`);
+        } else if (data.status === "draft") {
+          const revisionId = String(data.revisionId ?? draftRevisionId ?? "").trim();
+          const params = new URLSearchParams({ mode: "edit", notice: "draft_saved" });
+          if (revisionId) params.set("draftRevisionId", revisionId);
+          router.push(`/checklists/${templateId}?${params.toString()}`);
         } else {
           router.push(`/checklists/${templateId}`);
         }
@@ -253,6 +279,7 @@ export function ChecklistTemplateForm({
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           setError(data.error ?? "Error al crear");
+          window.scrollTo({ top: 0, behavior: "smooth" });
           setLoading(false);
           return;
         }
@@ -262,8 +289,14 @@ export function ChecklistTemplateForm({
       router.refresh();
     } catch {
       setError("Algo salió mal");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
     setLoading(false);
+  }
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await submitTemplate("save");
   }
 
   return (
@@ -299,14 +332,14 @@ export function ChecklistTemplateForm({
       {templateId && (
         <div>
           <label htmlFor="revisionName" className="block text-sm font-medium text-zinc-700 mb-1">
-            Nombre de la revisión *
+            Numero de revision *
           </label>
           <input
             id="revisionName"
             type="text"
             value={revisionName}
             onChange={(e) => setRevisionName(e.target.value)}
-            placeholder="Ej. Ajuste mensual de inspección"
+            placeholder="Ej. 5"
             required
             className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
@@ -438,16 +471,89 @@ export function ChecklistTemplateForm({
             </li>
           ))}
         </ul>
+        {items.length > 5 && (
+          <div className="mt-3 flex justify-end">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={addStep}
+                className="text-sm text-primary-600 font-medium flex items-center gap-1"
+              >
+                <Plus className="h-4 w-4" />
+                Texto
+              </button>
+              <span className="text-zinc-300" aria-hidden>
+                |
+              </span>
+              <button
+                type="button"
+                onClick={addCustomField}
+                className="text-sm text-primary-600 font-medium flex items-center gap-1"
+              >
+                <Plus className="h-4 w-4" /> Campo
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 pt-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="flex-1 rounded-xl bg-primary-600 text-white py-3 px-4 font-medium tap-target disabled:opacity-60"
-        >
-          {loading ? "Guardando…" : templateId ? "Guardar" : "Crear"}
-        </button>
+        <div className="relative flex-1" ref={submitMenuRef}>
+          {templateId ? (
+            <div className="flex overflow-hidden rounded-xl border border-blue-700 bg-blue-600 shadow-sm">
+              <button
+                type="submit"
+                disabled={loading}
+                onClick={() => {
+                  setSubmitAction("save");
+                  setShowSubmitMenu(false);
+                }}
+                className="flex-1 bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700 tap-target disabled:opacity-60"
+              >
+                {loading && submitAction === "save" ? "Guardando..." : "Guardar cambios"}
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setShowSubmitMenu((prev) => !prev)}
+                className="flex w-11 items-center justify-center border-l border-blue-500 bg-blue-600 text-white transition-colors hover:bg-blue-700 tap-target disabled:opacity-60"
+                aria-label="Más acciones"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${showSubmitMenu ? "rotate-180" : ""}`} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="submit"
+              disabled={loading}
+              onClick={() => {
+                setSubmitAction("save");
+                setShowSubmitMenu(false);
+              }}
+              className="w-full rounded-xl bg-blue-600 py-3 px-4 font-medium text-white transition-colors hover:bg-blue-700 tap-target disabled:opacity-60"
+            >
+              {loading ? "Guardando..." : "Crear"}
+            </button>
+          )}
+          {templateId && showSubmitMenu && (
+            <div className="absolute bottom-full left-0 z-10 mb-2 w-full min-w-[220px] rounded-xl border border-blue-700 bg-gradient-to-b from-blue-600 to-blue-700 p-1 shadow-lg">
+              <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-blue-100/80">
+                Acciones
+              </p>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setShowSubmitMenu(false);
+                  void submitTemplate("submit_review");
+                }}
+                className="w-full rounded-lg border border-blue-300/30 bg-blue-500/40 px-3 py-2.5 text-left text-sm font-medium text-white transition-colors hover:bg-blue-500/60 disabled:opacity-60"
+              >
+                Enviar a revisión {" >>"}
+              </button>
+            </div>
+          )}
+        </div>
         <Link
           href={templateId ? `/checklists/${templateId}` : "/checklists"}
           className="rounded-xl border border-zinc-300 py-3 px-4 font-medium text-zinc-700 tap-target"

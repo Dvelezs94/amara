@@ -41,6 +41,9 @@ export async function PUT(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (session.role === "supervisor") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id: templateId } = await params;
   const template = await db.query.checklistTemplates.findFirst({
     where: eq(checklistTemplates.id, templateId),

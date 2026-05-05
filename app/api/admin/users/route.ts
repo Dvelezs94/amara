@@ -18,6 +18,7 @@ export async function GET() {
       name: users.name,
       email: users.email,
       role: users.role,
+      isDisabled: users.isDisabled,
       createdAt: users.createdAt,
       avatarUrl: users.avatarUrl,
       avatarBackgroundColor: users.avatarBackgroundColor,
