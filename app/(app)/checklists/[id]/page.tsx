@@ -21,6 +21,61 @@ type Revision = {
   metadata: Record<string, unknown> | null;
 };
 
+type ChecklistItemInitial = {
+  type: string;
+  label: string;
+  fieldType?: string | null;
+  options?: string[] | null | unknown;
+};
+
+type ChecklistInitial = {
+  name: string;
+  description?: string | null;
+  items?: ChecklistItemInitial[];
+};
+
+function normalizeSnapshotItems(
+  items: unknown,
+  fallbackItems: ChecklistItemInitial[] = []
+): ChecklistItemInitial[] {
+  if (!Array.isArray(items)) return fallbackItems;
+  return items.map((item) => {
+    const source = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    return {
+      type: String(source.type ?? "custom_field"),
+      label: String(source.label ?? ""),
+      fieldType: source.fieldType ? String(source.fieldType) : null,
+      options: Array.isArray(source.options)
+        ? source.options.map((opt) => String(opt))
+        : null,
+    };
+  });
+}
+
+function buildInitialForDraft(
+  draftAfter: unknown,
+  template: ChecklistInitial
+): ChecklistInitial {
+  if (Array.isArray(draftAfter)) {
+    return {
+      name: template.name,
+      description: template.description ?? null,
+      items: normalizeSnapshotItems(draftAfter, template.items),
+    };
+  }
+
+  if (!draftAfter || typeof draftAfter !== "object") return template;
+  const after = draftAfter as Record<string, unknown>;
+  return {
+    name: typeof after.name === "string" ? after.name : template.name,
+    description:
+      typeof after.description === "string" || after.description === null
+        ? after.description
+        : template.description ?? null,
+    items: normalizeSnapshotItems(after.items, template.items),
+  };
+}
+
 async function getChecklistRevisions(id: string): Promise<Revision[]> {
   const rows = await db
     .select({
@@ -126,25 +181,7 @@ export default async function EditChecklistPage({
       : null;
   const wantsDraftEdit = mode === "edit" && Boolean(draftRevision);
   const draftAfter = draftRevision?.snapshot?.after;
-  const initialForEdit =
-    draftAfter && typeof draftAfter === "object"
-      ? {
-          name:
-            typeof draftAfter.name === "string" ? draftAfter.name : template.name,
-          description:
-            typeof draftAfter.description === "string" || draftAfter.description === null
-              ? draftAfter.description
-              : template.description ?? null,
-          items: Array.isArray(draftAfter.items)
-            ? draftAfter.items.map((item) => ({
-                type: String(item.type ?? "custom_field"),
-                label: String(item.label ?? ""),
-                fieldType: item.fieldType ? String(item.fieldType) : null,
-                options: Array.isArray(item.options) ? item.options.map((opt) => String(opt)) : null,
-              }))
-            : template.items,
-        }
-      : template;
+  const initialForEdit = buildInitialForDraft(draftAfter, template);
   const revisions = await getChecklistRevisions(id);
   const revisionsForClient = revisions.map((rev) => ({
     ...rev,
@@ -198,6 +235,7 @@ export default async function EditChecklistPage({
       <section className="min-w-0 lg:pr-4">
         {mode === "edit" ? (
           <ChecklistTemplateForm
+            key={`${id}:${wantsDraftEdit && draftRevision ? draftRevision.id : "live"}`}
             templateId={id}
             initial={wantsDraftEdit ? initialForEdit : template}
             initialRevisionName={wantsDraftEdit ? draftRevision?.name : undefined}

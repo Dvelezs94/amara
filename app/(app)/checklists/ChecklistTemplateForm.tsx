@@ -202,6 +202,7 @@ export function ChecklistTemplateForm({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             submissionAction: requestedAction,
+            draftRevisionId,
             revisionName: revisionName.trim() || "Sin nombre",
             name: nameTrim,
             description: description.trim() || null,

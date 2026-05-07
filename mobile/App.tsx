@@ -4316,12 +4316,14 @@ const styles = StyleSheet.create({
   },
   dashboardSectionCount: { fontSize: 13, fontWeight: "700", color: theme.zinc600 },
   dashboardActiveBadge: {
-    backgroundColor: "#DBEAFE",
+    backgroundColor: theme.primary50,
+    borderWidth: 1,
+    borderColor: theme.primary100,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
   },
-  dashboardActiveBadgeText: { fontSize: 11, fontWeight: "800", color: "#1E40AF" },
+  dashboardActiveBadgeText: { fontSize: 11, fontWeight: "800", color: theme.primary },
   dashboardEmpty: { fontSize: 14, color: theme.zinc500, marginBottom: 12 },
   ongoingHero: {
     padding: 16,
@@ -4788,7 +4790,7 @@ const styles = StyleSheet.create({
   },
   taskTabActive: {
     backgroundColor: theme.primary50,
-    borderColor: theme.primary200,
+    borderColor: theme.primary,
   },
   taskTabText: {
     fontSize: 12,
@@ -4816,8 +4818,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: theme.primary100,
+    backgroundColor: theme.primary50,
     marginBottom: 2,
   },
   ongoingTasksNoticeText: {
@@ -4836,7 +4838,7 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: theme.zinc200,
+    borderColor: theme.zinc300,
     backgroundColor: theme.white,
     alignItems: "center",
     justifyContent: "center",

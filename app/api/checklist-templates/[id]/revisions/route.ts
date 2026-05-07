@@ -92,6 +92,10 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const submissionAction =
     body.submissionAction === "submit_review" ? "submit_review" : "save";
+  const draftRevisionId =
+    typeof body.draftRevisionId === "string" && body.draftRevisionId.trim()
+      ? body.draftRevisionId.trim()
+      : null;
   const revisionName = String(body.revisionName ?? "").trim();
   if (!revisionName) {
     return NextResponse.json(
@@ -132,7 +136,10 @@ export async function POST(
     where: and(
       eq(checklistTemplateRevisions.checklistTemplateId, templateId),
       eq(checklistTemplateRevisions.proposedByUserId, session.id),
-      eq(checklistTemplateRevisions.status, "draft")
+      eq(checklistTemplateRevisions.status, "draft"),
+      draftRevisionId
+        ? eq(checklistTemplateRevisions.id, draftRevisionId)
+        : eq(checklistTemplateRevisions.checklistTemplateId, templateId)
     ),
     orderBy: [desc(checklistTemplateRevisions.createdAt)],
   });
@@ -233,5 +240,5 @@ export async function POST(
     }
   }
 
-  return NextResponse.json({ ok: true, status, revisionNumber });
+  return NextResponse.json({ ok: true, status, revisionNumber, revisionId });
 }
