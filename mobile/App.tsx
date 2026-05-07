@@ -30,7 +30,6 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -83,7 +82,7 @@ type WorkOrderListItem = {
 
 type ChecklistItem = {
   id: string;
-  type: "step" | "field";
+  type: "step" | "field" | "text_block";
   label: string;
   completed: boolean | null;
   value: unknown;
@@ -99,18 +98,25 @@ function isChecklistFullyComplete(checklist: ChecklistItem[]): boolean {
       if (item.completed !== true) return false;
       continue;
     }
-    if (item.type === "field") {
-      if (item.fieldType === "checkbox") {
-        if (typeof item.value !== "boolean") return false;
-        continue;
-      }
-      if (item.value == null) return false;
-      if (typeof item.value === "boolean") continue;
-      if (typeof item.value === "number" && !Number.isNaN(item.value)) continue;
-      const s = String(item.value).trim();
-      if (s === "") return false;
+    // Static text blocks (titles/subtitles/paragraphs) do not require an answer.
+    if (item.type === "text_block") continue;
+
+    if (item.fieldType === "photo") {
+      if (checklistPhotoUrls(item.value).length === 0) return false;
       continue;
     }
+    if (item.fieldType === "checkbox") {
+      if (typeof item.value !== "boolean") return false;
+      continue;
+    }
+    if (typeof item.value === "number") {
+      if (Number.isNaN(item.value)) return false;
+      continue;
+    }
+    if (typeof item.value === "boolean") return false;
+    if (item.value == null) return false;
+    const s = String(item.value).trim();
+    if (s === "") return false;
   }
   return true;
 }
@@ -491,9 +497,87 @@ function absoluteFileUrl(path: string) {
   return `${API_HOST}${path}`;
 }
 
+function checklistPhotoUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  if (raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("/")) {
+    return absoluteFileUrl(raw);
+  }
+  return null;
+}
+
+function checklistPhotoUrls(value: unknown): string[] {
+  const urls = new Set<string>();
+  const visit = (input: unknown) => {
+    if (Array.isArray(input)) {
+      input.forEach(visit);
+      return;
+    }
+    if (typeof input === "string") {
+      const raw = input.trim();
+      if (!raw) return;
+      if (
+        (raw.startsWith("[") && raw.endsWith("]")) ||
+        (raw.startsWith("{") && raw.endsWith("}"))
+      ) {
+        try {
+          visit(JSON.parse(raw));
+          return;
+        } catch {
+          // treat as plain string if not JSON
+        }
+      }
+      const normalized = checklistPhotoUrl(raw);
+      if (normalized) urls.add(normalized);
+      return;
+    }
+    if (input && typeof input === "object") {
+      const obj = input as Record<string, unknown>;
+      visit(obj.fileUrl);
+      visit(obj.url);
+      visit(obj.src);
+      visit(obj.value);
+      visit(obj.values);
+      visit(obj.photos);
+      visit(obj.attachments);
+    }
+  };
+  visit(value);
+  return Array.from(urls);
+}
+
+function mobileImageSource(uri: string): { uri: string; headers?: Record<string, string> } {
+  if (isLikelyInternalApiUrl(uri) && sessionCookieHeader) {
+    return { uri, headers: { Cookie: sessionCookieHeader } };
+  }
+  return { uri };
+}
+
+async function resolveInternalAttachmentUrl(url: string): Promise<string> {
+  const endpoint = url.includes("?") ? `${url}&format=json` : `${url}?format=json`;
+  const res = await fetch(endpoint, {
+    method: "GET",
+    credentials: "include",
+    headers: sessionCookieHeader ? { Cookie: sessionCookieHeader } : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || typeof data.url !== "string" || data.url.trim() === "") {
+    throw new Error(typeof data?.error === "string" ? data.error : "No se pudo resolver la URL firmada.");
+  }
+  return data.url;
+}
+
 function ensureFileScheme(uri: string): string {
   if (uri.startsWith("file://")) return uri;
   if (uri.startsWith("/")) return `file://${uri}`;
+  return uri;
+}
+
+function inlinePdfWebViewUri(uri: string): string {
+  if (Platform.OS === "android" && (uri.startsWith("http://") || uri.startsWith("https://"))) {
+    return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(uri)}`;
+  }
   return uri;
 }
 
@@ -509,7 +593,34 @@ function looksLikeImageFilename(filename: string): boolean {
 }
 
 function isLikelyInternalDownloadUrl(urlOrPath: string): boolean {
-  return urlOrPath.startsWith("/api/work-orders/");
+  if (urlOrPath.startsWith("/api/work-orders/") || urlOrPath.startsWith("/api/asset-files/")) {
+    return true;
+  }
+  if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
+    try {
+      const parsed = new URL(urlOrPath);
+      return (
+        parsed.pathname.startsWith("/api/work-orders/") ||
+        parsed.pathname.startsWith("/api/asset-files/")
+      );
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function isLikelyInternalApiUrl(urlOrPath: string): boolean {
+  if (urlOrPath.startsWith("/api/")) return true;
+  if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
+    try {
+      const parsed = new URL(urlOrPath);
+      return parsed.pathname.startsWith("/api/");
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 type KnowledgeFileKind = "pdf" | "image" | "other";
@@ -986,6 +1097,7 @@ function AppContent() {
   /** Task "Detalles" card: collapsed by default. */
   const [detailDetailsExpanded, setDetailDetailsExpanded] = useState(false);
   const [notificationsRefreshing, setNotificationsRefreshing] = useState(false);
+  const [knowledgeRefreshing, setKnowledgeRefreshing] = useState(false);
   /** Draft strings for number fields while editing (allows "12." before blur). */
   const [checklistNumberDraft, setChecklistNumberDraft] = useState<Record<string, string>>({});
   const [checklistDropdownModal, setChecklistDropdownModal] = useState<{
@@ -994,6 +1106,9 @@ function AppContent() {
     options: string[];
   } | null>(null);
   const [checklistPhotoUploadingId, setChecklistPhotoUploadingId] = useState<string | null>(null);
+  const [checklistPhotoPreviewUrls, setChecklistPhotoPreviewUrls] = useState<Record<string, string>>(
+    {}
+  );
   const [detailComments, setDetailComments] = useState<WorkOrderComment[]>([]);
   const [detailCommentsLoading, setDetailCommentsLoading] = useState(false);
   const [detailCommentsError, setDetailCommentsError] = useState<string | null>(null);
@@ -1200,50 +1315,8 @@ function AppContent() {
     setKbError(null);
     setKbOpeningId(item.id);
     try {
-      const remoteUrl = absoluteFileUrl(item.fileUrl);
-      const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
-      if (!baseDir) {
-        throw new Error("No hay almacenamiento disponible en el dispositivo.");
-      }
-      const dir = `${baseDir}${KB_CACHE_SUBDIR}/`;
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
-      const localPath = `${dir}${item.id}_${kbSafeLocalName(item.filename)}`;
-      const info = await FileSystem.getInfoAsync(localPath);
-      let localUri = ensureFileScheme(localPath);
-      if (!info.exists) {
-        const result = await FileSystem.downloadAsync(remoteUrl, localPath);
-        localUri = ensureFileScheme(result.uri);
-      }
-      if (Platform.OS === "android") {
-        let targetDir = kbStorageDirUri;
-        if (!targetDir) {
-          const perms = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-          if (!perms.granted || !perms.directoryUri) {
-            throw new Error("Se requiere permiso de almacenamiento para guardar archivos de biblioteca.");
-          }
-          targetDir = perms.directoryUri;
-          setKbStorageDirUri(perms.directoryUri);
-        }
-        const safeName = `${item.id}-${Date.now()}-${kbSafeLocalName(item.filename)}`;
-        const targetUri = await FileSystem.StorageAccessFramework.createFileAsync(
-          targetDir,
-          safeName,
-          knowledgeMimeType(item.filename, item.fileUrl)
-        );
-        const base64 = await FileSystem.readAsStringAsync(localUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        await FileSystem.writeAsStringAsync(targetUri, base64, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-      }
-      const kind = knowledgeFileKind(item.filename, item.fileUrl);
-      const title = item.filename?.trim() || "Documento";
-      if (kind === "image") {
-        setInlineImage({ uri: localUri, title });
-      } else {
-        setInlinePdf({ uri: localUri, title });
-      }
+      const name = item.filename?.trim() || "Documento";
+      await openAttachmentUrl(item.fileUrl, name);
     } catch (error) {
       setKbError(error instanceof Error ? error.message : "No se pudo abrir el archivo.");
     } finally {
@@ -1251,19 +1324,36 @@ function AppContent() {
     }
   }
 
-  function openWorkOrderImageLightbox(fileUrl: string, title: string) {
+  async function openWorkOrderImageLightbox(fileUrl: string, title: string) {
+    const url = absoluteFileUrl(fileUrl);
+    let previewUrl = url;
+    if (isLikelyInternalDownloadUrl(url)) {
+      try {
+        previewUrl = await resolveInternalAttachmentUrl(url);
+      } catch {
+        previewUrl = url;
+      }
+    }
     setInlineImage({
-      uri: absoluteFileUrl(fileUrl),
+      uri: previewUrl,
       title: title.trim() || "Imagen",
     });
   }
 
-  function openAttachmentUrl(fileUrl: string, filename: string) {
+  async function openAttachmentUrl(fileUrl: string, filename: string) {
     const url = absoluteFileUrl(fileUrl);
     if (looksLikePdf(filename, fileUrl)) {
-      setInlinePdf({ uri: url, title: filename.trim() || "PDF" });
+      let previewUrl = url;
+      if (isLikelyInternalDownloadUrl(url)) {
+        try {
+          previewUrl = await resolveInternalAttachmentUrl(url);
+        } catch {
+          previewUrl = url;
+        }
+      }
+      setInlinePdf({ uri: previewUrl, title: filename.trim() || "PDF" });
     } else if (looksLikeImageFilename(filename) || /\.(jpe?g|png|gif|webp|bmp)(\?|$)/i.test(fileUrl)) {
-      openWorkOrderImageLightbox(fileUrl, filename);
+      void openWorkOrderImageLightbox(fileUrl, filename);
     } else {
       void Linking.openURL(url);
     }
@@ -1329,6 +1419,15 @@ function AppContent() {
       await loadNotifications();
     } finally {
       setNotificationsRefreshing(false);
+    }
+  }
+
+  async function refreshKnowledgeFeed() {
+    setKnowledgeRefreshing(true);
+    try {
+      await loadKnowledge();
+    } finally {
+      setKnowledgeRefreshing(false);
     }
   }
 
@@ -1555,19 +1654,25 @@ function AppContent() {
     if (result.canceled || !result.assets?.[0]) return;
     const wo = selectedWorkOrder;
     if (!wo) return;
-    const asset = result.assets[0];
+    const existing = checklistPhotoUrls(wo.checklist.find((i) => i.id === itemId)?.value);
     setChecklistPhotoUploadingId(itemId);
     setDetailError(null);
     try {
-      const mime = asset.mimeType ?? "image/jpeg";
-      let filename =
-        asset.fileName?.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "").slice(0, 120) ?? "";
-      if (!filename) {
-        const ext = mime.includes("png") ? ".png" : mime.includes("webp") ? ".webp" : ".jpg";
-        filename = `evidencia${ext}`;
+      const uploadedUrls: string[] = [];
+      for (const asset of result.assets) {
+        const mime = asset.mimeType ?? "image/jpeg";
+        let filename =
+          asset.fileName?.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "").slice(0, 120) ?? "";
+        if (!filename) {
+          const ext = mime.includes("png") ? ".png" : mime.includes("webp") ? ".webp" : ".jpg";
+          filename = `evidencia-${Date.now()}${ext}`;
+        }
+        const uploaded = await apiUploadWorkOrderFile(wo.id, asset.uri, filename, mime);
+        uploadedUrls.push(uploaded.fileUrl);
       }
-      const uploaded = await apiUploadWorkOrderFile(wo.id, asset.uri, filename, mime);
-      await updateChecklist(itemId, { value: uploaded.fileUrl });
+      await updateChecklist(itemId, {
+        value: Array.from(new Set([...existing, ...uploadedUrls])),
+      });
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : "No se pudo subir la foto.");
     } finally {
@@ -1596,6 +1701,7 @@ function AppContent() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
+      allowsMultipleSelection: true,
       quality: 0.85,
     });
     await finalizeChecklistPhotoFromPicker(itemId, result);
@@ -1607,6 +1713,25 @@ function AppContent() {
       { text: "Camara", onPress: () => void pickChecklistPhotoFromCamera(itemId) },
       { text: "Galeria", onPress: () => void pickChecklistPhotoFromLibrary(itemId) },
     ]);
+  }
+
+  async function removeChecklistPhoto(itemId: string, photoUrl: string) {
+    if (!selectedWorkOrder) return;
+    const current = checklistPhotoUrls(selectedWorkOrder.checklist.find((i) => i.id === itemId)?.value);
+    const next = current.filter((url) => url !== photoUrl);
+    await updateChecklist(itemId, { value: next });
+  }
+
+  async function refreshChecklistPhotoPreviewUrl(itemId: string, originalUrl: string) {
+    const cacheKey = `${itemId}|${originalUrl}`;
+    const candidate = absoluteFileUrl(originalUrl);
+    if (!isLikelyInternalDownloadUrl(candidate)) return;
+    try {
+      const signed = await resolveInternalAttachmentUrl(candidate);
+      setChecklistPhotoPreviewUrls((prev) => ({ ...prev, [cacheKey]: signed }));
+    } catch {
+      // Keep current URL if refresh fails.
+    }
   }
 
   async function pickCommentImagesFromLibrary() {
@@ -1837,10 +1962,14 @@ function AppContent() {
         closeTaskDetail();
         return true;
       }
+      if (activeSection === "knowledgeBase" || activeSection === "notifications") {
+        setActiveSection("workOrders");
+        return true;
+      }
       return false;
     });
     return () => sub.remove();
-  }, [inlineImage, inlinePdf, selectedWorkOrderId, closeTaskDetail]);
+  }, [inlineImage, inlinePdf, selectedWorkOrderId, closeTaskDetail, activeSection]);
 
   useEffect(() => {
     if (!isLoggedIn || selectedWorkOrderId) return;
@@ -1858,7 +1987,46 @@ function AppContent() {
     setChecklistPhotoUploadingId(null);
     setChecklistDatePicker(null);
     setDetailDetailsExpanded(false);
+    setChecklistPhotoPreviewUrls({});
   }, [selectedWorkOrderId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const wo = selectedWorkOrder;
+    if (!wo) return;
+    const photoEntries = wo.checklist
+      .filter((item) => item.fieldType === "photo")
+      .flatMap((item) =>
+        checklistPhotoUrls(item.value).map((uri) => ({
+          cacheKey: `${item.id}|${uri}`,
+          uri,
+        }))
+      );
+
+    for (const entry of photoEntries) {
+      if (!isLikelyInternalDownloadUrl(entry.uri)) {
+        setChecklistPhotoPreviewUrls((prev) =>
+          prev[entry.cacheKey] === entry.uri ? prev : { ...prev, [entry.cacheKey]: entry.uri }
+        );
+        continue;
+      }
+      if (checklistPhotoPreviewUrls[entry.cacheKey]) continue;
+      void resolveInternalAttachmentUrl(entry.uri)
+        .then((signed) => {
+          if (cancelled) return;
+          setChecklistPhotoPreviewUrls((prev) => ({ ...prev, [entry.cacheKey]: signed }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setChecklistPhotoPreviewUrls((prev) =>
+            prev[entry.cacheKey] === entry.uri ? prev : { ...prev, [entry.cacheKey]: entry.uri }
+          );
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWorkOrder, checklistPhotoPreviewUrls]);
 
   const detailCanEditChecklist = selectedWorkOrder?.status === "in_progress";
 
@@ -2249,24 +2417,61 @@ function AppContent() {
                               </Pressable>
                             ) : (
                               <View key={item.id} style={styles.checklistCard}>
-                                <Text style={styles.checklistFieldLabel}>{item.label}</Text>
+                                {item.fieldType !== "checkbox" ? (
+                                  <Text style={styles.checklistFieldLabel}>{item.label}</Text>
+                                ) : null}
                                 {!detailCanEditChecklist ? (
                                   item.fieldType === "photo" &&
-                                  typeof item.value === "string" &&
-                                  item.value.startsWith("/") ? (
-                                    <Pressable
-                                      onPress={() =>
-                                        openWorkOrderImageLightbox(item.value as string, item.label)
-                                      }
-                                      accessibilityRole="button"
-                                      accessibilityLabel={`Ampliar foto: ${item.label}`}
-                                    >
-                                      <Image
-                                        source={{ uri: absoluteFileUrl(item.value) }}
-                                        style={styles.checklistPhotoPreview}
-                                        resizeMode="cover"
-                                      />
-                                    </Pressable>
+                                  checklistPhotoUrls(item.value).length > 0 ? (
+                                    <View style={styles.checklistPhotoGrid}>
+                                      {checklistPhotoUrls(item.value).map((photoUrl, idx) => {
+                                        const cacheKey = `${item.id}|${photoUrl}`;
+                                        const previewUrl =
+                                          checklistPhotoPreviewUrls[cacheKey] ?? photoUrl;
+                                        return (
+                                          <Pressable
+                                            key={`${item.id}-readonly-${idx}-${photoUrl}`}
+                                            onPress={() =>
+                                              void openWorkOrderImageLightbox(previewUrl, item.label)
+                                            }
+                                            accessibilityRole="button"
+                                            accessibilityLabel={`Ampliar foto ${idx + 1}: ${item.label}`}
+                                          >
+                                            <Image
+                                              source={mobileImageSource(previewUrl)}
+                                              style={styles.checklistPhotoPreview}
+                                              resizeMode="cover"
+                                              onError={() => {
+                                                void refreshChecklistPhotoPreviewUrl(item.id, photoUrl);
+                                              }}
+                                            />
+                                          </Pressable>
+                                        );
+                                      })}
+                                    </View>
+                                  ) : item.fieldType === "checkbox" ? (
+                                    <View style={styles.checklistCheckboxCard}>
+                                      <View
+                                        style={[
+                                          styles.checklistStepBox,
+                                          item.value === true
+                                            ? styles.checklistStepBoxOn
+                                            : styles.checklistStepBoxOff,
+                                        ]}
+                                      >
+                                        {item.value === true ? (
+                                          <Ionicons name="checkmark" size={16} color={theme.white} />
+                                        ) : null}
+                                      </View>
+                                      <Text
+                                        style={[
+                                          styles.checklistCheckboxText,
+                                          item.value === true ? styles.checklistCheckboxTextDone : null,
+                                        ]}
+                                      >
+                                        {item.label}
+                                      </Text>
+                                    </View>
                                   ) : (
                                     <Text style={styles.checklistFieldReadOnly}>
                                       {item.fieldType === "checkbox"
@@ -2279,15 +2484,38 @@ function AppContent() {
                                     </Text>
                                   )
                                 ) : item.fieldType === "checkbox" ? (
-                                  <View style={styles.checklistCheckboxRow}>
-                                    <Switch
-                                      value={item.value === true}
-                                      onValueChange={(v) => void updateChecklist(item.id, { value: v })}
-                                      trackColor={{ false: theme.zinc200, true: theme.primary100 }}
-                                      thumbColor={item.value === true ? theme.primary : theme.zinc400}
-                                    />
-                                    <Text style={styles.checklistCheckboxHint}>Marcar si aplica</Text>
-                                  </View>
+                                  <Pressable
+                                    style={styles.checklistCheckboxCard}
+                                    onPress={() =>
+                                      void updateChecklist(item.id, {
+                                        value: !(item.value === true),
+                                      })
+                                    }
+                                    accessibilityRole="checkbox"
+                                    accessibilityState={{ checked: item.value === true }}
+                                    accessibilityLabel={item.label || "Marcar si aplica"}
+                                  >
+                                    <View
+                                      style={[
+                                        styles.checklistStepBox,
+                                        item.value === true
+                                          ? styles.checklistStepBoxOn
+                                          : styles.checklistStepBoxOff,
+                                      ]}
+                                    >
+                                      {item.value === true ? (
+                                        <Ionicons name="checkmark" size={16} color={theme.white} />
+                                      ) : null}
+                                    </View>
+                                    <Text
+                                      style={[
+                                        styles.checklistCheckboxText,
+                                        item.value === true ? styles.checklistCheckboxTextDone : null,
+                                      ]}
+                                    >
+                                      {item.label}
+                                    </Text>
+                                  </Pressable>
                                 ) : item.fieldType === "number" ? (
                                   <TextInput
                                     value={
@@ -2383,21 +2611,45 @@ function AppContent() {
                                       </View>
                                     ) : (
                                       <>
-                                        {typeof item.value === "string" &&
-                                        item.value.startsWith("/") ? (
-                                          <Pressable
-                                            onPress={() =>
-                                              openWorkOrderImageLightbox(item.value as string, item.label)
-                                            }
-                                            accessibilityRole="button"
-                                            accessibilityLabel={`Ampliar foto: ${item.label}`}
-                                          >
-                                            <Image
-                                              source={{ uri: absoluteFileUrl(item.value) }}
-                                              style={styles.checklistPhotoPreview}
-                                              resizeMode="cover"
-                                            />
-                                          </Pressable>
+                                        {checklistPhotoUrls(item.value).length > 0 ? (
+                                          <View style={styles.checklistPhotoGrid}>
+                                            {checklistPhotoUrls(item.value).map((photoUrl, idx) => {
+                                              const cacheKey = `${item.id}|${photoUrl}`;
+                                              const previewUrl =
+                                                checklistPhotoPreviewUrls[cacheKey] ?? photoUrl;
+                                              return (
+                                                <View key={`${item.id}-${idx}-${photoUrl}`} style={styles.checklistPhotoTile}>
+                                                  <Pressable
+                                                    onPress={() =>
+                                                      void openWorkOrderImageLightbox(previewUrl, item.label)
+                                                    }
+                                                    accessibilityRole="button"
+                                                    accessibilityLabel={`Ampliar foto ${idx + 1}: ${item.label}`}
+                                                  >
+                                                    <Image
+                                                      source={mobileImageSource(previewUrl)}
+                                                      style={styles.checklistPhotoPreview}
+                                                      resizeMode="cover"
+                                                      onError={() => {
+                                                        void refreshChecklistPhotoPreviewUrl(
+                                                          item.id,
+                                                          photoUrl
+                                                        );
+                                                      }}
+                                                    />
+                                                  </Pressable>
+                                                  <Pressable
+                                                    style={styles.checklistPhotoRemoveBtn}
+                                                    onPress={() => void removeChecklistPhoto(item.id, photoUrl)}
+                                                    accessibilityRole="button"
+                                                    accessibilityLabel={`Eliminar foto ${idx + 1}`}
+                                                  >
+                                                    <Ionicons name="close" size={14} color={theme.white} />
+                                                  </Pressable>
+                                                </View>
+                                              );
+                                            })}
+                                          </View>
                                         ) : null}
                                         <Pressable
                                           style={styles.checklistPhotoActionBtn}
@@ -2405,7 +2657,7 @@ function AppContent() {
                                         >
                                           <Ionicons name="camera-outline" size={20} color={theme.primary} />
                                           <Text style={styles.checklistPhotoActionText}>
-                                            {typeof item.value === "string" && item.value.startsWith("/")
+                                            {checklistPhotoUrls(item.value).length > 0
                                               ? "Cambiar foto (camara o galeria)"
                                               : "Tomar o elegir foto"}
                                           </Text>
@@ -2514,7 +2766,7 @@ function AppContent() {
                                         <Pressable
                                           key={`${comment.id}-${a.fileUrl}-${idx}`}
                                           style={styles.attachmentCell}
-                                          onPress={() => openAttachmentUrl(a.fileUrl, a.filename)}
+                                          onPress={() => void openAttachmentUrl(a.fileUrl, a.filename)}
                                         >
                                           {looksLikePdf(a.filename, a.fileUrl) ? (
                                             <View
@@ -2783,10 +3035,7 @@ function AppContent() {
                       </Text>
                     </Pressable>
                     <Pressable
-                      style={[
-                        styles.taskTab,
-                        taskListTab === "in_progress" && styles.taskTabActiveInProgress,
-                      ]}
+                      style={[styles.taskTab, taskListTab === "in_progress" && styles.taskTabActive]}
                       onPress={() => setTaskListTab("in_progress")}
                     >
                       <Text
@@ -3235,6 +3484,10 @@ function AppContent() {
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
                 showsHorizontalScrollIndicator={false}
+                refreshing={knowledgeRefreshing}
+                onRefresh={() => {
+                  void refreshKnowledgeFeed();
+                }}
                 ListEmptyComponent={<Text style={styles.emptyText}>No hay documentos.</Text>}
                 renderItem={({ item }) => {
                   const kind = knowledgeFileKind(item.filename, item.fileUrl);
@@ -3440,7 +3693,14 @@ function AppContent() {
           </View>
           {inlinePdf ? (
             <WebView
-              source={{ uri: inlinePdf.uri }}
+              source={
+                isLikelyInternalDownloadUrl(inlinePdfWebViewUri(inlinePdf.uri)) && sessionCookieHeader
+                  ? {
+                      uri: inlinePdfWebViewUri(inlinePdf.uri),
+                      headers: { Cookie: sessionCookieHeader },
+                    }
+                  : { uri: inlinePdfWebViewUri(inlinePdf.uri) }
+              }
               style={styles.pdfModalWeb}
               startInLoadingState
               originWhitelist={["*"]}
@@ -4304,8 +4564,20 @@ const styles = StyleSheet.create({
     color: theme.zinc700,
     marginBottom: 4,
   },
-  checklistCheckboxRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  checklistCheckboxHint: { flex: 1, fontSize: 14, color: theme.zinc600 },
+  checklistCheckboxCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 48,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
+    backgroundColor: theme.white,
+  },
+  checklistCheckboxText: { flex: 1, fontSize: 15, fontWeight: "600", color: theme.zinc700 },
+  checklistCheckboxTextDone: { color: theme.zinc500, textDecorationLine: "line-through" },
   checklistDropdownTrigger: {
     flexDirection: "row",
     alignItems: "center",
@@ -4417,15 +4689,32 @@ const styles = StyleSheet.create({
     color: theme.zinc700,
   },
   checklistPhotoEditor: { gap: 12, marginTop: 4 },
+  checklistPhotoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  checklistPhotoTile: {
+    position: "relative",
+  },
   checklistPhotoPreview: {
-    width: "100%",
-    maxWidth: 280,
-    aspectRatio: 1,
+    width: 92,
+    height: 92,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: theme.zinc200,
     backgroundColor: theme.zinc100,
-    alignSelf: "flex-start",
+  },
+  checklistPhotoRemoveBtn: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(24,24,27,0.8)",
   },
   checklistPhotoUploading: {
     alignItems: "center",
@@ -4500,11 +4789,6 @@ const styles = StyleSheet.create({
   taskTabActive: {
     backgroundColor: theme.primary50,
     borderColor: theme.primary200,
-  },
-  taskTabActiveInProgress: {
-    backgroundColor: "#DBEAFE",
-    borderColor: theme.primary,
-    borderWidth: 1,
   },
   taskTabText: {
     fontSize: 12,

@@ -55,12 +55,6 @@ export async function POST(
   if (!wo) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (wo.status === "completed") {
-    return NextResponse.json(
-      { error: "No se pueden subir fotos a una orden completada" },
-      { status: 403 }
-    );
-  }
 
   let formData: globalThis.FormData;
   try {

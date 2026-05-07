@@ -146,6 +146,60 @@ export function WorkOrderDetail({
   };
   canEditAssignee?: boolean;
 }) {
+  function toRenderablePhotoUrl(raw: string): string {
+    const trimmed = raw.trim();
+    if (!trimmed) return trimmed;
+    if (trimmed.startsWith("/")) return trimmed;
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.pathname.startsWith("/api/work-orders/")) {
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    } catch {
+      // Keep original when it's not a valid absolute URL
+    }
+    return trimmed;
+  }
+
+  function checklistPhotoUrls(value: unknown): string[] {
+    const urls = new Set<string>();
+    const visit = (input: unknown) => {
+      if (Array.isArray(input)) {
+        input.forEach(visit);
+        return;
+      }
+      if (typeof input === "string") {
+        const raw = input.trim();
+        if (!raw) return;
+        if (
+          (raw.startsWith("[") && raw.endsWith("]")) ||
+          (raw.startsWith("{") && raw.endsWith("}"))
+        ) {
+          try {
+            visit(JSON.parse(raw));
+            return;
+          } catch {
+            // treat as plain string if not JSON
+          }
+        }
+        urls.add(toRenderablePhotoUrl(raw));
+        return;
+      }
+      if (input && typeof input === "object") {
+        const obj = input as Record<string, unknown>;
+        visit(obj.fileUrl);
+        visit(obj.url);
+        visit(obj.src);
+        visit(obj.value);
+        visit(obj.values);
+        visit(obj.photos);
+        visit(obj.attachments);
+      }
+    };
+    visit(value);
+    return Array.from(urls);
+  }
+
   const [checklist, setChecklist] = useState(initial.checklist);
   const [assigneeId, setAssigneeId] = useState(initial.assignee?.id ?? "");
   const [assigneeUsers, setAssigneeUsers] = useState<Array<{ id: string; name: string }>>([]);
@@ -156,6 +210,7 @@ export function WorkOrderDetail({
     null
   );
   const commentFilesInputRef = useRef<HTMLInputElement>(null);
+  const detailsPanelRef = useRef<HTMLDetailsElement>(null);
   const isCompleted = initial.status === "completed";
   const checklistUnlocked = initial.status === "in_progress";
   const kind = parseWorkOrderKind(initial.kind);
@@ -207,6 +262,12 @@ export function WorkOrderDetail({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [imageLightbox]);
+
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      detailsPanelRef.current?.setAttribute("open", "");
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -266,21 +327,24 @@ export function WorkOrderDetail({
 
   async function onChecklistPhotoSelected(itemId: string, e: React.ChangeEvent<HTMLInputElement>) {
     if (!checklistUnlocked) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
     setUploadError(null);
     setUploading(true);
     try {
-      const row = await uploadWorkOrderPhoto(file);
-      setChecklist((prev) =>
-        prev.map((i) =>
-          i.id === itemId ? { ...i, value: row.fileUrl } : i
-        )
-      );
+      const existing =
+        checklistPhotoUrls(checklist.find((i) => i.id === itemId)?.value);
+      const uploadedUrls: string[] = [];
+      for (const file of files) {
+        const row = await uploadWorkOrderPhoto(file);
+        uploadedUrls.push(row.fileUrl);
+      }
+      const merged = Array.from(new Set([...existing, ...uploadedUrls]));
+      setChecklist((prev) => prev.map((i) => (i.id === itemId ? { ...i, value: merged } : i)));
       await fetch(`/api/work-orders/${initial.id}/checklist`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId, value: row.fileUrl }),
+        body: JSON.stringify({ itemId, value: merged }),
       });
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Error al subir");
@@ -288,6 +352,18 @@ export function WorkOrderDetail({
       setUploading(false);
       e.target.value = "";
     }
+  }
+
+  async function removeChecklistPhoto(itemId: string, photoUrl: string) {
+    if (!checklistUnlocked) return;
+    const existing = checklistPhotoUrls(checklist.find((i) => i.id === itemId)?.value);
+    const next = existing.filter((url) => url !== photoUrl);
+    setChecklist((prev) => prev.map((i) => (i.id === itemId ? { ...i, value: next } : i)));
+    await fetch(`/api/work-orders/${initial.id}/checklist`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId, value: next }),
+    });
   }
 
   async function toggleStep(itemId: string, completed: boolean) {
@@ -537,36 +613,55 @@ export function WorkOrderDetail({
                   key={item.id}
                   className="flex flex-col gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-zinc-900"
                 >
-                  <label className="text-sm font-medium text-zinc-700">
-                    {item.label}
-                  </label>
+                  {item.fieldType !== "checkbox" ? (
+                    <label className="text-sm font-medium text-zinc-700">
+                      {item.label}
+                    </label>
+                  ) : null}
                   {!checklistUnlocked ? (
                     <div className="text-zinc-900">
-                      {item.fieldType === "checkbox"
-                        ? item.value === true
-                          ? "Sí"
-                          : "No"
-                        : item.fieldType === "photo" &&
-                          typeof item.value === "string" &&
-                          item.value.startsWith("/") ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setImageLightbox({
-                                src: item.value as string,
-                                alt: item.label || "Evidencia",
-                              })
-                            }
-                            className="tap-target block max-w-xs rounded-lg border border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                            aria-label={`Ampliar evidencia: ${item.label}`}
+                      {item.fieldType === "checkbox" ? (
+                        <div className="inline-flex min-h-11 w-full items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
+                          {item.value === true ? (
+                            <Check className="h-5 w-5 text-primary-600" />
+                          ) : (
+                            <Square className="h-5 w-5 text-zinc-500" />
+                          )}
+                          <span
+                            className={`text-sm font-medium ${
+                              item.value === true
+                                ? "text-zinc-500 line-through"
+                                : "text-zinc-700"
+                            }`}
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={item.value}
-                              alt=""
-                              className="pointer-events-none max-h-48 rounded-lg border border-zinc-200"
-                            />
-                          </button>
+                            {item.label}
+                          </span>
+                        </div>
+                      ) : item.fieldType === "photo" &&
+                          checklistPhotoUrls(item.value).length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {checklistPhotoUrls(item.value).map((photoUrl) => (
+                              <button
+                                key={photoUrl}
+                                type="button"
+                                onClick={() =>
+                                  setImageLightbox({
+                                    src: photoUrl,
+                                    alt: item.label || "Evidencia",
+                                  })
+                                }
+                                className="tap-target rounded-lg border border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                                aria-label={`Ampliar evidencia: ${item.label}`}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={photoUrl}
+                                  alt=""
+                                  className="pointer-events-none h-24 w-24 rounded-lg border border-zinc-200 object-cover"
+                                />
+                              </button>
+                            ))}
+                          </div>
                         ) : item.value != null ? (
                           String(item.value)
                         ) : (
@@ -576,17 +671,27 @@ export function WorkOrderDetail({
                   ) : (
                     <>
                       {item.fieldType === "checkbox" && (
-                        <div className="self-start">
-                          <label className="inline-flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={item.value === true}
-                              onChange={(e) => updateFieldValue(item.id, e.target.checked)}
-                              className="h-4 w-4 shrink-0 rounded border-zinc-300 text-primary-600 accent-primary-600"
-                            />
-                            <span className="text-sm text-zinc-700">Marcar si aplica</span>
-                          </label>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateFieldValue(item.id, !(item.value === true))}
+                          className="inline-flex min-h-11 w-full items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left"
+                          aria-pressed={item.value === true}
+                        >
+                          {item.value === true ? (
+                            <Check className="h-5 w-5 text-primary-600" />
+                          ) : (
+                            <Square className="h-5 w-5 text-zinc-500" />
+                          )}
+                          <span
+                            className={`text-sm font-medium ${
+                              item.value === true
+                                ? "text-zinc-500 line-through"
+                                : "text-zinc-700"
+                            }`}
+                          >
+                            {item.label}
+                          </span>
+                        </button>
                       )}
                       {item.fieldType === "text" && (
                         <input
@@ -631,30 +736,47 @@ export function WorkOrderDetail({
                       )}
                       {item.fieldType === "photo" && (
                         <div className="space-y-2">
-                          {typeof item.value === "string" &&
-                            item.value.startsWith("/") && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setImageLightbox({
-                                    src: item.value as string,
-                                    alt: item.label || "Previsualización",
-                                  })
-                                }
-                                className="tap-target block max-w-xs rounded-lg border border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                                aria-label={`Ampliar: ${item.label}`}
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={item.value}
-                                  alt=""
-                                  className="pointer-events-none max-h-40 rounded-lg border border-zinc-200"
-                                />
-                              </button>
-                            )}
+                          {checklistPhotoUrls(item.value).length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {checklistPhotoUrls(item.value).map((photoUrl, idx) => (
+                                <div key={photoUrl} className="relative">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setImageLightbox({
+                                        src: photoUrl,
+                                        alt: item.label || "Previsualización",
+                                      })
+                                    }
+                                    className="tap-target rounded-lg border border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                                    aria-label={`Ampliar: ${item.label}`}
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={photoUrl}
+                                      alt=""
+                                      className="pointer-events-none h-24 w-24 rounded-lg border border-zinc-200 object-cover"
+                                    />
+                                  </button>
+                                  {checklistUnlocked && (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeChecklistPhoto(item.id, photoUrl)}
+                                      className="tap-target absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
+                                      aria-label={`Eliminar foto ${idx + 1}`}
+                                      title="Eliminar foto"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <input
                             type="file"
                             accept="image/*"
+                            multiple
                             disabled={uploading}
                             onChange={(e) => onChecklistPhotoSelected(item.id, e)}
                             className="text-sm text-zinc-600 file:mr-2 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-700"
@@ -775,20 +897,38 @@ export function WorkOrderDetail({
                                     key={`${comment.id}-${attachment.fileUrl}`}
                                     className="overflow-hidden rounded-md border border-zinc-200"
                                   >
-                                    <a
-                                      href={attachment.fileUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="tap-target flex aspect-square w-full flex-col items-center justify-center gap-1 bg-zinc-50 px-2 text-zinc-600 hover:bg-zinc-100"
-                                    >
-                                      <FileText className="h-5 w-5 text-zinc-500" aria-hidden />
-                                      <span className="line-clamp-2 text-center text-[10px] font-medium">
-                                        {isImageAttachment(attachment.filename, attachment.fileUrl) &&
-                                        !isLikelyInternalDownloadUrl(attachment.fileUrl)
-                                          ? "Imagen"
-                                          : "Archivo"}
-                                      </span>
-                                    </a>
+                                    {isImageAttachment(attachment.filename, attachment.fileUrl) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setImageLightbox({
+                                            src: attachment.fileUrl,
+                                            alt: attachment.filename || "Evidencia",
+                                          })
+                                        }
+                                        className="tap-target block w-full rounded-md border border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                                        aria-label={`Ampliar evidencia: ${attachment.filename}`}
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={attachment.fileUrl}
+                                          alt=""
+                                          className="h-24 w-full object-cover"
+                                        />
+                                      </button>
+                                    ) : (
+                                      <a
+                                        href={attachment.fileUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="tap-target flex aspect-square w-full flex-col items-center justify-center gap-1 bg-zinc-50 px-2 text-zinc-600 hover:bg-zinc-100"
+                                      >
+                                        <FileText className="h-5 w-5 text-zinc-500" aria-hidden />
+                                        <span className="line-clamp-2 text-center text-[10px] font-medium">
+                                          Archivo
+                                        </span>
+                                      </a>
+                                    )}
                                     <p
                                       title={attachment.filename}
                                       className="truncate px-1 py-0.5 text-[10px] text-zinc-500"
@@ -842,7 +982,10 @@ export function WorkOrderDetail({
             )}
           </div>
 
-          <details className="group overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+          <details
+            ref={detailsPanelRef}
+            className="group overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
+          >
             <summary className="flex cursor-pointer list-none items-center justify-between border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900 [&::-webkit-details-marker]:hidden">
               <span>Detalles</span>
               <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400 transition group-open:rotate-180" />

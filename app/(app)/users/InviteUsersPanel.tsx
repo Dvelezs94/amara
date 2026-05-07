@@ -258,11 +258,6 @@ export function InviteUsersPanel() {
           {error && (
             <p className="rounded-lg bg-red-50 p-2 text-sm text-red-600">{error}</p>
           )}
-          {success && (
-            <p className="rounded-lg bg-green-50 p-2 text-sm text-green-700">
-              {success}
-            </p>
-          )}
           <div>
             <label htmlFor="name" className="mb-1 block text-sm font-medium text-zinc-700">
               Nombre
@@ -348,6 +343,11 @@ export function InviteUsersPanel() {
             {loading ? "Enviando..." : "Agregar usuario"}
           </button>
         </form>
+        {success && (
+          <p className="mt-3 rounded-lg bg-green-50 p-2 text-sm text-green-700">
+            {success}
+          </p>
+        )}
       </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4">

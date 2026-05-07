@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { deleteFileFromS3ByPublicUrl, presignS3PublicUrl } from "@/lib/s3-storage";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession();
@@ -20,7 +20,12 @@ export async function GET(
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  return NextResponse.redirect(presignS3PublicUrl(row.fileUrl), { status: 302 });
+  const signedUrl = presignS3PublicUrl(row.fileUrl);
+  const format = new URL(req.url).searchParams.get("format");
+  if (format === "json") {
+    return NextResponse.json({ url: signedUrl });
+  }
+  return NextResponse.redirect(signedUrl, { status: 302 });
 }
 
 export async function DELETE(
