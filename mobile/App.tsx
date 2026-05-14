@@ -1,4 +1,11 @@
 import { StatusBar } from "expo-status-bar";
+import {
+  CHECKLIST_REVISION_REVIEW_TITLE,
+  checklistRevisionNotificationHref,
+  parseChecklistRevisionNotificationBody,
+} from "../lib/checklist-notification-parse";
+import { checklistItemDepth, flattenChecklistTreeForDisplay } from "../lib/checklist-item-tree";
+import { workOrderChecklistIsCompleteForClosure } from "../lib/checklist-completion";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -30,6 +37,7 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -71,6 +79,13 @@ type WorkOrderListItem = {
   assetName: string | null;
   assetAssetId: string | null;
   assigneeId: string | null;
+  assigneeIds?: string[];
+  assignees?: Array<{
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    avatarBackgroundColor?: string | null;
+  }>;
   assigneeName: string | null;
   assigneeAvatarUrl?: string | null;
   assigneeAvatarBackgroundColor?: string | null;
@@ -82,43 +97,20 @@ type WorkOrderListItem = {
 
 type ChecklistItem = {
   id: string;
-  type: "step" | "field" | "text_block";
+  parentItemId?: string | null;
+  sortOrder?: number;
+  type: string;
   label: string;
   completed: boolean | null;
   value: unknown;
   fieldType: string | null;
   options?: string[] | null | unknown;
+  isOptional?: boolean;
 };
 
-/** All steps done; all fields answered (aligned with web checklist semantics). */
+/** All steps done; required fields answered (optional fields may be blank). */
 function isChecklistFullyComplete(checklist: ChecklistItem[]): boolean {
-  if (checklist.length === 0) return true;
-  for (const item of checklist) {
-    if (item.type === "step") {
-      if (item.completed !== true) return false;
-      continue;
-    }
-    // Static text blocks (titles/subtitles/paragraphs) do not require an answer.
-    if (item.type === "text_block") continue;
-
-    if (item.fieldType === "photo") {
-      if (checklistPhotoUrls(item.value).length === 0) return false;
-      continue;
-    }
-    if (item.fieldType === "checkbox") {
-      if (typeof item.value !== "boolean") return false;
-      continue;
-    }
-    if (typeof item.value === "number") {
-      if (Number.isNaN(item.value)) return false;
-      continue;
-    }
-    if (typeof item.value === "boolean") return false;
-    if (item.value == null) return false;
-    const s = String(item.value).trim();
-    if (s === "") return false;
-  }
-  return true;
+  return workOrderChecklistIsCompleteForClosure(checklist);
 }
 
 function checklistDropdownOptions(item: { options?: unknown }): string[] {
@@ -176,7 +168,17 @@ type WorkOrderDetail = {
   kind?: string | null;
   dueDate: string | null;
   completedAt?: string | null;
-  asset: { id: string; name: string; assetId: string } | null;
+  startedAt?: string | null;
+  countsMachineDowntime?: boolean;
+  manualDowntimeMinutes?: number;
+  asset: { id: string; name: string; assetId: string; tracksMachineDowntime?: boolean } | null;
+  assigneeIds?: string[];
+  assignees?: Array<{
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    avatarBackgroundColor?: string | null;
+  }>;
   assignee?: {
     id: string;
     name: string;
@@ -192,6 +194,39 @@ type WorkOrderDetail = {
   checklist: ChecklistItem[];
   attachments?: { id: string; fileUrl: string; filename: string; createdAt: string }[];
 };
+
+function formatMinutesShort(mins: number): string {
+  const m = Math.max(0, Math.floor(mins));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return r === 0 ? `${h} h` : `${h} h ${r} min`;
+}
+
+const MAX_MANUAL_DOWNTIME_MINUTES_MOBILE = 525_600;
+
+function workOrderAutomaticDowntimeMinutesMobile(wo: WorkOrderDetail): number {
+  if (wo.status !== "completed" || !wo.countsMachineDowntime) return 0;
+  if (!wo.startedAt || !wo.completedAt) return 0;
+  const a = Date.parse(wo.startedAt);
+  const b = Date.parse(wo.completedAt);
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  return Math.floor(Math.max(0, b - a) / 60000);
+}
+
+/** Vista previa del intervalo automático (en curso → ahora, o en curso → terminada si ya cerró). */
+function workOrderAutoDowntimePreviewMinutesMobile(wo: WorkOrderDetail): number {
+  if (!wo.countsMachineDowntime) return 0;
+  if (wo.status === "completed") {
+    return workOrderAutomaticDowntimeMinutesMobile(wo);
+  }
+  if (wo.status === "in_progress" && wo.startedAt) {
+    const a = Date.parse(wo.startedAt);
+    if (Number.isNaN(a)) return 0;
+    return Math.floor(Math.max(0, Date.now() - a) / 60000);
+  }
+  return 0;
+}
 
 type WorkOrderComment = {
   id: string;
@@ -729,6 +764,69 @@ function TaskCardAssigneeAvatar({
   return null;
 }
 
+function workOrderInvolvesUser(w: WorkOrderListItem, userId: string): boolean {
+  const ids = w.assigneeIds;
+  if (ids && ids.length > 0) return ids.includes(userId);
+  return w.assigneeId === userId;
+}
+
+/** Stacked avatars when several assignees; falls back to legacy single assignee fields. */
+function TaskCardAssigneesRow({ item }: { item: WorkOrderListItem }) {
+  const stack =
+    item.assignees && item.assignees.length > 0
+      ? item.assignees
+      : item.assigneeId && item.assigneeName
+        ? [
+            {
+              id: item.assigneeId,
+              name: item.assigneeName,
+              avatarUrl: item.assigneeAvatarUrl ?? null,
+              avatarBackgroundColor: item.assigneeAvatarBackgroundColor ?? null,
+            },
+          ]
+        : [];
+  if (stack.length === 0) return null;
+  const shown = stack.slice(0, 3);
+  const extra = stack.length - shown.length;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      {shown.map((a, i) => (
+        <View
+          key={a.id}
+          style={i === 0 ? undefined : { marginLeft: -10, zIndex: shown.length - i }}
+        >
+          <TaskCardAssigneeAvatar
+            name={a.name}
+            userId={a.id}
+            avatarUrl={a.avatarUrl}
+            avatarBackgroundColor={a.avatarBackgroundColor}
+          />
+        </View>
+      ))}
+      {extra > 0 ? (
+        <View style={{ marginLeft: -10, zIndex: 0 }}>
+          <View
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: theme.zinc200,
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: 2,
+              borderColor: theme.white,
+            }}
+          >
+            <Text style={{ fontSize: 10, fontWeight: "800", color: theme.zinc700 }}>
+              +{extra}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function HeaderProfileAvatar({
   name,
   userId,
@@ -740,7 +838,7 @@ function HeaderProfileAvatar({
   avatarUrl?: string | null;
   avatarBackgroundColor?: string | null;
 }) {
-  const displayName = name.trim() || "Operador";
+  const displayName = name.trim() || "Técnico";
   const raw = avatarUrl != null ? String(avatarUrl).trim() : "";
   const uri = raw !== "" ? absoluteFileUrl(raw) : null;
   if (uri) {
@@ -1115,6 +1213,11 @@ function AppContent() {
   const [detailCommentDraft, setDetailCommentDraft] = useState("");
   const [detailCommentFiles, setDetailCommentFiles] = useState<PendingCommentFile[]>([]);
   const [detailCommentSaving, setDetailCommentSaving] = useState(false);
+  const [downtimeSaving, setDowntimeSaving] = useState(false);
+  const [downtimeError, setDowntimeError] = useState<string | null>(null);
+  const [manualDowntimeDraft, setManualDowntimeDraft] = useState("");
+  const [manualDowntimeUnit, setManualDowntimeUnit] = useState<"min" | "h">("min");
+  const [downtimePreviewTick, setDowntimePreviewTick] = useState(0);
   const [checklistDatePicker, setChecklistDatePicker] = useState<{
     itemId: string;
     draft: Date;
@@ -1145,8 +1248,8 @@ function AppContent() {
   const canLogin = username.trim().length > 0 && password.trim().length > 0;
   const firstName = useMemo(() => {
     const source = (me?.name ?? username).trim();
-    if (!source) return "Operador";
-    return source.split(/\s+/)[0] ?? "Operador";
+    if (!source) return "Técnico";
+    return source.split(/\s+/)[0] ?? "Técnico";
   }, [me?.name, username]);
 
   const closeTaskFilterModal = useCallback(() => {
@@ -1204,7 +1307,7 @@ function AppContent() {
   const workOrdersFiltered = useMemo(() => {
     let list = workOrders;
     if (filterAssigneeId != null) {
-      list = list.filter((w) => w.assigneeId === filterAssigneeId);
+      list = list.filter((w) => workOrderInvolvesUser(w, filterAssigneeId));
     }
     if (filterKind !== "all") {
       list = list.filter((w) => parseWorkOrderKind(w.kind) === filterKind);
@@ -1215,7 +1318,7 @@ function AppContent() {
   const ongoingTasksCountMine = useMemo(() => {
     if (me == null) return 0;
     return workOrders.filter(
-      (w) => w.status === "in_progress" && w.assigneeId === me.id
+      (w) => w.status === "in_progress" && workOrderInvolvesUser(w, me.id)
     ).length;
   }, [workOrders, me]);
 
@@ -1647,6 +1750,61 @@ function AppContent() {
     }
   }
 
+  async function patchWorkOrderDowntimeFields(patch: {
+    countsMachineDowntime?: boolean;
+    manualDowntimeMinutes?: number;
+  }) {
+    if (!selectedWorkOrder) return;
+    const woId = selectedWorkOrder.id;
+    setDowntimeSaving(true);
+    setDowntimeError(null);
+    const snapshot = selectedWorkOrder;
+    setSelectedWorkOrder((wo) => {
+      if (!wo || wo.id !== woId) return wo;
+      return {
+        ...wo,
+        ...(patch.countsMachineDowntime !== undefined
+          ? { countsMachineDowntime: patch.countsMachineDowntime }
+          : {}),
+        ...(patch.manualDowntimeMinutes !== undefined
+          ? { manualDowntimeMinutes: patch.manualDowntimeMinutes }
+          : {}),
+      };
+    });
+    try {
+      await apiFetch<{ ok: true }>(`/api/work-orders/${woId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      void openWorkOrder(woId, { silent: true });
+    } catch (error) {
+      setSelectedWorkOrder(snapshot);
+      setDowntimeError(error instanceof Error ? error.message : "No se pudo guardar el paro.");
+    } finally {
+      setDowntimeSaving(false);
+    }
+  }
+
+  async function saveManualDowntimeFromDraft() {
+    if (!selectedWorkOrder) return;
+    if (selectedWorkOrder.asset?.tracksMachineDowntime === false) return;
+    const raw = manualDowntimeDraft.trim();
+    let minutes = 0;
+    if (raw !== "") {
+      const n = Number(raw.replace(",", "."));
+      if (!Number.isFinite(n) || n < 0) {
+        setDowntimeError("Cantidad inválida");
+        return;
+      }
+      minutes = manualDowntimeUnit === "h" ? Math.round(n * 60) : Math.round(n);
+    }
+    if (minutes > MAX_MANUAL_DOWNTIME_MINUTES_MOBILE) {
+      setDowntimeError("Paro manual demasiado grande (máx. 525600 minutos).");
+      return;
+    }
+    await patchWorkOrderDowntimeFields({ manualDowntimeMinutes: minutes });
+  }
+
   async function finalizeChecklistPhotoFromPicker(
     itemId: string,
     result: ImagePicker.ImagePickerResult
@@ -1875,6 +2033,20 @@ function AppContent() {
         // Best effort: still allow navigation.
       }
     }
+    const checklistParsed = parseChecklistRevisionNotificationBody(notification.body);
+    if (
+      notification.title === CHECKLIST_REVISION_REVIEW_TITLE &&
+      API_HOST &&
+      checklistParsed?.checklistId
+    ) {
+      const path = checklistRevisionNotificationHref(checklistParsed);
+      const url = apiUrl(path);
+      const canOpen = await Linking.canOpenURL(url).catch(() => false);
+      if (canOpen) {
+        await Linking.openURL(url);
+      }
+      return;
+    }
     if (notification.workOrderId) {
       setActiveSection("workOrders");
       await openWorkOrder(notification.workOrderId);
@@ -1991,6 +2163,36 @@ function AppContent() {
   }, [selectedWorkOrderId]);
 
   useEffect(() => {
+    setDowntimeError(null);
+    if (!selectedWorkOrder) {
+      setManualDowntimeDraft("");
+      setManualDowntimeUnit("min");
+      return;
+    }
+    setManualDowntimeDraft(
+      String(Math.max(0, Math.floor(Number(selectedWorkOrder.manualDowntimeMinutes ?? 0))))
+    );
+    setManualDowntimeUnit("min");
+  }, [selectedWorkOrderId, selectedWorkOrder?.id, selectedWorkOrder?.manualDowntimeMinutes]);
+
+  useEffect(() => {
+    if (!selectedWorkOrderId || !selectedWorkOrder) return;
+    if (selectedWorkOrder.status !== "in_progress" || !selectedWorkOrder.countsMachineDowntime) {
+      return;
+    }
+    const id = setInterval(() => {
+      setDowntimePreviewTick((t) => t + 1);
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [
+    selectedWorkOrderId,
+    selectedWorkOrder?.id,
+    selectedWorkOrder?.status,
+    selectedWorkOrder?.countsMachineDowntime,
+    selectedWorkOrder?.startedAt,
+  ]);
+
+  useEffect(() => {
     let cancelled = false;
     const wo = selectedWorkOrder;
     if (!wo) return;
@@ -2029,6 +2231,12 @@ function AppContent() {
   }, [selectedWorkOrder, checklistPhotoPreviewUrls]);
 
   const detailCanEditChecklist = selectedWorkOrder?.status === "in_progress";
+
+  const displayChecklist = useMemo(() => {
+    const list = selectedWorkOrder?.checklist;
+    if (!list?.length) return [];
+    return flattenChecklistTreeForDisplay(list);
+  }, [selectedWorkOrder?.id, selectedWorkOrder?.checklist]);
 
   const detailSlideDockVisible =
     selectedWorkOrder != null &&
@@ -2164,7 +2372,7 @@ function AppContent() {
               }}
             >
               <HeaderProfileAvatar
-                name={(me?.name ?? username).trim() || "Operador"}
+                name={(me?.name ?? username).trim() || "Técnico"}
                 userId={me?.id}
                 avatarUrl={me?.avatarUrl ?? null}
                 avatarBackgroundColor={me?.avatarBackgroundColor ?? null}
@@ -2288,9 +2496,37 @@ function AppContent() {
                         <View style={styles.detailRow}>
                           <Text style={styles.detailRowLabel}>Asignado</Text>
                           <View style={[styles.detailRowValue, styles.detailRowInline]}>
-                            {selectedWorkOrder.assignee?.name ? (
+                            {selectedWorkOrder.assignees &&
+                            selectedWorkOrder.assignees.length > 0 ? (
+                              <View style={{ gap: 10 }}>
+                                {selectedWorkOrder.assignees.map((a) => (
+                                  <View
+                                    key={a.id}
+                                    style={[styles.detailRowInline, { gap: 8 }]}
+                                  >
+                                    <AssigneeInitialsRing
+                                      name={a.name}
+                                      userId={a.id}
+                                      avatarBackgroundColor={a.avatarBackgroundColor}
+                                    />
+                                    <Text
+                                      style={styles.detailRowValueText}
+                                      numberOfLines={2}
+                                    >
+                                      {a.name}
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            ) : selectedWorkOrder.assignee?.name ? (
                               <>
-                                <AssigneeInitialsRing name={selectedWorkOrder.assignee.name} />
+                                <AssigneeInitialsRing
+                                  name={selectedWorkOrder.assignee.name}
+                                  userId={selectedWorkOrder.assignee.id}
+                                  avatarBackgroundColor={
+                                    selectedWorkOrder.assignee.avatarBackgroundColor
+                                  }
+                                />
                                 <Text style={styles.detailRowValueText} numberOfLines={1}>
                                   {selectedWorkOrder.assignee.name}
                                 </Text>
@@ -2350,6 +2586,164 @@ function AppContent() {
                       ) : null}
                     </View>
 
+                    {selectedWorkOrder.status !== "cancelled" && selectedWorkOrder.asset ? (
+                      <View style={styles.detailCard}>
+                        <View style={styles.detailCardHeader}>
+                          <Text style={styles.detailCardHeaderTitle}>Paro de máquina</Text>
+                        </View>
+                        <View style={styles.detailCardBody}>
+                          {selectedWorkOrder.asset.tracksMachineDowntime === false ? (
+                            <Text style={styles.detailRowMuted}>
+                              El seguimiento de paro está desactivado para esta máquina. Un administrador
+                              puede activarlo desde la app web (editar máquina).
+                            </Text>
+                          ) : null}
+                          <View style={styles.downtimeSwitchRow}>
+                            <Text style={styles.downtimeSwitchLabel}>
+                              Contar el tiempo por lo que dure esta tarea en progreso como paro de
+                              máquina
+                            </Text>
+                            <Switch
+                              value={selectedWorkOrder.countsMachineDowntime === true}
+                              onValueChange={(v) => void patchWorkOrderDowntimeFields({ countsMachineDowntime: v })}
+                              disabled={
+                                downtimeSaving ||
+                                selectedWorkOrder.asset?.tracksMachineDowntime === false
+                              }
+                              trackColor={{ false: theme.zinc300, true: "#FDBA74" }}
+                              thumbColor={
+                                selectedWorkOrder.countsMachineDowntime === true
+                                  ? theme.accent
+                                  : "#f4f3f4"
+                              }
+                            />
+                          </View>
+                          {selectedWorkOrder.countsMachineDowntime ? (
+                            <Text style={styles.downtimePreviewLine}>
+                              Paro automático (vista previa):{" "}
+                              <Text style={styles.detailRowValueText}>
+                                {formatMinutesShort(
+                                  workOrderAutoDowntimePreviewMinutesMobile(selectedWorkOrder) +
+                                    downtimePreviewTick * 0
+                                )}
+                              </Text>
+                              {selectedWorkOrder.status === "in_progress" ? (
+                                <Text style={styles.detailRowSub}> · se actualiza cada minuto</Text>
+                              ) : null}
+                            </Text>
+                          ) : null}
+                          {selectedWorkOrder.status === "completed" &&
+                          selectedWorkOrder.countsMachineDowntime ? (
+                            <Text style={styles.downtimeCompletedHint}>
+                              Al cerrar la tarea, este intervalo se sumó al total de la máquina (si estaba
+                              vinculada).
+                            </Text>
+                          ) : null}
+
+                          <View style={styles.downtimeManualBlock}>
+                            <Text style={styles.downtimeManualTitle}>Paro manual adicional</Text>
+                            <Text style={styles.downtimeManualSub}>
+                              Por ejemplo paro sin checklist o no cubierto por el tiempo en curso.
+                            </Text>
+                            <View style={styles.downtimeManualInputs}>
+                              <TextInput
+                                value={manualDowntimeDraft}
+                                onChangeText={setManualDowntimeDraft}
+                                editable={
+                                  !downtimeSaving &&
+                                  selectedWorkOrder.asset?.tracksMachineDowntime !== false
+                                }
+                                keyboardType="decimal-pad"
+                                placeholder="0"
+                                placeholderTextColor={theme.zinc400}
+                                style={styles.downtimeManualField}
+                              />
+                              <View style={styles.downtimeUnitRow}>
+                                <Pressable
+                                  onPress={() => setManualDowntimeUnit("min")}
+                                  disabled={
+                                    downtimeSaving ||
+                                    selectedWorkOrder.asset?.tracksMachineDowntime === false
+                                  }
+                                  style={({ pressed }) => [
+                                    styles.downtimeUnitChip,
+                                    manualDowntimeUnit === "min"
+                                      ? styles.downtimeUnitChipOn
+                                      : styles.downtimeUnitChipOff,
+                                    pressed && styles.downtimeUnitChipPressed,
+                                  ]}
+                                >
+                                  <Text
+                                    style={
+                                      manualDowntimeUnit === "min"
+                                        ? styles.downtimeUnitChipTextOn
+                                        : styles.downtimeUnitChipTextOff
+                                    }
+                                  >
+                                    Min
+                                  </Text>
+                                </Pressable>
+                                <Pressable
+                                  onPress={() => setManualDowntimeUnit("h")}
+                                  disabled={
+                                    downtimeSaving ||
+                                    selectedWorkOrder.asset?.tracksMachineDowntime === false
+                                  }
+                                  style={({ pressed }) => [
+                                    styles.downtimeUnitChip,
+                                    manualDowntimeUnit === "h"
+                                      ? styles.downtimeUnitChipOn
+                                      : styles.downtimeUnitChipOff,
+                                    pressed && styles.downtimeUnitChipPressed,
+                                  ]}
+                                >
+                                  <Text
+                                    style={
+                                      manualDowntimeUnit === "h"
+                                        ? styles.downtimeUnitChipTextOn
+                                        : styles.downtimeUnitChipTextOff
+                                    }
+                                  >
+                                    Horas
+                                  </Text>
+                                </Pressable>
+                              </View>
+                              <Pressable
+                                onPress={() => void saveManualDowntimeFromDraft()}
+                                disabled={
+                                  downtimeSaving ||
+                                  selectedWorkOrder.asset?.tracksMachineDowntime === false
+                                }
+                                style={({ pressed }) => [
+                                  styles.downtimeSaveBtn,
+                                  (downtimeSaving ||
+                                    selectedWorkOrder.asset?.tracksMachineDowntime === false) &&
+                                    styles.downtimeSaveBtnDisabled,
+                                  pressed && styles.downtimeSaveBtnPressed,
+                                ]}
+                              >
+                                <Text style={styles.downtimeSaveBtnText}>
+                                  {downtimeSaving ? "Guardando…" : "Guardar"}
+                                </Text>
+                              </Pressable>
+                            </View>
+                            {selectedWorkOrder.status === "completed" ? (
+                              <Text style={styles.downtimeSavedLine}>
+                                Guardado:{" "}
+                                <Text style={styles.detailRowValueText}>
+                                  {formatMinutesShort(
+                                    Math.max(0, Math.floor(Number(selectedWorkOrder.manualDowntimeMinutes ?? 0)))
+                                  )}
+                                </Text>
+                              </Text>
+                            ) : null}
+                          </View>
+
+                          {downtimeError ? <Text style={styles.errorText}>{downtimeError}</Text> : null}
+                        </View>
+                      </View>
+                    ) : null}
+
                     <View style={styles.detailCard}>
                       <View style={styles.detailCardHeader}>
                         <Text style={styles.detailCardHeaderTitle}>Descripción</Text>
@@ -2375,13 +2769,27 @@ function AppContent() {
                               editar el checklist.
                             </Text>
                           ) : null}
-                          {selectedWorkOrder.checklist.map((item) =>
-                            item.type === "step" ? (
+                          {displayChecklist.map((item, displayIdx) => {
+                            const depth = checklistItemDepth(item, selectedWorkOrder.checklist);
+                            const indent = { marginLeft: Math.min(depth, 8) * 12 };
+                            return item.type === "section" ? (
+                              <View
+                                key={item.id}
+                                style={[
+                                  styles.checklistSectionHeading,
+                                  displayIdx === 0 ? styles.checklistSectionHeadingFirst : null,
+                                  indent,
+                                ]}
+                              >
+                                <Text style={styles.checklistSectionTitle}>{item.label}</Text>
+                              </View>
+                            ) : item.type === "step" ? (
                               <Pressable
                                 key={item.id}
                                 style={[
                                   styles.checklistCard,
                                   !detailCanEditChecklist && styles.checklistCardDisabled,
+                                  indent,
                                 ]}
                                 onPress={() =>
                                   detailCanEditChecklist &&
@@ -2415,10 +2823,25 @@ function AppContent() {
                                   </Text>
                                 </View>
                               </Pressable>
+                            ) : item.type === "text_block" ? (
+                              <View key={item.id} style={[{ marginBottom: 10 }, indent]}>
+                                {item.fieldType === "title" ? (
+                                  <Text style={styles.checklistTextBlockTitle}>{item.label}</Text>
+                                ) : item.fieldType === "subtitle" ? (
+                                  <Text style={styles.checklistTextBlockSubtitle}>{item.label}</Text>
+                                ) : (
+                                  <Text style={styles.checklistTextBlockBody}>{item.label}</Text>
+                                )}
+                              </View>
                             ) : (
-                              <View key={item.id} style={styles.checklistCard}>
+                              <View key={item.id} style={[styles.checklistCard, indent]}>
                                 {item.fieldType !== "checkbox" ? (
-                                  <Text style={styles.checklistFieldLabel}>{item.label}</Text>
+                                  <Text style={styles.checklistFieldLabel}>
+                                    {item.label}
+                                    {item.isOptional ? (
+                                      <Text style={styles.checklistFieldOptionalHint}> (opcional)</Text>
+                                    ) : null}
+                                  </Text>
                                 ) : null}
                                 {!detailCanEditChecklist ? (
                                   item.fieldType === "photo" &&
@@ -2470,6 +2893,9 @@ function AppContent() {
                                         ]}
                                       >
                                         {item.label}
+                                        {item.isOptional && item.value == null ? (
+                                          <Text style={styles.checklistFieldOptionalHint}> · Sin respuesta</Text>
+                                        ) : null}
                                       </Text>
                                     </View>
                                   ) : (
@@ -2486,11 +2912,21 @@ function AppContent() {
                                 ) : item.fieldType === "checkbox" ? (
                                   <Pressable
                                     style={styles.checklistCheckboxCard}
-                                    onPress={() =>
-                                      void updateChecklist(item.id, {
-                                        value: !(item.value === true),
-                                      })
-                                    }
+                                    onPress={() => {
+                                      if (item.isOptional) {
+                                        if (item.value === true) {
+                                          void updateChecklist(item.id, { value: false });
+                                        } else if (item.value === false) {
+                                          void updateChecklist(item.id, { value: null });
+                                        } else {
+                                          void updateChecklist(item.id, { value: true });
+                                        }
+                                      } else {
+                                        void updateChecklist(item.id, {
+                                          value: !(item.value === true),
+                                        });
+                                      }
+                                    }}
                                     accessibilityRole="checkbox"
                                     accessibilityState={{ checked: item.value === true }}
                                     accessibilityLabel={item.label || "Marcar si aplica"}
@@ -2500,21 +2936,30 @@ function AppContent() {
                                         styles.checklistStepBox,
                                         item.value === true
                                           ? styles.checklistStepBoxOn
-                                          : styles.checklistStepBoxOff,
+                                          : item.value === false
+                                            ? styles.checklistStepBoxOff
+                                            : [styles.checklistStepBoxOff, styles.checklistStepBoxOptionalUnset],
                                       ]}
                                     >
                                       {item.value === true ? (
                                         <Ionicons name="checkmark" size={16} color={theme.white} />
                                       ) : null}
                                     </View>
-                                    <Text
-                                      style={[
-                                        styles.checklistCheckboxText,
-                                        item.value === true ? styles.checklistCheckboxTextDone : null,
-                                      ]}
-                                    >
-                                      {item.label}
-                                    </Text>
+                                    <View style={{ flex: 1 }}>
+                                      <Text
+                                        style={[
+                                          styles.checklistCheckboxText,
+                                          item.value === true ? styles.checklistCheckboxTextDone : null,
+                                        ]}
+                                      >
+                                        {item.label}
+                                      </Text>
+                                      {item.isOptional ? (
+                                        <Text style={styles.checklistFieldOptionalHint}>
+                                          Opcional: toque Sí → No → vacío
+                                        </Text>
+                                      ) : null}
+                                    </View>
                                   </Pressable>
                                 ) : item.fieldType === "number" ? (
                                   <TextInput
@@ -2677,8 +3122,8 @@ function AppContent() {
                                   />
                                 )}
                               </View>
-                            )
-                          )}
+                            );
+                          })}
                         </View>
                       </View>
                     ) : null}
@@ -3147,12 +3592,7 @@ function AppContent() {
                                   </Pressable>
                                 </View>
                                 <View style={styles.taskCardAvatarPriorityRow}>
-                                  <TaskCardAssigneeAvatar
-                                    name={w.assigneeName}
-                                    userId={w.assigneeId}
-                                    avatarUrl={w.assigneeAvatarUrl}
-                                    avatarBackgroundColor={w.assigneeAvatarBackgroundColor}
-                                  />
+                                  <TaskCardAssigneesRow item={w} />
                                   <WorkOrderPriorityIconRN priority={w.priority} />
                                 </View>
                               </View>
@@ -3250,12 +3690,7 @@ function AppContent() {
                             </Text>
                           </View>
                           <View style={styles.pendingCardFooter}>
-                            <TaskCardAssigneeAvatar
-                              name={item.assigneeName}
-                              userId={item.assigneeId}
-                              avatarUrl={item.assigneeAvatarUrl}
-                              avatarBackgroundColor={item.assigneeAvatarBackgroundColor}
-                            />
+                            <TaskCardAssigneesRow item={item} />
                             <WorkOrderPriorityIconRN priority={item.priority} />
                           </View>
                         </Pressable>
@@ -3291,12 +3726,7 @@ function AppContent() {
                               </Text>
                             </View>
                             <View style={styles.taskCardAvatarPriorityRow}>
-                              <TaskCardAssigneeAvatar
-                                name={item.assigneeName}
-                                userId={item.assigneeId}
-                                avatarUrl={item.assigneeAvatarUrl}
-                                avatarBackgroundColor={item.assigneeAvatarBackgroundColor}
-                              />
+                              <TaskCardAssigneesRow item={item} />
                               <WorkOrderPriorityIconRN priority={item.priority} />
                             </View>
                           </View>
@@ -3560,7 +3990,11 @@ function AppContent() {
                     }}
                   >
                     <Text style={styles.cardTitle}>{item.title}</Text>
-                    {item.body ? <Text style={styles.cardMeta}>{item.body}</Text> : null}
+                    {item.body ? (
+                      <Text style={styles.cardMeta}>
+                        {parseChecklistRevisionNotificationBody(item.body)?.cleanBody ?? item.body}
+                      </Text>
+                    ) : null}
                     <Text style={styles.helpText}>
                       {new Date(item.createdAt).toLocaleString("es-MX", {
                         timeZone: APP_TIME_ZONE,
@@ -3577,14 +4011,14 @@ function AppContent() {
               showsHorizontalScrollIndicator={false}
             >
               <Text style={[styles.sectionTitle, { paddingTop: 8, paddingBottom: 8 }]}>
-                Perfil del Operador
+                Perfil del técnico
               </Text>
               {profileError ? <Text style={styles.errorText}>{profileError}</Text> : null}
               <View style={[styles.surfaceCard, styles.sectionBlock, styles.sectionFirst]}>
                 <Text style={styles.cardMeta}>Nombre: {me?.name ?? "—"}</Text>
                 <Text style={styles.cardMeta}>Usuario: {me?.username ?? username}</Text>
                 <Text style={styles.cardMeta}>Email: {me?.email ?? "Sin email"}</Text>
-                <Text style={styles.cardMeta}>Rol: {me?.role ?? "operator"}</Text>
+                <Text style={styles.cardMeta}>Rol: {me?.role ?? "tecnico"}</Text>
               </View>
 
               <View style={[styles.surfaceCard, styles.sectionBlock]}>
@@ -4173,6 +4607,66 @@ const styles = StyleSheet.create({
   detailRowInline: { flexDirection: "row", alignItems: "center", gap: 10 },
   detailRowValueText: { fontSize: 14, fontWeight: "600", color: theme.zinc900 },
   detailRowSub: { fontSize: 12, fontWeight: "400", color: theme.zinc500, marginTop: 2 },
+  downtimeSwitchRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 4,
+  },
+  downtimeSwitchLabel: { flex: 1, fontSize: 14, color: theme.zinc800, lineHeight: 20, paddingRight: 4 },
+  downtimePreviewLine: { marginTop: 10, fontSize: 12, color: theme.zinc600, lineHeight: 18 },
+  downtimeCompletedHint: { marginTop: 8, fontSize: 12, color: theme.zinc500, lineHeight: 18 },
+  downtimeManualBlock: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: theme.zinc100,
+  },
+  downtimeManualTitle: { fontSize: 12, fontWeight: "600", color: theme.zinc700 },
+  downtimeManualSub: { marginTop: 4, fontSize: 11, lineHeight: 16, color: theme.zinc500 },
+  downtimeManualInputs: {
+    marginTop: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+  },
+  downtimeManualField: {
+    minWidth: 88,
+    flexGrow: 1,
+    flexBasis: 100,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: theme.zinc900,
+    backgroundColor: theme.white,
+  },
+  downtimeUnitRow: { flexDirection: "row", gap: 6 },
+  downtimeUnitChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  downtimeUnitChipOn: { borderColor: theme.accent, backgroundColor: "#FFF5F0" },
+  downtimeUnitChipOff: { borderColor: theme.zinc300, backgroundColor: theme.white },
+  downtimeUnitChipPressed: { opacity: 0.85 },
+  downtimeUnitChipTextOn: { fontSize: 13, fontWeight: "600", color: theme.accent },
+  downtimeUnitChipTextOff: { fontSize: 13, fontWeight: "500", color: theme.zinc700 },
+  downtimeSaveBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: theme.zinc900,
+  },
+  downtimeSaveBtnPressed: { opacity: 0.88 },
+  downtimeSaveBtnDisabled: { opacity: 0.45 },
+  downtimeSaveBtnText: { fontSize: 12, fontWeight: "600", color: theme.white },
+  downtimeSavedLine: { marginTop: 10, fontSize: 11, color: theme.zinc500 },
   detailRowMuted: { fontSize: 14, color: theme.zinc400 },
   detailRowDivider: { height: 1, backgroundColor: theme.zinc100, marginLeft: 0 },
   detailDescriptionText: {
@@ -4532,6 +5026,37 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
+  checklistSectionHeading: {
+    marginTop: 16,
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.zinc200,
+  },
+  checklistSectionHeadingFirst: {
+    marginTop: 4,
+  },
+  checklistSectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.zinc900,
+    letterSpacing: 0.15,
+  },
+  checklistTextBlockTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: theme.zinc900,
+  },
+  checklistTextBlockSubtitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: theme.zinc800,
+  },
+  checklistTextBlockBody: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: theme.zinc700,
+  },
   checklistCardDisabled: { opacity: 0.92 },
   checklistStepRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   checklistStepBox: {
@@ -4549,6 +5074,15 @@ const styles = StyleSheet.create({
   checklistStepBoxOff: {
     borderColor: theme.zinc400,
     backgroundColor: theme.white,
+  },
+  checklistStepBoxOptionalUnset: {
+    borderStyle: "dashed",
+    borderColor: theme.zinc300,
+  },
+  checklistFieldOptionalHint: {
+    fontSize: 11,
+    color: theme.zinc400,
+    fontWeight: "400",
   },
   checklistStepLabel: {
     flex: 1,
