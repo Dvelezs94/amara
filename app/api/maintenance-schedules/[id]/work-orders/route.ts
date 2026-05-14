@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, desc, eq, gte, like, lte } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { loadManyWorkOrderAssignees } from "@/lib/assignees";
 import { db } from "@/lib/db";
 import { users, workOrders } from "@/lib/db/schema";
 
@@ -73,7 +74,22 @@ export async function GET(
     .offset(offset);
 
   const hasMore = rows.length > pageSize;
-  const items = hasMore ? rows.slice(0, pageSize) : rows;
+  const slice = hasMore ? rows.slice(0, pageSize) : rows;
+  const woIds = slice.map((r) => r.id);
+  const byWo = await loadManyWorkOrderAssignees(woIds);
+
+  const items = slice.map((r) => {
+    const assignees = byWo.get(r.id) ?? [];
+    const first = assignees[0];
+    return {
+      ...r,
+      assigneeIds: assignees.map((a) => a.id),
+      assignees,
+      assigneeId: first?.id ?? r.assigneeId,
+      assigneeName: first?.name ?? r.assigneeName,
+      assigneeAvatarUrl: first?.avatarUrl ?? r.assigneeAvatarUrl,
+    };
+  });
 
   return NextResponse.json({ items, hasMore, limit: pageSize, offset });
 }

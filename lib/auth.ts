@@ -16,8 +16,9 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 function normalizeRole(role: string | null | undefined): UserRole {
   if (role === "admin") return "admin";
-  if (role === "supervisor") return "supervisor";
-  return "operator";
+  if (role === "calidad" || role === "supervisor") return "calidad";
+  if (role === "tecnico" || role === "operator") return "tecnico";
+  return "tecnico";
 }
 
 export async function getSession(): Promise<SessionUser | null> {
@@ -130,7 +131,7 @@ export async function createUser(params: {
     email: params.email ?? null,
     name: params.name,
     passwordHash,
-    role: params.role ?? "operator",
+    role: params.role ?? "tecnico",
     avatarBackgroundColor,
   });
   return {
@@ -138,7 +139,7 @@ export async function createUser(params: {
     username: params.username,
     email: params.email ?? null,
     name: params.name,
-    role: params.role ?? "operator",
+    role: params.role ?? "tecnico",
     avatarUrl: null,
     avatarBackgroundColor,
   };

@@ -8,6 +8,8 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  foreignKey,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -16,9 +18,9 @@ export const users = pgTable("users", {
   email: text("email").unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
-  role: text("role", { enum: ["operator", "admin", "supervisor"] })
+  role: text("role", { enum: ["tecnico", "admin", "calidad"] })
     .notNull()
-    .default("operator"),
+    .default("tecnico"),
   isDisabled: boolean("is_disabled").notNull().default(false),
   avatarUrl: text("avatar_url"),
   /** Fondo del avatar con iniciales (#RRGGBB); null = derivar de id en cliente */
@@ -35,6 +37,8 @@ export const assets = pgTable("assets", {
   locationId: text("location_id"),
   parentAssetId: text("parent_asset_id"),
   qrCode: text("qr_code"),
+  /** Si es false, no se registra paro de máquina en tareas de este activo (KPI y formularios). */
+  tracksMachineDowntime: boolean("tracks_machine_downtime").notNull().default(true),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
@@ -89,6 +93,10 @@ export const workOrders = pgTable(
       .defaultNow(),
     /** Order within the Kanban column (same status); lower = higher on the board */
     boardSortOrder: integer("board_sort_order").notNull().default(0),
+    /** When true, tiempo de en curso → completada cuenta como paro de máquina (requiere activo). */
+    countsMachineDowntime: boolean("counts_machine_downtime").notNull().default(false),
+    /** Paro adicional (minutos), p. ej. sin tarea formal o no cubierto por el intervalo en curso. */
+    manualDowntimeMinutes: integer("manual_downtime_minutes").notNull().default(0),
   },
   (t) => [
     uniqueIndex("work_orders_folio_unique_idx")
@@ -97,10 +105,49 @@ export const workOrders = pgTable(
   ]
 );
 
+/** Multiple users assigned to a work order (assignee_id keeps primary/first for legacy joins). */
+export const workOrderAssignees = pgTable(
+  "work_order_assignees",
+  {
+    workOrderId: text("work_order_id")
+      .notNull()
+      .references(() => workOrders.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workOrderId, t.userId] }),
+    index("work_order_assignees_user_idx").on(t.userId),
+  ]
+);
+
+export const checklistFolders = pgTable(
+  "checklist_folders",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    parentFolderId: text("parent_folder_id"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    parentFk: foreignKey({
+      columns: [t.parentFolderId],
+      foreignColumns: [t.id],
+    }).onDelete("cascade"),
+  })
+);
+
 export const checklistTemplates = pgTable("checklist_templates", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  folderId: text("folder_id").references(() => checklistFolders.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .defaultNow(),
@@ -111,7 +158,11 @@ export const checklistTemplateItems = pgTable("checklist_template_items", {
   checklistTemplateId: text("checklist_template_id")
     .notNull()
     .references(() => checklistTemplates.id, { onDelete: "cascade" }),
-  type: text("type", { enum: ["step", "custom_field", "text_block"] }).notNull(),
+  /** When set, this row is nested under a checklist section (`type === "section"`). */
+  parentItemId: text("parent_item_id"),
+  type: text("type", {
+    enum: ["step", "custom_field", "text_block", "section"],
+  }).notNull(),
   label: text("label").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   fieldType: text("field_type", {
@@ -128,6 +179,8 @@ export const checklistTemplateItems = pgTable("checklist_template_items", {
     ],
   }),
   options: jsonb("options").$type<string[]>(), // for dropdown: string[]
+  /** Solo aplica a `custom_field`: si es true, el valor puede quedar en blanco al cerrar la tarea. */
+  isOptional: boolean("is_optional").notNull().default(false),
 });
 
 export const checklistTemplateRevisions = pgTable("checklist_template_revisions", {
@@ -156,6 +209,9 @@ export const checklistTemplateRevisions = pgTable("checklist_template_revisions"
           label: string;
           fieldType: string | null;
           options: string[] | null;
+          id?: string | null;
+          parentItemId?: string | null;
+          isOptional?: boolean | null;
         }>;
       };
       after: {
@@ -166,6 +222,9 @@ export const checklistTemplateRevisions = pgTable("checklist_template_revisions"
           label: string;
           fieldType: string | null;
           options: string[] | null;
+          id?: string | null;
+          parentItemId?: string | null;
+          isOptional?: boolean | null;
         }>;
       };
     }>()
@@ -181,7 +240,11 @@ export const workOrderChecklist = pgTable("work_order_checklist", {
     .notNull()
     .references(() => workOrders.id, { onDelete: "cascade" }),
   checklistTemplateId: text("checklist_template_id"),
-  type: text("type", { enum: ["step", "custom_field", "text_block"] }).notNull(),
+  /** Nesting under a section row in the same work order checklist. */
+  parentItemId: text("parent_item_id"),
+  type: text("type", {
+    enum: ["step", "custom_field", "text_block", "section"],
+  }).notNull(),
   label: text("label").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   completed: boolean("completed").notNull().default(false),
@@ -200,6 +263,8 @@ export const workOrderChecklist = pgTable("work_order_checklist", {
     ],
   }),
   options: jsonb("options").$type<string[]>(),
+  /** Copiado desde plantilla; solo aplica a `custom_field`. */
+  isOptional: boolean("is_optional").notNull().default(false),
 });
 
 export const notes = pgTable("notes", {
@@ -253,6 +318,15 @@ export const dashboardWidgets = pgTable("dashboard_widgets", {
   templateId: text("template_id").notNull(),
   templateName: text("template_name").notNull(),
   fieldLabel: text("field_label").notNull(),
+  /** Etiquetas de checklist a graficar juntas (mismo tipo). El primero se repite en `field_label` por compatibilidad. */
+  fieldLabels: jsonb("field_labels")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  /** Vista del gráfico al abrir el dashboard (línea/barras/pastel según tipo de campo). */
+  chartType: text("chart_type", { enum: ["line", "bar", "pie"] })
+    .notNull()
+    .default("line"),
   dateFrom: text("date_from"), // YYYY-MM-DD or null
   dateTo: text("date_to"),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -313,7 +387,25 @@ export const maintenanceSchedules = pgTable("maintenance_schedules", {
   recurrence: text("recurrence").notNull(), // cron or interval description
   checklistTemplateId: text("checklist_template_id"),
   nextRunAt: timestamp("next_run_at", { withTimezone: true, mode: "date" }),
+  /** Soft-delete: null = activo en calendario */
+  deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()
     .defaultNow(),
 });
+
+export const maintenanceScheduleAssignees = pgTable(
+  "maintenance_schedule_assignees",
+  {
+    maintenanceScheduleId: text("maintenance_schedule_id")
+      .notNull()
+      .references(() => maintenanceSchedules.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.maintenanceScheduleId, t.userId] }),
+    index("maintenance_schedule_assignees_user_idx").on(t.userId),
+  ]
+);

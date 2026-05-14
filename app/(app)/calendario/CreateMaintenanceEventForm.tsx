@@ -1,38 +1,16 @@
 "use client";
 
+import { AssigneeMultiSelect } from "@/components/AssigneeMultiSelect";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  MAINTENANCE_EVENT_COLORS,
+  MAINTENANCE_FREQUENCY_OPTIONS,
+  MAINTENANCE_WEEKDAYS,
+} from "./maintenance-schedule-form-constants";
+
 type SelectOption = { id: string; name: string; sublabel?: string };
-
-const FREQUENCY_OPTIONS: { value: string; label: string }[] = [
-  { value: "none", label: "No se repite" },
-  { value: "daily", label: "Diario" },
-  { value: "weekly", label: "Semanal" },
-  { value: "monthly", label: "Mensual" },
-  { value: "quarterly", label: "Trimestral" },
-  { value: "semiannual", label: "Semestral" },
-  { value: "yearly", label: "Anual" },
-];
-
-const WEEKDAYS: { value: number; label: string }[] = [
-  { value: 1, label: "Lun" },
-  { value: 2, label: "Mar" },
-  { value: 3, label: "Mié" },
-  { value: 4, label: "Jue" },
-  { value: 5, label: "Vie" },
-  { value: 6, label: "Sáb" },
-  { value: 0, label: "Dom" },
-];
-
-const EVENT_COLORS = [
-  "#02257D",
-  "#F14C03",
-  "#9E9F9F",
-  "#000000",
-  "#3355AA",
-  "#E85A0A",
-];
 
 export function CreateMaintenanceEventForm({
   assets,
@@ -60,7 +38,7 @@ export function CreateMaintenanceEventForm({
   });
   const [until, setUntil] = useState("");
   const [assetId, setAssetId] = useState("");
-  const [assigneeId, setAssigneeId] = useState("");
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [checklistTemplateId, setChecklistTemplateId] = useState("");
   const [color, setColor] = useState("#02257D");
   const [saving, setSaving] = useState(false);
@@ -112,7 +90,7 @@ export function CreateMaintenanceEventForm({
           ...(bodyWeekdays ? { weekdays: bodyWeekdays } : {}),
           until: until.trim() || null,
           assetId: assetId || null,
-          assigneeId: assigneeId || null,
+          assigneeIds,
           checklistTemplateId: checklistTemplateId || null,
           color,
         }),
@@ -125,6 +103,7 @@ export function CreateMaintenanceEventForm({
       setName("");
       setUntil("");
       setChecklistTemplateId("");
+      setAssigneeIds([]);
       setColor("#02257D");
       onCreated?.();
       router.refresh();
@@ -182,7 +161,7 @@ export function CreateMaintenanceEventForm({
             onChange={(e) => setFrequency(e.target.value)}
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           >
-            {FREQUENCY_OPTIONS.map((o) => (
+            {MAINTENANCE_FREQUENCY_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -212,7 +191,7 @@ export function CreateMaintenanceEventForm({
               setInterval(Math.max(1, parseInt(e.target.value, 10) || 1))
             }
             disabled={frequency === "quarterly" || frequency === "semiannual"}
-            className="w-full max-w-[120px] rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="ml-4 w-full max-w-[120px] rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
           {effectiveFrequency === "weekly" && effectiveInterval > 1 && (
             <p className="text-xs text-amber-700">
@@ -229,7 +208,7 @@ export function CreateMaintenanceEventForm({
             Días de la semana
           </span>
           <div className="flex flex-wrap gap-2">
-            {WEEKDAYS.map((w) => (
+            {MAINTENANCE_WEEKDAYS.map((w) => (
               <label
                 key={w.value}
                 className="flex cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs has-[:checked]:border-primary-400 has-[:checked]:bg-primary-50 has-[:checked]:text-primary-900"
@@ -277,29 +256,19 @@ export function CreateMaintenanceEventForm({
             ))}
           </select>
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-600">
-            Responsable
-          </label>
-          <select
-            value={assigneeId}
-            onChange={(e) => setAssigneeId(e.target.value)}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          >
-            <option value="">Sin asignar</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <AssigneeMultiSelect
+          label="Responsables"
+          users={users}
+          value={assigneeIds}
+          onChange={setAssigneeIds}
+          emptyHint="Sin asignar"
+        />
       </div>
 
       <div className="space-y-2">
         <label className="text-xs font-medium text-zinc-600">Color del evento</label>
         <div className="flex flex-wrap items-center gap-2">
-          {EVENT_COLORS.map((c) => (
+          {MAINTENANCE_EVENT_COLORS.map((c) => (
             <button
               key={c}
               type="button"

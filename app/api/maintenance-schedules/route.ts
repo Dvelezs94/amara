@@ -7,15 +7,11 @@ import {
   checklistTemplates,
   users,
 } from "@/lib/db/schema";
+import { setMaintenanceScheduleAssigneeIds } from "@/lib/assignees";
 import { eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
-import {
-  buildRecurrenceJson,
-  computeFirstOccurrence,
-  type MaintenanceFrequency,
-  type MaintenanceRecurrenceRule,
-} from "@/lib/maintenance-recurrence";
+import { parseRecurrencePayloadFromMaintenanceBody } from "@/lib/maintenance-schedule-recurrence-from-request";
 
 function isMissingAssigneeColumnError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -35,18 +31,6 @@ function isMissingColorColumnError(error: unknown): boolean {
   );
 }
 
-const FREQUENCIES: MaintenanceFrequency[] = [
-  "none",
-  "daily",
-  "weekly",
-  "monthly",
-  "yearly",
-];
-
-function isYmd(s: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s);
-}
-
 export async function POST(req: Request) {
   const session = await getSession();
   if (!session) {
@@ -63,61 +47,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "El nombre es obligatorio" }, { status: 400 });
   }
 
-  const startDate = typeof body.startDate === "string" ? body.startDate.trim() : "";
-  if (!isYmd(startDate)) {
-    return NextResponse.json(
-      { error: "startDate debe ser YYYY-MM-DD" },
-      { status: 400 }
-    );
+  const parsedRec = parseRecurrencePayloadFromMaintenanceBody(
+    body as Record<string, unknown>
+  );
+  if (!parsedRec.ok) {
+    return NextResponse.json({ error: parsedRec.error }, { status: 400 });
   }
-
-  const frequency = body.frequency as MaintenanceFrequency;
-  if (!FREQUENCIES.includes(frequency)) {
-    return NextResponse.json({ error: "Frecuencia no válida" }, { status: 400 });
-  }
-
-  let interval = Number(body.interval);
-  if (!Number.isFinite(interval) || interval < 1) interval = 1;
-  interval = Math.floor(interval);
-  if (interval > 365 && frequency === "daily") {
-    return NextResponse.json(
-      { error: "Intervalo demasiado grande" },
-      { status: 400 }
-    );
-  }
-
-  let weekdays: number[] | undefined;
-  if (
-    frequency === "weekly" &&
-    body.weekdays !== undefined &&
-    body.weekdays !== null
-  ) {
-    const raw = Array.isArray(body.weekdays) ? body.weekdays : [];
-    const parsed = raw
-      .map((n: unknown) => Number(n))
-      .filter(
-        (n: number): n is number => Number.isInteger(n) && n >= 0 && n <= 6
-      );
-    weekdays = parsed.length > 0 ? parsed : undefined;
-  }
-
-  let until: string | null = null;
-  if (body.until != null && body.until !== "") {
-    const u = String(body.until).trim();
-    if (!isYmd(u)) {
-      return NextResponse.json(
-        { error: "until debe ser YYYY-MM-DD" },
-        { status: 400 }
-      );
-    }
-    if (u < startDate) {
-      return NextResponse.json(
-        { error: "La fecha final debe ser posterior al inicio" },
-        { status: 400 }
-      );
-    }
-    until = u;
-  }
+  const { recurrence, nextRunAt, rule } = parsedRec;
 
   const assetId =
     body.assetId != null && body.assetId !== ""
@@ -132,13 +68,24 @@ export async function POST(req: Request) {
     }
   }
 
-  const assigneeId =
-    body.assigneeId != null && body.assigneeId !== ""
-      ? String(body.assigneeId)
-      : null;
-  if (assigneeId) {
+  let assigneeIds: string[] = [];
+  if (Array.isArray(body.assigneeIds)) {
+    assigneeIds = Array.from(
+      new Set(
+        body.assigneeIds.map((x: unknown) => String(x).trim()).filter(Boolean)
+      )
+    );
+  } else if (
+    body.assigneeId != null &&
+    body.assigneeId !== ""
+  ) {
+    assigneeIds = [String(body.assigneeId)];
+  }
+  const assigneeId = assigneeIds[0] ?? null;
+  for (const uid of assigneeIds) {
     const u = await db.query.users.findFirst({
-      where: eq(users.id, assigneeId),
+      where: eq(users.id, uid),
+      columns: { id: true },
     });
     if (!u) {
       return NextResponse.json(
@@ -166,26 +113,6 @@ export async function POST(req: Request) {
       );
     }
   }
-
-  const rule: MaintenanceRecurrenceRule = {
-    frequency,
-    interval,
-    anchorDate: startDate,
-    until,
-    ...(weekdays && weekdays.length > 0 ? { weekdays } : {}),
-  };
-
-  if (
-    frequency === "weekly" &&
-    interval > 1 &&
-    rule.weekdays &&
-    rule.weekdays.length > 1
-  ) {
-    rule.weekdays = [rule.weekdays[0]!];
-  }
-
-  const recurrence = buildRecurrenceJson(rule);
-  const nextRunAt = computeFirstOccurrence(rule);
 
   const id = createId();
   try {
@@ -224,6 +151,8 @@ export async function POST(req: Request) {
     if (!isMissingColorColumnError(error)) values.color = color;
     await db.insert(maintenanceSchedules).values(values);
   }
+
+  await setMaintenanceScheduleAssigneeIds(id, assigneeIds);
 
   await recordAuditLog({
     entityType: "maintenance_schedule",

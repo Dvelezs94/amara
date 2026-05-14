@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { checklistTemplates } from "@/lib/db/schema";
+import { checklistFolders, checklistTemplates } from "@/lib/db/schema";
 import { checklistTemplateItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
@@ -14,7 +14,7 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.role !== "supervisor") {
+  if (session.role !== "calidad") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
@@ -39,7 +39,7 @@ export async function PATCH(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.role !== "supervisor") {
+  if (session.role === "calidad") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
@@ -50,7 +50,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json().catch(() => ({}));
-  const updates: { name?: string; description?: string | null } = {};
+  const updates: {
+    name?: string;
+    description?: string | null;
+    folderId?: string | null;
+  } = {};
   if (body.name !== undefined) {
     const nextName = String(body.name).trim();
     if (nextName !== template.name) updates.name = nextName;
@@ -58,6 +62,21 @@ export async function PATCH(
   if (body.description !== undefined) {
     const nextDescription = body.description?.trim() ?? null;
     if (nextDescription !== template.description) updates.description = nextDescription;
+  }
+  if (body.folderId !== undefined) {
+    const raw = body.folderId;
+    const nextFolderId =
+      raw === null || raw === "" ? null : String(raw).trim() || null;
+    if (nextFolderId) {
+      const folder = await db.query.checklistFolders.findFirst({
+        where: eq(checklistFolders.id, nextFolderId),
+      });
+      if (!folder) {
+        return NextResponse.json({ error: "Folder not found" }, { status: 400 });
+      }
+    }
+    const prevFolder = template.folderId ?? null;
+    if (nextFolderId !== prevFolder) updates.folderId = nextFolderId;
   }
   if (Object.keys(updates).length > 0) {
     await db

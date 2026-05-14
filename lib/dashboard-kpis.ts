@@ -1,15 +1,28 @@
+import {
+  effectiveCountsMachineDowntime,
+  workOrderTotalDowntimeMinutesForAsset,
+} from "@/lib/machine-downtime";
+
 type WorkOrderKpiRow = {
   status: string;
   /** routine = planificado; on_demand u otro = no planificado */
   kind?: string | null;
   createdAt: Date;
   completedAt: Date | null;
+  startedAt?: Date | null;
+  assetId?: string | null;
+  countsMachineDowntime?: boolean;
+  manualDowntimeMinutes?: number | null;
+  /** Desde `assets`; null si la tarea no tiene activo o join ausente */
+  assetTracksMachineDowntime?: boolean | null;
 };
 
 export type DashboardKpis = {
   mttrHours: number | null;
   /** Horas acumuladas de reparación (completadas en la ventana). */
   downtimeHours: number;
+  /** Horas de paro de máquina (intervalo en curso→terminada + manual), solo activos con seguimiento activado. */
+  machineDowntimeHours: number;
   plannedCount: number;
   unplannedCount: number;
   plannedPct: number | null;
@@ -40,6 +53,23 @@ export function buildDashboardKpis({
 
   const downtimeHours = Number(totalRepairHours.toFixed(1));
 
+  let machineDowntimeMinutes = 0;
+  for (const wo of workOrders) {
+    const counts = effectiveCountsMachineDowntime(
+      wo.countsMachineDowntime,
+      wo.assetTracksMachineDowntime
+    );
+    machineDowntimeMinutes += workOrderTotalDowntimeMinutesForAsset({
+      status: wo.status,
+      assetId: wo.assetId ?? null,
+      countsMachineDowntime: counts,
+      startedAt: wo.startedAt,
+      completedAt: wo.completedAt,
+      manualDowntimeMinutes: wo.manualDowntimeMinutes,
+    });
+  }
+  const machineDowntimeHours = Number((machineDowntimeMinutes / 60).toFixed(1));
+
   const mttrHours =
     completedWithTimes.length > 0
       ? Number((totalRepairHours / completedWithTimes.length).toFixed(1))
@@ -66,6 +96,7 @@ export function buildDashboardKpis({
   return {
     mttrHours,
     downtimeHours,
+    machineDowntimeHours,
     plannedCount,
     unplannedCount,
     plannedPct,

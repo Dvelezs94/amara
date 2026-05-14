@@ -106,7 +106,7 @@ async function main() {
   }
 
   const hashAdmin = await bcrypt.hash("1234aA", 10);
-  const hashOperador = await bcrypt.hash("operador1234", 10);
+  const hashTecnico = await bcrypt.hash("operador1234", 10);
 
   let usersInserted = 0;
   let usersUpdated = 0;
@@ -128,9 +128,9 @@ async function main() {
       {
         username: "operador",
         email: "operador@metalnova.local",
-        name: "Operador Turno A",
-        role: "operator" as const,
-        passwordHash: hashOperador,
+        name: "Técnico Turno A",
+        role: "tecnico" as const,
+        passwordHash: hashTecnico,
       },
     ];
 
@@ -210,6 +210,7 @@ async function main() {
         await tx.insert(schema.checklistTemplateItems).values({
           id: rid("it"),
           checklistTemplateId: templateId,
+          parentItemId: null,
           type: item.type,
           label: item.label,
           sortOrder: index,
@@ -314,11 +315,16 @@ async function main() {
         .where(eq(schema.checklistTemplateItems.checklistTemplateId, tpl.id))
         .orderBy(asc(schema.checklistTemplateItems.sortOrder));
 
+      const idMap = new Map<string, string>();
+      for (const item of templateItems) {
+        idMap.set(item.id, rid("woi"));
+      }
       for (const item of templateItems) {
         await tx.insert(schema.workOrderChecklist).values({
-          id: rid("woi"),
+          id: idMap.get(item.id)!,
           workOrderId,
           checklistTemplateId: tpl.id,
+          parentItemId: item.parentItemId ? idMap.get(item.parentItemId) ?? null : null,
           type: item.type,
           label: item.label,
           sortOrder: item.sortOrder,

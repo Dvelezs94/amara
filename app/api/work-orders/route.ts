@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { workOrders } from "@/lib/db/schema";
-import { workOrderChecklist } from "@/lib/db/schema";
-import { checklistTemplateItems } from "@/lib/db/schema";
+import { copyChecklistTemplateItemsToWorkOrder } from "@/lib/copy-checklist-template-to-work-order";
 import { assets } from "@/lib/db/schema";
 import { users } from "@/lib/db/schema";
-import { eq, desc, asc, and } from "drizzle-orm";
+import { eq, desc, asc, and, sql } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
+import { loadManyWorkOrderAssignees, setWorkOrderAssigneeIds } from "@/lib/assignees";
 import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
 import { createNotification } from "@/lib/notifications";
+import { clampManualDowntimeMinutes } from "@/lib/machine-downtime";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -24,7 +25,18 @@ export async function GET(req: Request) {
 
   const conditions = [];
   if (status) conditions.push(eq(workOrders.status, status as "pending" | "in_progress" | "completed" | "cancelled"));
-  if (assigneeId) conditions.push(eq(workOrders.assigneeId, assigneeId));
+  if (assigneeId) {
+    conditions.push(
+      sql`(
+        ${workOrders.assigneeId} = ${assigneeId}
+        OR EXISTS (
+          SELECT 1 FROM work_order_assignees woa
+          WHERE woa.work_order_id = ${workOrders.id}
+          AND woa.user_id = ${assigneeId}
+        )
+      )`
+    );
+  }
 
   const base = db
     .select({
@@ -41,8 +53,11 @@ export async function GET(req: Request) {
       boardSortOrder: workOrders.boardSortOrder,
       assetId: workOrders.assetId,
       assigneeId: workOrders.assigneeId,
+      countsMachineDowntime: workOrders.countsMachineDowntime,
+      manualDowntimeMinutes: workOrders.manualDowntimeMinutes,
       assetName: assets.name,
       assetAssetId: assets.assetId,
+      assetTracksMachineDowntime: assets.tracksMachineDowntime,
       assigneeName: users.name,
       assigneeAvatarUrl: users.avatarUrl,
       assigneeAvatarBackgroundColor: users.avatarBackgroundColor,
@@ -56,7 +71,38 @@ export async function GET(req: Request) {
     ? await base.where(and(...conditions))
     : await base;
 
-  return NextResponse.json(rows);
+  const ids = rows.map((r) => r.id);
+  const assigneesByWo = await loadManyWorkOrderAssignees(ids);
+  const enriched = rows.map((r) => {
+    let assignees = assigneesByWo.get(r.id) ?? [];
+    if (assignees.length === 0 && r.assigneeId && r.assigneeName) {
+      assignees = [
+        {
+          id: r.assigneeId,
+          name: r.assigneeName,
+          email: null as string | null,
+          avatarUrl: r.assigneeAvatarUrl,
+          avatarBackgroundColor: r.assigneeAvatarBackgroundColor,
+        },
+      ];
+    }
+    const primary = assignees[0];
+    const assigneeNameJoined =
+      assignees.length > 0
+        ? assignees.map((a) => a.name).join(", ")
+        : null;
+    return {
+      ...r,
+      assignees,
+      assigneeIds: assignees.map((a) => a.id),
+      assigneeName: assigneeNameJoined,
+      assigneeId: primary?.id ?? null,
+      assigneeAvatarUrl: primary?.avatarUrl ?? null,
+      assigneeAvatarBackgroundColor: primary?.avatarBackgroundColor ?? null,
+    };
+  });
+
+  return NextResponse.json(enriched);
 }
 
 export async function POST(req: Request) {
@@ -73,6 +119,45 @@ export async function POST(req: Request) {
   const folio = await getNextWorkOrderFolio();
   const now = new Date();
   const checklistTemplateId = body.checklistTemplateId || null;
+  const assetId =
+    typeof body.assetId === "string" && body.assetId.trim() ? body.assetId.trim() : null;
+  let assetAllowsDowntime = false;
+  if (assetId) {
+    const a = await db.query.assets.findFirst({
+      where: eq(assets.id, assetId),
+      columns: { tracksMachineDowntime: true },
+    });
+    assetAllowsDowntime = a?.tracksMachineDowntime !== false;
+  }
+  const countsExplicit =
+    body.countsMachineDowntime === true || body.countsMachineDowntime === "true";
+  const countsMachineDowntime =
+    body.countsMachineDowntime === undefined || body.countsMachineDowntime === null
+      ? assetAllowsDowntime
+      : countsExplicit && assetAllowsDowntime;
+  let manualDowntimeMinutes = 0;
+  if (body.manualDowntimeMinutes !== undefined) {
+    const m = clampManualDowntimeMinutes(body.manualDowntimeMinutes);
+    if (m === null) {
+      return NextResponse.json(
+        { error: "Paro manual inválido (use minutos enteros entre 0 y 525600)" },
+        { status: 400 }
+      );
+    }
+    manualDowntimeMinutes = m;
+  }
+  let assigneeIds: string[] = [];
+  if (Array.isArray(body.assigneeIds)) {
+    assigneeIds = Array.from(
+      new Set(
+        body.assigneeIds
+          .map((x: unknown) => String(x).trim())
+          .filter(Boolean)
+      )
+    );
+  } else if (typeof body.assigneeId === "string" && body.assigneeId.trim()) {
+    assigneeIds = [body.assigneeId.trim()];
+  }
   await db.insert(workOrders).values({
     id,
     folio,
@@ -81,40 +166,33 @@ export async function POST(req: Request) {
     status: "pending",
     priority: body.priority ?? "medium",
     kind: "on_demand",
-    assetId: body.assetId || null,
-    assigneeId: body.assigneeId || null,
+    assetId,
+    assigneeId: assigneeIds[0] ?? null,
     requesterId: session.id,
     dueDate: body.dueDate ? new Date(body.dueDate) : null,
     createdAt: now,
     updatedAt: now,
+    countsMachineDowntime,
+    manualDowntimeMinutes,
   });
-  if (body.assigneeId && body.assigneeId !== session.id) {
-    await createNotification({
-      userId: body.assigneeId,
-      type: "assignment",
-      title: "Nueva tarea asignada",
-      body: title,
-      workOrderId: id,
-    });
-  }
-  if (checklistTemplateId) {
-    const templateItems = await db.query.checklistTemplateItems.findMany({
-      where: eq(checklistTemplateItems.checklistTemplateId, checklistTemplateId),
-      orderBy: (items, { asc }) => [asc(items.sortOrder)],
-    });
-    for (const it of templateItems) {
-      await db.insert(workOrderChecklist).values({
-        id: createId(),
+  await setWorkOrderAssigneeIds(id, assigneeIds);
+  for (const uid of assigneeIds) {
+    if (uid !== session.id) {
+      await createNotification({
+        userId: uid,
+        type: "assignment",
+        title: "Nueva tarea asignada",
+        body: title,
         workOrderId: id,
-        checklistTemplateId,
-        type: it.type,
-        label: it.label,
-        sortOrder: it.sortOrder,
-        completed: false,
-        fieldType: it.fieldType,
-        options: it.options,
       });
     }
+  }
+  if (checklistTemplateId) {
+    await copyChecklistTemplateItemsToWorkOrder({
+      workOrderId: id,
+      checklistTemplateId,
+      newId: createId,
+    });
   }
   await recordAuditLog({
     entityType: "work_order",
@@ -126,7 +204,7 @@ export async function POST(req: Request) {
       status: "pending",
       priority: body.priority ?? "medium",
       assetId: body.assetId || null,
-      assigneeId: body.assigneeId || null,
+      assigneeId: assigneeIds[0] ?? null,
       checklistTemplateId,
       dueDate: body.dueDate ?? null,
     },

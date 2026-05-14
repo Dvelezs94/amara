@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import {
-  checklistTemplateItems,
-  maintenanceSchedules,
-  users,
-  workOrderChecklist,
-  workOrders,
-} from "@/lib/db/schema";
+import { setWorkOrderAssigneeIds } from "@/lib/assignees";
+import { copyChecklistTemplateItemsToWorkOrder } from "@/lib/copy-checklist-template-to-work-order";
+import { maintenanceSchedules, users, workOrders } from "@/lib/db/schema";
 import { createId } from "@/lib/id";
 import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
 import { recordAuditLog } from "@/lib/audit";
@@ -33,7 +29,10 @@ export async function POST(
 
   const { id } = await params;
   const schedule = await db.query.maintenanceSchedules.findFirst({
-    where: eq(maintenanceSchedules.id, id),
+    where: and(
+      eq(maintenanceSchedules.id, id),
+      isNull(maintenanceSchedules.deletedAt)
+    ),
   });
   if (!schedule) {
     return NextResponse.json({ error: "Evento no encontrado" }, { status: 404 });
@@ -41,24 +40,37 @@ export async function POST(
 
   const body = await req.json().catch(() => ({}));
   const dueDate = parseYmd(body?.dateYmd) ?? schedule.nextRunAt ?? null;
-  const assigneeId =
-    typeof body?.assigneeId === "string" ? body.assigneeId.trim() : "";
-  if (!assigneeId) {
+  let assigneeIds: string[] = [];
+  if (Array.isArray(body?.assigneeIds)) {
+    assigneeIds = Array.from(
+      new Set(
+        body.assigneeIds
+          .map((x: unknown) => String(x).trim())
+          .filter(Boolean)
+      )
+    );
+  } else if (typeof body?.assigneeId === "string" && body.assigneeId.trim()) {
+    assigneeIds = [body.assigneeId.trim()];
+  }
+  if (assigneeIds.length === 0) {
     return NextResponse.json(
-      { error: "Debes seleccionar un responsable" },
+      { error: "Debes seleccionar al menos un responsable" },
       { status: 400 }
     );
   }
-  const assignee = await db.query.users.findFirst({
-    where: eq(users.id, assigneeId),
-    columns: { id: true },
-  });
-  if (!assignee) {
-    return NextResponse.json(
-      { error: "Responsable no encontrado" },
-      { status: 400 }
-    );
+  for (const aid of assigneeIds) {
+    const assignee = await db.query.users.findFirst({
+      where: eq(users.id, aid),
+      columns: { id: true },
+    });
+    if (!assignee) {
+      return NextResponse.json(
+        { error: "Responsable no encontrado" },
+        { status: 400 }
+      );
+    }
   }
+  const assigneeId = assigneeIds[0]!;
 
   const workOrderId = createId();
   const folio = await getNextWorkOrderFolio();
@@ -80,27 +92,14 @@ export async function POST(
     updatedAt: now,
   });
 
+  await setWorkOrderAssigneeIds(workOrderId, assigneeIds);
+
   if (schedule.checklistTemplateId) {
-    const templateItems = await db.query.checklistTemplateItems.findMany({
-      where: eq(
-        checklistTemplateItems.checklistTemplateId,
-        schedule.checklistTemplateId
-      ),
-      orderBy: (items, { asc }) => [asc(items.sortOrder)],
+    await copyChecklistTemplateItemsToWorkOrder({
+      workOrderId,
+      checklistTemplateId: schedule.checklistTemplateId,
+      newId: createId,
     });
-    for (const item of templateItems) {
-      await db.insert(workOrderChecklist).values({
-        id: createId(),
-        workOrderId,
-        checklistTemplateId: schedule.checklistTemplateId,
-        type: item.type,
-        label: item.label,
-        sortOrder: item.sortOrder,
-        completed: false,
-        fieldType: item.fieldType,
-        options: item.options,
-      });
-    }
   }
 
   await recordAuditLog({

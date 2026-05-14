@@ -1,3 +1,4 @@
+import { loadWorkOrderAssignees } from "@/lib/assignees";
 import { db } from "@/lib/db";
 import { workOrders } from "@/lib/db/schema";
 import { workOrderChecklist } from "@/lib/db/schema";
@@ -80,21 +81,12 @@ export async function getWorkOrderById(id: string) {
     where: eq(workOrders.id, id),
   });
   if (!wo) return null;
-  const [asset, assignee, requester] = await Promise.all([
+  const assignees = await loadWorkOrderAssignees(id, wo.assigneeId);
+  const assignee = assignees[0] ?? null;
+
+  const [asset, requester] = await Promise.all([
     wo.assetId
       ? db.query.assets.findFirst({ where: eq(assets.id, wo.assetId) })
-      : null,
-    wo.assigneeId
-      ? db.query.users.findFirst({
-          where: eq(users.id, wo.assigneeId),
-          columns: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true,
-            avatarBackgroundColor: true,
-          },
-        })
       : null,
     wo.requesterId
       ? db.query.users.findFirst({
@@ -162,8 +154,15 @@ export async function getWorkOrderById(id: string) {
   return {
     ...wo,
     asset: asset
-      ? { id: asset.id, name: asset.name, assetId: asset.assetId }
+      ? {
+          id: asset.id,
+          name: asset.name,
+          assetId: asset.assetId,
+          tracksMachineDowntime: asset.tracksMachineDowntime,
+        }
       : null,
+    assignees,
+    assigneeIds: assignees.map((a) => a.id),
     assignee: assignee ?? null,
     requester: requester ?? null,
     checklistMeta:

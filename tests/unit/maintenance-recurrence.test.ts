@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   expandOccurrencesInRange,
   formatRecurrenceLabel,
+  lastOccurrenceStrictlyBefore,
   parseRecurrence,
   parseYmdToLocalDate,
+  ruleToMaintenanceEditFormState,
   toYmdLocal,
 } from "@/lib/maintenance-recurrence";
 
@@ -21,6 +23,21 @@ describe("parseRecurrence", () => {
   });
   it("returns null for invalid JSON", () => {
     expect(parseRecurrence("not json")).toBeNull();
+  });
+});
+
+describe("ruleToMaintenanceEditFormState", () => {
+  it("maps quarterly monthly interval to UI frequency", () => {
+    const r = parseRecurrence(
+      JSON.stringify({
+        frequency: "monthly",
+        interval: 3,
+        anchorDate: "2025-01-01",
+      })
+    )!;
+    const u = ruleToMaintenanceEditFormState(r);
+    expect(u.frequency).toBe("quarterly");
+    expect(u.interval).toBe(1);
   });
 });
 
@@ -47,6 +64,36 @@ describe("formatRecurrenceLabel", () => {
       anchorDate: "2024-01-01",
     });
     expect(formatRecurrenceLabel(raw)).toContain("Cada día");
+  });
+});
+
+describe("lastOccurrenceStrictlyBefore", () => {
+  it("returns last weekly occurrence before split date", () => {
+    const rule = parseRecurrence(
+      JSON.stringify({
+        frequency: "weekly",
+        interval: 1,
+        anchorDate: "2025-03-03",
+        weekdays: [1],
+      })
+    );
+    expect(rule).not.toBeNull();
+    const last = lastOccurrenceStrictlyBefore(rule!, "2025-03-17");
+    expect(last).not.toBeNull();
+    expect(toYmdLocal(last!)).toBe("2025-03-10");
+  });
+
+  it("returns null when no occurrence exists before split", () => {
+    const rule = parseRecurrence(
+      JSON.stringify({
+        frequency: "weekly",
+        interval: 1,
+        anchorDate: "2025-03-10",
+        weekdays: [1],
+      })
+    );
+    expect(rule).not.toBeNull();
+    expect(lastOccurrenceStrictlyBefore(rule!, "2025-03-10")).toBeNull();
   });
 });
 

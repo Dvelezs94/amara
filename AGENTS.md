@@ -6,7 +6,7 @@ This file is **living documentation** for coding agents and humans. **You may ed
 
 ## What this project is
 
-**MSA** (branding: **MSA** — Maintenance Software / Support Assistant) is a maintenance-management web app for AMISSA: work orders (tareas), assets, calendar, checklists, knowledge base, analytics, requests, and operator tooling. UI copy is mostly **Spanish**.
+**MSA** (branding: **MSA** — Maintenance Software / Support Assistant) is a maintenance-management web app for AMISSA: work orders (tareas), assets, calendar, checklists, knowledge base, analytics, requests, and technician tooling. UI copy is mostly **Spanish**.
 
 ---
 
@@ -44,16 +44,17 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 ### Roles and access
 
 - **`admin`** — Full app routes and APIs (see `middleware.ts` for the full picture)
-- **`operator`** — Restricted to **app paths** like `/tareas`, `/knowledge-base`, `/profile` and a **whitelist of API prefixes** (work orders, knowledge base, notifications, users list for assignees, assets, checklists, avatars, etc.). Anything else is **403** or redirect to `/tareas`
-- **`supervisor`** — Restricted to **checklists/revisions** only (`/checklists` and checklist template/revision APIs). Supervisor can approve/reject proposed checklist revisions.
+- **`tecnico`** — Restricted to **app paths** like `/tareas`, `/knowledge-base`, `/profile` and a **whitelist of API prefixes** (work orders, knowledge base, notifications, users list for assignees, assets, checklists, avatars, etc.). Anything else is **403** or redirect to `/tareas`
+- **`calidad`** — Restricted to **checklists/revisions** only (`/checklists` and checklist template/revision APIs). Calidad can approve/reject proposed checklist revisions.
 
-**Middleware** (`middleware.ts`) enforces auth and operator scope; keep it in sync when adding new operator-facing pages or APIs.
+**Middleware** (`middleware.ts`) enforces auth and técnico scope; keep it in sync when adding new técnico-facing pages or APIs.
 
 ### Notable UI patterns
 
 - **`AppShell.tsx`** — Main chrome: desktop sidebar (orange active items, MSA branding), light gray main background (`zinc-200`), white cards, mobile bottom navigation with orange active state
 - **Work orders** — Kanban-style board in `app/(app)/tareas/WorkOrderList.tsx`; detail in `WorkOrderDetail.tsx`
-- **Checklist revisions** — Checklist edits create named proposed revisions (starting from baseline revision `0`). Revisions are reviewed in the right-side panel on checklist detail, and supervisors can approve/reject proposals.
+- **Checklist revisions** — Checklist edits create named proposed revisions (starting from baseline revision `0`). Revisions are reviewed in the right-side panel on checklist detail, and users with role **calidad** can approve/reject proposals.
+- **Checklist folders** — Optional hierarchy (`checklist_folders` + `checklist_templates.folder_id`). List UI supports creating/moving folders and moving templates between folders (admin/tecnico only for mutations). Apply migration `0008_checklist_folders.sql` / `npm run db:migrate`.
 - **Touch** — `.tap-target` in globals for minimum touch size on coarse pointers
 
 ### Data layer
@@ -67,12 +68,13 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 - **Layout:** `tests/unit/*.test.ts` — prefer **pure logic** in `lib/` (easy to cover); API routes may use **integration tests** with a test DB or HTTP mocks when added later.
 - **Policy:** When you **add or change behavior** (new API, new `lib/` helper, business rules, auth/middleware rules, recurrence, work-order UX logic, etc.), **add or update tests in the same change** so `npm test` stays green. If something is too coupled to run quickly, extract testable helpers into `lib/` first, then test them.
 - **Coverage map (extend as features grow):**
-  - Work orders / UI strings: `lib/work-order-kind.ts`, `lib/work-order-duration.ts`
+  - Work orders / UI strings: `lib/work-order-kind.ts`, `lib/work-order-duration.ts`, `lib/machine-downtime.ts` (paro de máquina en tareas y total por activo)
   - Calendar / maintenance: `lib/maintenance-recurrence.ts`
   - Access control: `lib/middleware-rules.ts` (used by `middleware.ts`)
   - Profile / avatars: `lib/avatar-helpers.ts`
   - IDs: `lib/id.ts`
   - Roles: `lib/auth-shared.ts`
+  - Checklists (plantillas, cierre de tarea): `lib/checklist-items-from-payload.ts`, `lib/checklist-completion.ts`
 - **CI / pre-merge:** Run **`npm test`** before considering work done (same bar as `npm run lint`).
 
 ---
@@ -90,7 +92,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 - Base URL from **`EXPO_PUBLIC_API_HOST`** (no trailing slash), e.g. `https://your-server.com`
 - Uses **`fetch`** with **`credentials: "include"`** so session cookies work against the Next.js backend
 - Login: `POST /api/auth/login`; logout: `POST /api/auth/logout-json`
-- Changing operator API allowlists on the web may **break the app** until the mobile client or middleware list is updated
+- Changing técnico API allowlists on the web may **break the app** until the mobile client or middleware list is updated
 
 ### Run
 
@@ -119,7 +121,7 @@ cd mobile && npm install && npm run start
 
 - Prefer **existing patterns** in the same area (Tailwind + components on web; `theme` + StyleSheet on mobile)
 - **Do not** edit `.pen` design files with normal file tools — Pencil MCP only, if applicable
-- Keep **operator vs admin** behavior correct whenever you add routes under `(app)` or new `/api` handlers
+- Keep **tecnico vs admin** behavior correct whenever you add routes under `(app)` or new `/api` handlers
 
 ---
 

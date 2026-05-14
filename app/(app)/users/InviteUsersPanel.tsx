@@ -19,9 +19,9 @@ type AdminUser = {
 };
 
 const roleLabel: Record<UserRole, string> = {
-  operator: "Operador",
+  tecnico: "Técnico",
   admin: "Administrador",
-  supervisor: "Supervisor",
+  calidad: "Calidad",
 };
 
 function generatePassword() {
@@ -301,7 +301,7 @@ export function InviteUsersPanel() {
             <select
               id="role"
               name="role"
-              defaultValue="operator"
+              defaultValue="tecnico"
               className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             >
               {roleOptions.map((option) => (

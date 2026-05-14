@@ -1,9 +1,9 @@
 /** Tipos y constantes usables en Client Components (sin next/headers). */
 
 export const AVAILABLE_USER_ROLES = [
-  "operator",
+  "tecnico",
   "admin",
-  "supervisor",
+  "calidad",
 ] as const;
 export type UserRole = (typeof AVAILABLE_USER_ROLES)[number];
 

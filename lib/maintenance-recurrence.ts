@@ -56,6 +56,39 @@ export function parseRecurrence(raw: string): MaintenanceRecurrenceRule | null {
   return null;
 }
 
+/** Maps stored rule to UI state (quarterly/semiannual as monthly interval in DB). */
+export function ruleToMaintenanceEditFormState(rule: MaintenanceRecurrenceRule): {
+  frequency: string;
+  interval: number;
+  anchorDate: string;
+  until: string;
+  weekdays: number[];
+} {
+  let frequency: string = rule.frequency;
+  let interval = Math.max(1, Math.floor(rule.interval || 1));
+  if (rule.frequency === "monthly") {
+    if (interval === 3) {
+      frequency = "quarterly";
+      interval = 1;
+    } else if (interval === 6) {
+      frequency = "semiannual";
+      interval = 1;
+    }
+  }
+  const anchor = parseYmdToLocalDate(rule.anchorDate);
+  const weekdays =
+    rule.weekdays && rule.weekdays.length > 0
+      ? Array.from(new Set(rule.weekdays)).sort((a, b) => a - b)
+      : [anchor.getDay()];
+  return {
+    frequency,
+    interval,
+    anchorDate: rule.anchorDate,
+    until: rule.until ?? "",
+    weekdays,
+  };
+}
+
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
@@ -228,6 +261,25 @@ export function expandOccurrencesInRange(
   }
 
   return out.sort((a, b) => a.getTime() - b.getTime());
+}
+
+/**
+ * Última ocurrencia estrictamente anterior a `splitYmd` (día calendario local).
+ * Sirve para truncar una serie conservando solo fechas pasadas respecto a un corte.
+ */
+export function lastOccurrenceStrictlyBefore(
+  rule: MaintenanceRecurrenceRule,
+  splitYmd: string
+): Date | null {
+  const split = startOfDay(parseYmdToLocalDate(splitYmd));
+  if (Number.isNaN(split.getTime())) return null;
+  const rangeEnd = new Date(split.getTime() - MS_DAY);
+  const anchor = startOfDay(parseYmdToLocalDate(rule.anchorDate));
+  if (Number.isNaN(anchor.getTime())) return null;
+  if (rangeEnd < anchor) return null;
+  const occ = expandOccurrencesInRange(rule, anchor, rangeEnd);
+  if (occ.length === 0) return null;
+  return occ[occ.length - 1]!;
 }
 
 /**

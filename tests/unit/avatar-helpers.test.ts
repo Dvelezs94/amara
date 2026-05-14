@@ -10,7 +10,7 @@ describe("userInitials", () => {
     expect(userInitials("Ana García")).toBe("AG");
   });
   it("returns single letter for one word", () => {
-    expect(userInitials("supervisor")).toBe("S");
+    expect(userInitials("calidad")).toBe("C");
   });
   it("handles empty", () => {
     expect(userInitials("   ")).toBe("?");

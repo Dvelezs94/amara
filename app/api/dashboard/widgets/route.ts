@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { dashboardWidgets } from "@/lib/db/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { createId } from "@/lib/id";
+import { parseChartTypeFromRequest } from "@/lib/dashboard-widget-chart-type";
 
 export async function GET() {
   const session = await getSession();
@@ -23,13 +24,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await req.json().catch(() => ({}));
-  const { templateId, templateName, fieldLabel, dateFrom, dateTo } = body;
-  if (!templateId || !templateName || !fieldLabel) {
+  const { templateId, templateName, fieldLabel, fieldLabels: rawFieldLabels, dateFrom, dateTo, chartType: rawChartType } =
+    body as {
+      templateId?: unknown;
+      templateName?: unknown;
+      fieldLabel?: unknown;
+      fieldLabels?: unknown;
+      dateFrom?: unknown;
+      dateTo?: unknown;
+      chartType?: unknown;
+    };
+  const fromArray = Array.isArray(rawFieldLabels)
+    ? rawFieldLabels.map((s) => String(s).trim()).filter(Boolean)
+    : [];
+  const fieldLabels =
+    fromArray.length > 0
+      ? Array.from(new Set(fromArray))
+      : fieldLabel != null && String(fieldLabel).trim()
+        ? [String(fieldLabel).trim()]
+        : [];
+  if (!templateId || !templateName || fieldLabels.length === 0) {
     return NextResponse.json(
-      { error: "templateId, templateName y fieldLabel son obligatorios" },
+      { error: "templateId, templateName y al menos un campo (fieldLabels o fieldLabel) son obligatorios" },
       { status: 400 }
     );
   }
+  const primaryLabel = fieldLabels[0]!;
+  const chartType = parseChartTypeFromRequest(rawChartType);
   const maxOrder = await db
     .select({ sortOrder: dashboardWidgets.sortOrder })
     .from(dashboardWidgets)
@@ -44,7 +65,9 @@ export async function POST(req: Request) {
     userId: session.id,
     templateId: String(templateId).trim(),
     templateName: String(templateName).trim(),
-    fieldLabel: String(fieldLabel).trim(),
+    fieldLabel: primaryLabel,
+    fieldLabels,
+    chartType,
     dateFrom: dateFrom != null ? String(dateFrom).slice(0, 10) : null,
     dateTo: dateTo != null ? String(dateTo).slice(0, 10) : null,
     sortOrder,

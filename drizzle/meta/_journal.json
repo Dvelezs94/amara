@@ -36,6 +36,90 @@
       "when": 1777398000000,
       "tag": "0004_checklist_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1779100000000,
+      "tag": "0006_rename_supervisor_role_to_calidad",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1779200000000,
+      "tag": "0007_rename_operator_role_to_tecnico",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1779300000000,
+      "tag": "0008_checklist_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1779400000000,
+      "tag": "0009_maintenance_schedule_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1779500000000,
+      "tag": "0010_multi_assignees",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1779600000000,
+      "tag": "0011_checklist_sections",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1779700000000,
+      "tag": "0012_checklist_item_parent",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1779800000000,
+      "tag": "0013_work_order_machine_downtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1779900000000,
+      "tag": "0014_checklist_item_optional",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1780000000000,
+      "tag": "0015_dashboard_widget_field_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1780100000000,
+      "tag": "0016_dashboard_widget_chart_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1780200000000,
+      "tag": "0017_asset_tracks_machine_downtime",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,10 @@ export async function POST(req: Request) {
   }
   const id = createId();
   const now = new Date();
+  const tracksMachineDowntime =
+    body.tracksMachineDowntime === false || body.tracksMachineDowntime === "false"
+      ? false
+      : true;
   await db.insert(assets).values({
     id,
     name,
@@ -42,6 +46,7 @@ export async function POST(req: Request) {
     parentAssetId: body.parentAssetId || null,
     qrCode: body.qrCode || null,
     metadata: body.metadata ?? null,
+    tracksMachineDowntime,
     createdAt: now,
     updatedAt: now,
   });

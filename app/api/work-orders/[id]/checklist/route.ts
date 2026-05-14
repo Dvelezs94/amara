@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { workOrders } from "@/lib/db/schema";
 import { workOrderChecklist } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
 
@@ -89,13 +89,27 @@ export async function PATCH(
     return NextResponse.json({ error: "No updates" }, { status: 400 });
   }
   const before = await db.query.workOrderChecklist.findFirst({
-    where: eq(workOrderChecklist.id, itemId),
+    where: and(
+      eq(workOrderChecklist.id, itemId),
+      eq(workOrderChecklist.workOrderId, workOrderId)
+    ),
   });
+  if (!before) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (before.type === "section" || before.type === "text_block") {
+    return NextResponse.json({ ok: true });
+  }
 
   await db
     .update(workOrderChecklist)
     .set(updates as Record<string, unknown>)
-    .where(eq(workOrderChecklist.id, itemId));
+    .where(
+      and(
+        eq(workOrderChecklist.id, itemId),
+        eq(workOrderChecklist.workOrderId, workOrderId)
+      )
+    );
 
   await recordAuditLog({
     entityType: "work_order_checklist",

@@ -9,13 +9,17 @@ import {
 } from "@/lib/db/schema";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
+import {
+  mapChecklistItemsToInsertRows,
+  parseChecklistTemplateItemsFromClientJson,
+} from "@/lib/checklist-items-from-payload";
 
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; revisionId: string }> }
 ) {
   const session = await getSession();
-  if (!session || session.role !== "supervisor") {
+  if (!session || session.role !== "calidad") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id: templateId, revisionId } = await params;
@@ -52,6 +56,14 @@ export async function PATCH(
 
   if (decision === "approve") {
     const after = revision.snapshot.after;
+    const rawItems = Array.isArray(after.items)
+      ? (after.items as Array<Record<string, unknown>>)
+      : [];
+    const { items: parsed, error } = parseChecklistTemplateItemsFromClientJson(rawItems);
+    if (error) {
+      return NextResponse.json({ error }, { status: 400 });
+    }
+    const insertRows = mapChecklistItemsToInsertRows(parsed, createId);
     await db
       .update(checklistTemplates)
       .set({ name: after.name, description: after.description })
@@ -59,26 +71,17 @@ export async function PATCH(
     await db
       .delete(checklistTemplateItems)
       .where(eq(checklistTemplateItems.checklistTemplateId, templateId));
-    for (let i = 0; i < after.items.length; i += 1) {
-      const it = after.items[i]!;
+    for (const row of insertRows) {
       await db.insert(checklistTemplateItems).values({
-        id: createId(),
+        id: row.id,
         checklistTemplateId: templateId,
-        type: it.type as "step" | "custom_field" | "text_block",
-        label: it.label,
-        sortOrder: i,
-        fieldType: it.fieldType as
-          | "text"
-          | "number"
-          | "date"
-          | "dropdown"
-          | "checkbox"
-          | "photo"
-          | "title"
-          | "subtitle"
-          | "paragraph"
-          | null,
-        options: it.options,
+        parentItemId: row.parentItemId,
+        type: row.type,
+        label: row.label,
+        sortOrder: row.sortOrder,
+        fieldType: row.fieldType,
+        options: row.options,
+        isOptional: row.isOptional,
       });
     }
   }

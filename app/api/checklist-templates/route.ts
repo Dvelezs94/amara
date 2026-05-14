@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { checklistTemplates } from "@/lib/db/schema";
+import { checklistFolders, checklistTemplates } from "@/lib/db/schema";
 import { checklistTemplateRevisions } from "@/lib/db/schema";
 import { checklistTemplateItems } from "@/lib/db/schema";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
+import {
+  mapChecklistItemsToInsertRows,
+  parseChecklistTemplateItemsFromClientJson,
+} from "@/lib/checklist-items-from-payload";
 
 export async function GET() {
   const session = await getSession();
@@ -25,7 +29,7 @@ export async function POST(req: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.role === "supervisor") {
+  if (session.role === "calidad") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const body = await req.json().catch(() => ({}));
@@ -33,48 +37,56 @@ export async function POST(req: Request) {
   if (!name) {
     return NextResponse.json({ error: "Name required" }, { status: 400 });
   }
+  let folderId: string | null = null;
+  if (body.folderId !== undefined && body.folderId !== null && body.folderId !== "") {
+    const fid = String(body.folderId).trim();
+    if (fid) {
+      const folder = await db.query.checklistFolders.findFirst({
+        where: eq(checklistFolders.id, fid),
+      });
+      if (!folder) {
+        return NextResponse.json({ error: "Folder not found" }, { status: 400 });
+      }
+      folderId = fid;
+    }
+  }
+
   const id = createId();
-  const rawItems = Array.isArray(body.items) ? body.items : [];
-  const items = rawItems.map((it: Record<string, unknown>) => {
-    const type =
-      it.type === "custom_field" || it.type === "text_block" || it.type === "step"
-        ? it.type
-        : "step";
-    return {
-      type,
-      label: String(it.label ?? "").trim() || "Elemento",
-      fieldType: it.fieldType ? String(it.fieldType) : null,
-      options:
-        Array.isArray(it.options) && it.fieldType === "dropdown"
-          ? (it.options as unknown[]).map((opt) => String(opt))
-          : null,
-    };
-  });
+  const rawItems = Array.isArray(body.items)
+    ? (body.items as Array<Record<string, unknown>>)
+    : [];
+  const { items: parsed, error: parseError } =
+    parseChecklistTemplateItemsFromClientJson(rawItems);
+  if (parseError) {
+    return NextResponse.json({ error: parseError }, { status: 400 });
+  }
+  const insertRows = mapChecklistItemsToInsertRows(parsed, createId);
+  const snapshotItems = insertRows.map((row) => ({
+    id: row.id,
+    parentItemId: row.parentItemId,
+    type: row.type,
+    label: row.label,
+    fieldType: row.fieldType,
+    options: row.options,
+    ...(row.isOptional ? { isOptional: true } : {}),
+  }));
   await db.insert(checklistTemplates).values({
     id,
     name,
     description: body.description?.trim() || null,
+    folderId,
   });
-  for (let i = 0; i < items.length; i += 1) {
-    const it = items[i]!;
+  for (const row of insertRows) {
     await db.insert(checklistTemplateItems).values({
-      id: createId(),
+      id: row.id,
       checklistTemplateId: id,
-      type: it.type as "step" | "custom_field" | "text_block",
-      label: it.label,
-      sortOrder: i,
-      fieldType: it.fieldType as
-        | "text"
-        | "number"
-        | "date"
-        | "dropdown"
-        | "checkbox"
-        | "photo"
-        | "title"
-        | "subtitle"
-        | "paragraph"
-        | null,
-      options: it.options,
+      parentItemId: row.parentItemId,
+      type: row.type,
+      label: row.label,
+      sortOrder: row.sortOrder,
+      fieldType: row.fieldType,
+      options: row.options,
+      isOptional: row.isOptional,
     });
   }
   await db.insert(checklistTemplateRevisions).values({
@@ -90,7 +102,7 @@ export async function POST(req: Request) {
       after: {
         name,
         description: body.description?.trim() || null,
-        items,
+        items: snapshotItems,
       },
     },
     createdAt: new Date(),

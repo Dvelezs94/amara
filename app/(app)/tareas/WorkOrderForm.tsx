@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AssigneeMultiSelect } from "@/components/AssigneeMultiSelect";
+import { MAX_MANUAL_DOWNTIME_MINUTES } from "@/lib/machine-downtime";
 
-type Asset = { id: string; name: string; assetId: string };
+type Asset = { id: string; name: string; assetId: string; tracksMachineDowntime?: boolean };
 type User = { id: string; name: string };
 type ChecklistTemplate = { id: string; name: string };
 
@@ -21,9 +23,11 @@ export function WorkOrderForm({
     status?: string;
     priority?: string;
     assetId?: string;
-    assigneeId?: string;
+    assigneeIds?: string[];
     dueDate?: string;
     checklistTemplateId?: string;
+    countsMachineDowntime?: boolean;
+    manualDowntimeMinutes?: number;
   };
 }) {
   const router = useRouter();
@@ -32,6 +36,11 @@ export function WorkOrderForm({
   const [assets, setAssets] = useState<Asset[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([]);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(initial.assigneeIds ?? []);
+  const [selectedAssetId, setSelectedAssetId] = useState(initial.assetId ?? "");
+  const [downtimeChecked, setDowntimeChecked] = useState(
+    () => initial.countsMachineDowntime === true
+  );
 
   useEffect(() => {
     fetch("/api/assets")
@@ -48,6 +57,30 @@ export function WorkOrderForm({
       .catch(() => setTemplates([]));
   }, []);
 
+  useEffect(() => {
+    setAssigneeIds(initial.assigneeIds ?? []);
+  }, [workOrderId, initial.assigneeIds?.join(",")]);
+
+  useEffect(() => {
+    setSelectedAssetId(initial.assetId ?? "");
+  }, [workOrderId, initial.assetId]);
+
+  useEffect(() => {
+    setDowntimeChecked(initial.countsMachineDowntime === true);
+  }, [workOrderId, initial.countsMachineDowntime]);
+
+  const selectedAsset = useMemo(
+    () => assets.find((a) => a.id === selectedAssetId),
+    [assets, selectedAssetId]
+  );
+  const machineAllowsDowntime =
+    !selectedAssetId || selectedAsset?.tracksMachineDowntime !== false;
+  const downtimeUiEnabled = Boolean(selectedAssetId) && machineAllowsDowntime;
+
+  useEffect(() => {
+    if (!downtimeUiEnabled) setDowntimeChecked(false);
+  }, [downtimeUiEnabled]);
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -56,13 +89,23 @@ export function WorkOrderForm({
     const title = (form.elements.namedItem("title") as HTMLInputElement).value.trim();
     const description = (form.elements.namedItem("description") as HTMLTextAreaElement).value.trim();
     const priority = (form.elements.namedItem("priority") as HTMLSelectElement).value;
-    const assetId = (form.elements.namedItem("assetId") as HTMLSelectElement).value || undefined;
-    const assigneeId = canEditAssignee
-      ? (form.elements.namedItem("assigneeId") as HTMLSelectElement | null)?.value ||
-        undefined
-      : undefined;
+    const assetId = selectedAssetId || undefined;
+    const countsMachineDowntime = downtimeUiEnabled && downtimeChecked;
     const dueDate = (form.elements.namedItem("dueDate") as HTMLInputElement).value || undefined;
     const checklistTemplateId = (form.elements.namedItem("checklistTemplateId") as HTMLSelectElement)?.value || undefined;
+    const manualRaw = (form.elements.namedItem("manualDowntimeAmount") as HTMLInputElement)?.value ?? "";
+    const manualUnit = (form.elements.namedItem("manualDowntimeUnit") as HTMLSelectElement)?.value ?? "min";
+    const manualParsed = Number(String(manualRaw).replace(",", "."));
+    let manualDowntimeMinutes = 0;
+    if (String(manualRaw).trim() !== "" && Number.isFinite(manualParsed) && manualParsed >= 0) {
+      manualDowntimeMinutes =
+        manualUnit === "h" ? Math.round(manualParsed * 60) : Math.round(manualParsed);
+    }
+    if (manualDowntimeMinutes > MAX_MANUAL_DOWNTIME_MINUTES) {
+      setError("Paro manual demasiado grande (máx. 525600 minutos).");
+      setLoading(false);
+      return;
+    }
 
     try {
       if (workOrderId) {
@@ -74,8 +117,10 @@ export function WorkOrderForm({
             description: description || null,
             priority,
             assetId: assetId || null,
-            ...(canEditAssignee ? { assigneeId: assigneeId || null } : {}),
+            ...(canEditAssignee ? { assigneeIds } : {}),
             dueDate: dueDate || null,
+            countsMachineDowntime,
+            manualDowntimeMinutes,
           }),
         });
         if (!res.ok) {
@@ -94,9 +139,11 @@ export function WorkOrderForm({
             description: description || null,
             priority,
             assetId: assetId || null,
-            assigneeId: assigneeId || null,
+            assigneeIds,
             dueDate: dueDate || null,
             checklistTemplateId: checklistTemplateId || null,
+            countsMachineDowntime,
+            manualDowntimeMinutes,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -162,12 +209,13 @@ export function WorkOrderForm({
       </div>
       <div>
         <label htmlFor="assetId" className="block text-sm font-medium text-zinc-700 mb-1">
-          Activo
+          Máquina
         </label>
         <select
           id="assetId"
           name="assetId"
-          defaultValue={initial.assetId ?? ""}
+          value={selectedAssetId}
+          onChange={(e) => setSelectedAssetId(e.target.value)}
           className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
         >
           <option value="">Ninguno</option>
@@ -179,24 +227,14 @@ export function WorkOrderForm({
         </select>
       </div>
       {canEditAssignee && (
-        <div>
-          <label htmlFor="assigneeId" className="block text-sm font-medium text-zinc-700 mb-1">
-            Asignado a
-          </label>
-          <select
-            id="assigneeId"
-            name="assigneeId"
-            defaultValue={initial.assigneeId ?? ""}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          >
-            <option value="">Sin asignar</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <AssigneeMultiSelect
+          id="wo-assignees"
+          users={users}
+          value={assigneeIds}
+          onChange={setAssigneeIds}
+          label="Asignado a"
+          emptyHint="Sin asignar"
+        />
       )}
       <div>
         <label htmlFor="dueDate" className="block text-sm font-medium text-zinc-700 mb-1">
@@ -209,6 +247,69 @@ export function WorkOrderForm({
           defaultValue={initial.dueDate?.slice(0, 10)}
           className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
+      </div>
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3 space-y-3">
+        {!selectedAssetId ? (
+          <p className="text-xs text-zinc-600">
+            Elige una máquina para poder marcar paro de máquina en esta tarea.
+          </p>
+        ) : null}
+        {selectedAssetId && !machineAllowsDowntime ? (
+          <p className="text-xs text-amber-800">
+            Esta máquina tiene desactivado el seguimiento de paro; no se registrará tiempo de paro
+            hasta que lo actives en la ficha del activo.
+          </p>
+        ) : null}
+        <label className="flex items-start gap-2.5 text-sm text-zinc-800">
+          <input
+            type="checkbox"
+            checked={downtimeChecked}
+            disabled={!downtimeUiEnabled}
+            onChange={(e) => setDowntimeChecked(e.target.checked)}
+            className="tap-target mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+          />
+          <span>
+            Esta tarea implica paro de máquina (contar el tiempo por lo que dure en progreso)
+          </span>
+        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <label htmlFor="manualDowntimeAmount" className="block text-xs font-medium text-zinc-600 mb-1">
+              Paro manual adicional (opcional)
+            </label>
+            <input
+              id="manualDowntimeAmount"
+              name="manualDowntimeAmount"
+              type="text"
+              inputMode="decimal"
+              placeholder="0"
+              defaultValue={
+                initial.manualDowntimeMinutes != null && initial.manualDowntimeMinutes > 0
+                  ? String(initial.manualDowntimeMinutes)
+                  : ""
+              }
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label htmlFor="manualDowntimeUnit" className="block text-xs font-medium text-zinc-600 mb-1">
+              Unidad
+            </label>
+            <select
+              id="manualDowntimeUnit"
+              name="manualDowntimeUnit"
+              defaultValue="min"
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            >
+              <option value="min">Minutos</option>
+              <option value="h">Horas</option>
+            </select>
+          </div>
+        </div>
+        <p className="text-[11px] text-zinc-500 leading-snug">
+          El paro manual se suma al total de la máquina al completar la tarea. También puedes editarlo
+          en el detalle de la tarea.
+        </p>
       </div>
       {!workOrderId && templates.length > 0 && (
         <div>

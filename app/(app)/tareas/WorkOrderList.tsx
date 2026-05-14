@@ -36,6 +36,14 @@ type WorkOrderRow = {
   assigneeName: string | null;
   assigneeId?: string | null;
   assigneeAvatarUrl?: string | null;
+  assigneeAvatarBackgroundColor?: string | null;
+  assigneeIds?: string[];
+  assignees?: Array<{
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    avatarBackgroundColor?: string | null;
+  }>;
   boardSortOrder?: number;
   createdAt: string;
   completedAt?: string | null;
@@ -658,22 +666,55 @@ export function WorkOrderList() {
                           </div>
                         ) : null}
                         <div className="flex shrink-0 items-center gap-1.5">
-                          {wo.assigneeName ? (
-                            <span
-                              className="inline-flex shrink-0"
-                              title={wo.assigneeName}
-                            >
-                              <UserAvatar
-                                userId={wo.assigneeId ?? ""}
-                                name={wo.assigneeName}
-                                avatarUrl={wo.assigneeAvatarUrl}
-                                size="sm"
-                                className="!h-6 !w-6 !text-[9px] ring-1 ring-zinc-200"
-                              />
-                              <span className="sr-only">{wo.assigneeName}</span>
-                            </span>
-                          ) : null}
-                          <WorkOrderPriorityIcon priority={wo.priority} />
+                          {(() => {
+                            const stack =
+                              wo.assignees && wo.assignees.length > 0
+                                ? wo.assignees
+                                : wo.assigneeName && wo.assigneeId
+                                  ? [
+                                      {
+                                        id: wo.assigneeId,
+                                        name: wo.assigneeName,
+                                        avatarUrl: wo.assigneeAvatarUrl ?? null,
+                                        avatarBackgroundColor:
+                                          wo.assigneeAvatarBackgroundColor ?? null,
+                                      },
+                                    ]
+                                  : [];
+                            const shown = stack.slice(0, 4);
+                            if (shown.length === 0) {
+                              return <WorkOrderPriorityIcon priority={wo.priority} />;
+                            }
+                            return (
+                              <>
+                                <span
+                                  className="inline-flex shrink-0 items-center -space-x-1.5"
+                                  title={wo.assigneeName ?? undefined}
+                                >
+                                  {shown.map((a, idx) => (
+                                    <UserAvatar
+                                      key={a.id}
+                                      userId={a.id}
+                                      name={a.name}
+                                      avatarUrl={a.avatarUrl}
+                                      avatarBackgroundColor={a.avatarBackgroundColor}
+                                      size="sm"
+                                      className={`!h-6 !w-6 !text-[9px] ring-2 ring-white ${
+                                        idx > 0 ? "relative" : ""
+                                      }`}
+                                    />
+                                  ))}
+                                  {stack.length > 4 ? (
+                                    <span className="relative z-10 inline-flex h-6 min-w-[1.25rem] items-center justify-center rounded-full bg-zinc-200 px-1 text-[10px] font-semibold text-zinc-700 ring-2 ring-white">
+                                      +{stack.length - 4}
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <span className="sr-only">{wo.assigneeName}</span>
+                                <WorkOrderPriorityIcon priority={wo.priority} />
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     </article>

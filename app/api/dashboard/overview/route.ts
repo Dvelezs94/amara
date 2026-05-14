@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -18,6 +18,7 @@ import {
 } from "@/lib/dashboard-date-range";
 import { buildDashboardKpis } from "@/lib/dashboard-kpis";
 import { resolveNextMaintenanceDisplayDate } from "@/lib/maintenance-recurrence";
+import { loadManyMaintenanceScheduleAssigneeIds } from "@/lib/assignees";
 
 function isMissingAssigneeColumnError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -78,19 +79,63 @@ export async function GET(req: Request) {
       assigneeName: string | null;
     }>
   > {
+    async function enrichWithAssigneeNames(
+      rows: Array<{
+        id: string;
+        name: string;
+        recurrence: string;
+        nextRunAt: Date | null;
+        assetName: string | null;
+        legacyAssigneeId: string | null;
+      }>
+    ) {
+      const scheduleIds = rows.map((r) => r.id);
+      const junctionMap = await loadManyMaintenanceScheduleAssigneeIds(scheduleIds);
+      const allUserIds = new Set<string>();
+      for (const r of rows) {
+        let ids = junctionMap.get(r.id) ?? [];
+        if (ids.length === 0 && r.legacyAssigneeId) ids = [r.legacyAssigneeId];
+        for (const id of ids) allUserIds.add(id);
+      }
+      let nameById = new Map<string, string>();
+      if (allUserIds.size > 0) {
+        const userRows = await db.query.users.findMany({
+          where: inArray(users.id, Array.from(allUserIds)),
+          columns: { id: true, name: true },
+        });
+        nameById = new Map(userRows.map((u) => [u.id, u.name]));
+      }
+      return rows.map((r) => {
+        let ids = junctionMap.get(r.id) ?? [];
+        if (ids.length === 0 && r.legacyAssigneeId) ids = [r.legacyAssigneeId];
+        const names = ids
+          .map((id) => nameById.get(id))
+          .filter((n): n is string => Boolean(n));
+        return {
+          id: r.id,
+          name: r.name,
+          recurrence: r.recurrence,
+          nextRunAt: r.nextRunAt,
+          assetName: r.assetName,
+          assigneeName: names.length > 0 ? names.join(", ") : null,
+        };
+      });
+    }
+
     try {
-      return await db
+      const rows = await db
         .select({
           id: maintenanceSchedules.id,
           name: maintenanceSchedules.name,
           recurrence: maintenanceSchedules.recurrence,
           nextRunAt: maintenanceSchedules.nextRunAt,
           assetName: assets.name,
-          assigneeName: users.name,
+          legacyAssigneeId: maintenanceSchedules.assigneeId,
         })
         .from(maintenanceSchedules)
         .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id))
-        .leftJoin(users, eq(maintenanceSchedules.assigneeId, users.id));
+        .where(isNull(maintenanceSchedules.deletedAt));
+      return enrichWithAssigneeNames(rows);
     } catch (error) {
       if (!isMissingAssigneeColumnError(error)) throw error;
       const rows = await db
@@ -102,8 +147,11 @@ export async function GET(req: Request) {
           assetName: assets.name,
         })
         .from(maintenanceSchedules)
-        .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id));
-      return rows.map((r) => ({ ...r, assigneeName: null as string | null }));
+        .leftJoin(assets, eq(maintenanceSchedules.assetId, assets.id))
+        .where(isNull(maintenanceSchedules.deletedAt));
+      return enrichWithAssigneeNames(
+        rows.map((r) => ({ ...r, legacyAssigneeId: null as string | null }))
+      );
     }
   }
 
@@ -146,8 +194,14 @@ export async function GET(req: Request) {
         kind: workOrders.kind,
         createdAt: workOrders.createdAt,
         completedAt: workOrders.completedAt,
+        startedAt: workOrders.startedAt,
+        assetId: workOrders.assetId,
+        countsMachineDowntime: workOrders.countsMachineDowntime,
+        manualDowntimeMinutes: workOrders.manualDowntimeMinutes,
+        assetTracksMachineDowntime: assets.tracksMachineDowntime,
       })
       .from(workOrders)
+      .leftJoin(assets, eq(workOrders.assetId, assets.id))
       .where(
         and(
           gte(workOrders.createdAt, rangeStart),

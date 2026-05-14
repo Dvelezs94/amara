@@ -5,9 +5,11 @@ import {
   checklistTemplates,
   users,
 } from "@/lib/db/schema";
-import { asc } from "drizzle-orm";
+import { loadManyMaintenanceScheduleAssigneeIds } from "@/lib/assignees";
+import { asc, desc, isNotNull, isNull } from "drizzle-orm";
 import { CalendarMonthView } from "./CalendarMonthView";
 import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
+import { DeletedSchedulesSection } from "./DeletedSchedulesSection";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +25,25 @@ export default async function CalendarioPage() {
       name: maintenanceSchedules.name,
       recurrence: maintenanceSchedules.recurrence,
       color: maintenanceSchedules.color,
+      assigneeId: maintenanceSchedules.assigneeId,
       nextRunAt: maintenanceSchedules.nextRunAt,
+      checklistTemplateId: maintenanceSchedules.checklistTemplateId,
+      assetId: maintenanceSchedules.assetId,
     })
     .from(maintenanceSchedules)
+    .where(isNull(maintenanceSchedules.deletedAt))
     .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
+
+  const deletedSchedules = await db
+    .select({
+      id: maintenanceSchedules.id,
+      name: maintenanceSchedules.name,
+      deletedAt: maintenanceSchedules.deletedAt,
+    })
+    .from(maintenanceSchedules)
+    .where(isNotNull(maintenanceSchedules.deletedAt))
+    .orderBy(desc(maintenanceSchedules.deletedAt))
+    .limit(25);
 
   const assetOptions = await db
     .select({
@@ -42,13 +59,25 @@ export default async function CalendarioPage() {
     .from(checklistTemplates)
     .orderBy(checklistTemplates.name);
 
-  const calendarSchedules = schedules.map((s) => ({
-    id: s.id,
-    name: s.name,
-    recurrence: s.recurrence,
-    color: s.color,
-    nextRunAt: s.nextRunAt ? s.nextRunAt.toISOString() : null,
-  }));
+  const scheduleIds = schedules.map((s) => s.id);
+  const assigneesBySchedule =
+    await loadManyMaintenanceScheduleAssigneeIds(scheduleIds);
+
+  const calendarSchedules = schedules.map((s) => {
+    const junction = assigneesBySchedule.get(s.id) ?? [];
+    const assigneeIds =
+      junction.length > 0 ? junction : s.assigneeId ? [s.assigneeId] : [];
+    return {
+      id: s.id,
+      name: s.name,
+      recurrence: s.recurrence,
+      color: s.color,
+      assigneeIds,
+      nextRunAt: s.nextRunAt ? s.nextRunAt.toISOString() : null,
+      checklistTemplateId: s.checklistTemplateId ?? null,
+      assetId: s.assetId ?? null,
+    };
+  });
 
   return (
     <div className="space-y-5">
@@ -80,6 +109,14 @@ export default async function CalendarioPage() {
         }))}
         users={userList}
         checklistTemplates={templateOptions}
+      />
+
+      <DeletedSchedulesSection
+        initial={deletedSchedules.map((d) => ({
+          id: d.id,
+          name: d.name,
+          deletedAt: d.deletedAt ? d.deletedAt.toISOString() : null,
+        }))}
       />
     </div>
   );

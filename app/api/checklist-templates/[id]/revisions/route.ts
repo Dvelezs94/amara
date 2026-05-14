@@ -10,14 +10,8 @@ import {
 } from "@/lib/db/schema";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
-import { createNotification } from "@/lib/notifications";
-
-type RevisionItem = {
-  type: string;
-  label: string;
-  fieldType: string | null;
-  options: string[] | null;
-};
+import { notifyCalidadUsersChecklistRevisionProposed } from "@/lib/notifications";
+import { parseChecklistTemplateItemsFromClientJson } from "@/lib/checklist-items-from-payload";
 
 async function getCurrentTemplateSnapshot(templateId: string) {
   const template = await db.query.checklistTemplates.findFirst({
@@ -32,10 +26,13 @@ async function getCurrentTemplateSnapshot(templateId: string) {
     name: template.name,
     description: template.description ?? null,
     items: items.map((it) => ({
+      id: it.id,
+      parentItemId: it.parentItemId ?? null,
       type: it.type,
       label: it.label,
       fieldType: it.fieldType ?? null,
       options: (Array.isArray(it.options) ? it.options : null) as string[] | null,
+      ...(it.isOptional ? { isOptional: true } : {}),
     })),
   };
 }
@@ -78,7 +75,7 @@ export async function POST(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.role === "supervisor") {
+  if (session.role === "calidad") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id: templateId } = await params;
@@ -112,17 +109,19 @@ export async function POST(
   const rawItems: Array<Record<string, unknown>> = Array.isArray(body.items)
     ? (body.items as Array<Record<string, unknown>>)
     : [];
-  const items: RevisionItem[] = rawItems.map((it: Record<string, unknown>) => ({
-    type:
-      it.type === "custom_field" || it.type === "text_block" || it.type === "step"
-        ? it.type
-        : "step",
-    label: String(it.label ?? "").trim() || "Elemento",
-    fieldType: it.fieldType ? String(it.fieldType) : null,
-    options:
-      Array.isArray(it.options) && it.fieldType === "dropdown"
-        ? it.options.map((opt: unknown) => String(opt))
-        : null,
+  const { items: parsedItems, error: itemsError } =
+    parseChecklistTemplateItemsFromClientJson(rawItems);
+  if (itemsError) {
+    return NextResponse.json({ error: itemsError }, { status: 400 });
+  }
+  const items = parsedItems.map((p) => ({
+    id: p.clientId,
+    parentItemId: p.parentClientId,
+    type: p.type,
+    label: p.label,
+    fieldType: p.fieldType,
+    options: p.options,
+    ...(p.isOptional ? { isOptional: true } : {}),
   }));
 
   const before = await getCurrentTemplateSnapshot(templateId);
@@ -219,25 +218,15 @@ export async function POST(
     },
   });
 
-  if (status === "proposed") {
-    const supervisors = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.role, "supervisor"));
-    try {
-      await Promise.all(
-        supervisors.map((sup) =>
-          createNotification({
-            userId: sup.id,
-            type: "work_order_update",
-            title: "Nueva revisión de checklist",
-            body: `[checklist:${templateId}] ${template.name} · Revision ${revisionName}`,
-          })
-        )
-      );
-    } catch {
-      // Do not fail revision creation if notifications fail.
-    }
+  if (status === "proposed" && revisionId) {
+    await notifyCalidadUsersChecklistRevisionProposed({
+      templateId,
+      revisionId,
+      templateName: template.name,
+      revisionName,
+      proposedByUserId: session.id,
+      proposedByName: session.name ?? null,
+    });
   }
 
   return NextResponse.json({ ok: true, status, revisionNumber, revisionId });

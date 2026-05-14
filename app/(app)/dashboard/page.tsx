@@ -33,6 +33,9 @@ type Widget = {
   templateId: string;
   templateName: string;
   fieldLabel: string;
+  /** Múltiples campos del mismo tipo para un mismo gráfico */
+  fieldLabels?: string[];
+  chartType?: "line" | "bar" | "pie" | string;
   dateFrom: string | null;
   dateTo: string | null;
   sortOrder: number;
@@ -311,7 +314,7 @@ export default function DashboardPage() {
         onApply={setRange}
       />
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
         <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             MTTR
@@ -327,14 +330,26 @@ export default function DashboardPage() {
         <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             Inactividad
-            <span title="Horas de inactividad: suma de horas de órdenes completadas en la ventana de tiempo.">
+            <span title="Suma de horas (creación → cierre) de órdenes completadas en la ventana; no es el paro de máquina medido en tareas.">
               <CircleHelp className="h-3.5 w-3.5" />
             </span>
           </p>
           <p className="mt-1 text-2xl font-semibold text-zinc-900">
             {formatKpiValue(kpis?.downtimeHours, " h")}
           </p>
-          <p className="mt-1 text-xs text-zinc-500">Horas de parada acumuladas ({kpis?.windowDays ?? 30} días)</p>
+          <p className="mt-1 text-xs text-zinc-500">Horas ciclo creación–cierre ({kpis?.windowDays ?? 30} días)</p>
+        </section>
+        <section className="rounded-lg border border-zinc-200 bg-white p-4">
+          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Paro de máquina
+            <span title="Suma del tiempo en curso hasta terminada más paro manual, solo en tareas marcadas con paro y en máquinas con seguimiento activado.">
+              <CircleHelp className="h-3.5 w-3.5" />
+            </span>
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-zinc-900">
+            {formatKpiValue(kpis?.machineDowntimeHours, " h")}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">En ventana de {kpis?.windowDays ?? 30} días (por fecha de creación)</p>
         </section>
         <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -350,7 +365,7 @@ export default function DashboardPage() {
             Planificado {kpis?.plannedCount ?? 0} · No planificado {kpis?.unplannedCount ?? 0}
           </p>
         </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4">
+        <section className="rounded-lg border border-zinc-200 bg-white p-4 md:col-span-2 xl:col-span-1">
           <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             OEE
             <span title="Eficiencia global del equipo estimada con base en disponibilidad (1 - inactividad / horas disponibles).">
@@ -561,9 +576,12 @@ export default function DashboardPage() {
               </div>
               <div className="p-3">
                 <AnalyticsChartCard
+                  widgetId={w.id}
+                  initialChartType={w.chartType}
                   templateId={w.templateId}
                   templateName={w.templateName}
                   fieldLabel={w.fieldLabel}
+                  fieldLabels={w.fieldLabels}
                   dateFrom={range.from}
                   dateTo={range.to}
                   size={widgetSizes[w.id] ?? "md"}

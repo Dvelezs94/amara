@@ -79,3 +79,26 @@ export function clampRangeOrder(from: string, to: string): { from: string; to: s
   start.setDate(start.getDate() - (MAX_RANGE_DAYS - 1));
   return { from: toYmdLocal(start), to: b };
 }
+
+/**
+ * Inclusive local calendar bounds for analytics APIs that accept `from` / `to` as YYYY-MM-DD
+ * (same convention as the dashboard overview). Invalid params are treated as unbounded on that side.
+ */
+export function checklistAnalyticsDateBounds(
+  fromParam: string | null,
+  toParam: string | null
+): { rangeStart: Date | null; rangeEnd: Date | null } {
+  const fromYmd = fromParam && isValidYmd(fromParam) ? fromParam : null;
+  const toYmd = toParam && isValidYmd(toParam) ? toParam : null;
+  if (fromYmd && toYmd) {
+    const { from: fy, to: ty } = clampRangeOrder(fromYmd, toYmd);
+    return {
+      rangeStart: startOfLocalDayFromYmd(fy),
+      rangeEnd: endOfLocalDayFromYmd(ty),
+    };
+  }
+  return {
+    rangeStart: fromYmd ? startOfLocalDayFromYmd(fromYmd) : null,
+    rangeEnd: toYmd ? endOfLocalDayFromYmd(toYmd) : null,
+  };
+}

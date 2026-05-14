@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import {
+  mapChecklistItemsToInsertRows,
+  parseChecklistTemplateItemsFromClientJson,
+} from "@/lib/checklist-items-from-payload";
 import { db } from "@/lib/db";
 import { checklistTemplates } from "@/lib/db/schema";
 import { checklistTemplateItems } from "@/lib/db/schema";
@@ -8,10 +12,12 @@ import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
 
 type ItemSnapshot = {
-  type: "step" | "custom_field" | "text_block";
+  type: "step" | "custom_field" | "text_block" | "section";
   label: string;
   fieldType?: string | null;
   options?: string[] | null;
+  parentItemId?: string | null;
+  isOptional?: boolean;
 };
 
 export async function GET(
@@ -22,7 +28,7 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.role !== "supervisor") {
+  if (session.role !== "calidad") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
@@ -41,7 +47,7 @@ export async function PUT(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.role === "supervisor") {
+  if (session.role === "calidad") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id: templateId } = await params;
@@ -52,9 +58,10 @@ export async function PUT(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json().catch(() => ({}));
-  const items: Array<Record<string, unknown>> = Array.isArray(body.items)
+  const rawItems: Array<Record<string, unknown>> = Array.isArray(body.items)
     ? (body.items as Array<Record<string, unknown>>)
     : [];
+
   const previousItems = await db.query.checklistTemplateItems.findMany({
     where: eq(checklistTemplateItems.checklistTemplateId, templateId),
     orderBy: (item, { asc }) => [asc(item.sortOrder)],
@@ -64,93 +71,37 @@ export async function PUT(
     label: it.label,
     fieldType: it.fieldType,
     options: Array.isArray(it.options) ? (it.options as string[]) : null,
+    parentItemId: it.parentItemId ?? null,
+    isOptional: it.isOptional === true ? true : undefined,
   }));
 
-  const nextItems: ItemSnapshot[] = items.map((it: Record<string, unknown>) => {
-    const type =
-      it.type === "custom_field"
-        ? "custom_field"
-        : it.type === "text_block"
-          ? "text_block"
-          : "step";
-    return {
-      type,
-      label: String(
-        it.label ?? (type === "custom_field" ? "Campo" : "Texto")
-      ).trim(),
-      fieldType:
-        type === "custom_field"
-          ? String(it.fieldType ?? "text")
-          : type === "text_block"
-            ? String(it.fieldType ?? "paragraph")
-            : null,
-      options:
-        type === "custom_field" &&
-        String(it.fieldType ?? "text") === "dropdown" &&
-        Array.isArray(it.options)
-          ? (it.options as unknown[]).map((opt) => String(opt))
-          : null,
-    };
-  });
+  const { items: parsed, error } = parseChecklistTemplateItemsFromClientJson(rawItems);
+  if (error) {
+    return NextResponse.json({ error }, { status: 400 });
+  }
+  const insertRows = mapChecklistItemsToInsertRows(parsed, createId);
+
+  const nextItems: ItemSnapshot[] = insertRows.map((row) => ({
+    type: row.type,
+    label: row.label,
+    fieldType: row.fieldType,
+    options: row.options,
+    parentItemId: row.parentItemId,
+    isOptional: row.isOptional ? true : undefined,
+  }));
 
   await db.delete(checklistTemplateItems).where(eq(checklistTemplateItems.checklistTemplateId, templateId));
-  for (let i = 0; i < items.length; i++) {
-    const it: Record<string, unknown> = items[i]!;
-    const type =
-      it.type === "custom_field"
-        ? "custom_field"
-        : it.type === "text_block"
-          ? "text_block"
-          : "step";
-    const label = String(
-      it.label ??
-      (type === "custom_field"
-        ? "Campo"
-        : type === "text_block"
-          ? "Texto"
-          : "Paso")
-    ).trim();
-    const rawFieldType = typeof it.fieldType === "string" ? it.fieldType : "";
-    const fieldType:
-      | "text"
-      | "number"
-      | "date"
-      | "dropdown"
-      | "checkbox"
-      | "photo"
-      | "title"
-      | "subtitle"
-      | "paragraph"
-      | null =
-      type === "custom_field"
-        ? rawFieldType === "number" ||
-          rawFieldType === "date" ||
-          rawFieldType === "dropdown" ||
-          rawFieldType === "checkbox" ||
-          rawFieldType === "photo"
-          ? rawFieldType
-          : "text"
-        : type === "text_block"
-          ? rawFieldType === "title" ||
-            rawFieldType === "subtitle" ||
-            rawFieldType === "paragraph"
-            ? rawFieldType
-            : "paragraph"
-          : null;
-    const options: string[] | null =
-      type === "custom_field" &&
-      fieldType === "dropdown" &&
-      Array.isArray(it.options)
-        ? (it.options as unknown[]).map((opt) => String(opt))
-        : null;
+  for (const row of insertRows) {
     await db.insert(checklistTemplateItems).values({
-      id: createId(),
+      id: row.id,
       checklistTemplateId: templateId,
-      type,
-      label,
-      sortOrder: i,
-      fieldType,
-      options,
+      parentItemId: row.parentItemId,
+      type: row.type,
+      label: row.label,
+      sortOrder: row.sortOrder,
+      fieldType: row.fieldType,
+      options: row.options,
+      isOptional: row.isOptional,
     });
   }
   await recordAuditLog({
@@ -159,7 +110,7 @@ export async function PUT(
     action: "items_updated",
     userId: session.id,
     metadata: {
-      itemsCount: items.length,
+      itemsCount: insertRows.length,
       before: beforeItems,
       after: nextItems,
     },

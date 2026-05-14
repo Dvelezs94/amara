@@ -10,7 +10,19 @@ import { checklistTemplates } from "@/lib/db/schema";
 import { checklistTemplateRevisions } from "@/lib/db/schema";
 import { and, eq, desc, max } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
+import { loadWorkOrderAssignees, setWorkOrderAssigneeIds } from "@/lib/assignees";
 import { createNotification } from "@/lib/notifications";
+import { clampManualDowntimeMinutes } from "@/lib/machine-downtime";
+import { checklistItemBlocksWorkOrderCompletion } from "@/lib/checklist-completion";
+
+async function assetAllowsDowntimeTracking(assetId: string | null): Promise<boolean> {
+  if (!assetId) return false;
+  const a = await db.query.assets.findFirst({
+    where: eq(assets.id, assetId),
+    columns: { tracksMachineDowntime: true },
+  });
+  return a?.tracksMachineDowntime !== false;
+}
 
 function normalizeChecklistPhotoValue(
   value: unknown,
@@ -94,21 +106,12 @@ export async function GET(
   if (!wo) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const [asset, assignee, requester] = await Promise.all([
+  const assignees = await loadWorkOrderAssignees(id, wo.assigneeId);
+  const assignee = assignees[0] ?? null;
+
+  const [asset, requester] = await Promise.all([
     wo.assetId
       ? db.query.assets.findFirst({ where: eq(assets.id, wo.assetId) })
-      : null,
-    wo.assigneeId
-      ? db.query.users.findFirst({
-          where: eq(users.id, wo.assigneeId!),
-          columns: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true,
-            avatarBackgroundColor: true,
-          },
-        })
       : null,
     wo.requesterId
       ? db.query.users.findFirst({
@@ -176,8 +179,15 @@ export async function GET(
   return NextResponse.json({
     ...wo,
     asset: asset
-      ? { id: asset.id, name: asset.name, assetId: asset.assetId }
+      ? {
+          id: asset.id,
+          name: asset.name,
+          assetId: asset.assetId,
+          tracksMachineDowntime: asset.tracksMachineDowntime,
+        }
       : null,
+    assigneeIds: assignees.map((a) => a.id),
+    assignees,
     assignee: assignee ?? null,
     requester: requester ?? null,
     checklistMeta:
@@ -211,13 +221,66 @@ export async function PATCH(
   if (!wo) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (wo.status === "completed") {
-    return NextResponse.json(
-      { error: "No se puede modificar una orden completada" },
-      { status: 403 }
-    );
-  }
   const body = await req.json().catch(() => ({}));
+
+  if (wo.status === "completed") {
+    const keys = Object.keys(body);
+    const allowed = new Set(["manualDowntimeMinutes", "countsMachineDowntime"]);
+    if (keys.length === 0 || keys.some((k) => !allowed.has(k))) {
+      return NextResponse.json(
+        { error: "No se puede modificar una orden completada" },
+        { status: 403 }
+      );
+    }
+    const updates: Partial<typeof workOrders.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    if (body.manualDowntimeMinutes !== undefined) {
+      const m = clampManualDowntimeMinutes(body.manualDowntimeMinutes);
+      if (m === null) {
+        return NextResponse.json(
+          { error: "Paro manual inválido (use minutos enteros entre 0 y 525600)" },
+          { status: 400 }
+        );
+      }
+      updates.manualDowntimeMinutes = m;
+    }
+    if (body.countsMachineDowntime !== undefined) {
+      if (typeof body.countsMachineDowntime !== "boolean") {
+        return NextResponse.json({ error: "Valor inválido" }, { status: 400 });
+      }
+      const allows = await assetAllowsDowntimeTracking(wo.assetId);
+      if (body.countsMachineDowntime === true && !allows) {
+        return NextResponse.json(
+          { error: "Esta máquina no permite registrar paro de máquina." },
+          { status: 400 }
+        );
+      }
+      updates.countsMachineDowntime = body.countsMachineDowntime === true && allows;
+    }
+    await db.update(workOrders).set(updates).where(eq(workOrders.id, id));
+    const woAfter = await db.query.workOrders.findFirst({
+      where: eq(workOrders.id, id),
+    });
+    await recordAuditLog({
+      entityType: "work_order",
+      entityId: id,
+      action: "updated",
+      userId: session.id,
+      metadata: {
+        before: {
+          countsMachineDowntime: wo.countsMachineDowntime,
+          manualDowntimeMinutes: wo.manualDowntimeMinutes,
+        },
+        after: {
+          countsMachineDowntime: woAfter?.countsMachineDowntime ?? wo.countsMachineDowntime,
+          manualDowntimeMinutes: woAfter?.manualDowntimeMinutes ?? wo.manualDowntimeMinutes,
+        },
+        note: "downtime_fields_on_completed",
+      },
+    });
+    return NextResponse.json({ ok: true });
+  }
   if (body.status === "open") body.status = "pending";
   const allowedStatus = new Set([
     "pending",
@@ -232,7 +295,10 @@ export async function PATCH(
   ) {
     return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
   }
-  if (body.assigneeId !== undefined && session.role !== "admin") {
+  if (
+    (body.assigneeId !== undefined || body.assigneeIds !== undefined) &&
+    session.role !== "admin"
+  ) {
     return NextResponse.json(
       { error: "Solo administradores pueden cambiar el asignado" },
       { status: 403 }
@@ -254,9 +320,43 @@ export async function PATCH(
     updates.status = body.status;
   }
   if (body.priority !== undefined) updates.priority = body.priority;
-  if (body.assetId !== undefined) updates.assetId = body.assetId || null;
-  if (body.assigneeId !== undefined) updates.assigneeId = body.assigneeId || null;
+  const nextAssetId =
+    body.assetId !== undefined
+      ? typeof body.assetId === "string" && body.assetId.trim()
+        ? body.assetId.trim()
+        : null
+      : wo.assetId;
+  const downtimeAllowedAt = await assetAllowsDowntimeTracking(nextAssetId);
+  if (body.assetId !== undefined) {
+    updates.assetId =
+      typeof body.assetId === "string" && body.assetId.trim() ? body.assetId.trim() : null;
+  }
   if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
+  if (body.countsMachineDowntime !== undefined) {
+    if (typeof body.countsMachineDowntime !== "boolean") {
+      return NextResponse.json({ error: "Valor inválido" }, { status: 400 });
+    }
+    if (body.countsMachineDowntime === true && !downtimeAllowedAt) {
+      return NextResponse.json(
+        { error: "Esta máquina no permite registrar paro de máquina." },
+        { status: 400 }
+      );
+    }
+    updates.countsMachineDowntime = body.countsMachineDowntime === true && downtimeAllowedAt;
+  }
+  if (body.assetId !== undefined && !downtimeAllowedAt) {
+    updates.countsMachineDowntime = false;
+  }
+  if (body.manualDowntimeMinutes !== undefined) {
+    const m = clampManualDowntimeMinutes(body.manualDowntimeMinutes);
+    if (m === null) {
+      return NextResponse.json(
+        { error: "Paro manual inválido (use minutos enteros entre 0 y 525600)" },
+        { status: 400 }
+      );
+    }
+    updates.manualDowntimeMinutes = m;
+  }
   const isCompleting = body.status === "completed";
   if (isCompleting) {
     const checklistItems = await db.query.workOrderChecklist.findMany({
@@ -264,33 +364,18 @@ export async function PATCH(
       orderBy: (items, { asc }) => [asc(items.sortOrder)],
     });
     const checklistCompletionError =
-      "No se puede completar la tarea: marca todos los pasos y completa todos los campos del checklist.";
+      "No se puede completar la tarea: marca todos los pasos y completa todos los campos obligatorios del checklist.";
     for (const item of checklistItems) {
-      if (item.type === "step") {
-        if (item.completed !== true) {
-          return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
-        }
-        continue;
-      }
-      if (item.type === "custom_field") {
-        if (item.fieldType === "checkbox") {
-          if (typeof item.value !== "boolean") {
-            return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
-          }
-          continue;
-        }
-        if (item.value == null) {
-          return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
-        }
-        if (typeof item.value === "number" && Number.isNaN(item.value)) {
-          return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
-        }
-        if (typeof item.value !== "number") {
-          const valueAsText = String(item.value).trim();
-          if (valueAsText === "") {
-            return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
-          }
-        }
+      if (
+        checklistItemBlocksWorkOrderCompletion({
+          type: item.type,
+          completed: item.completed,
+          fieldType: item.fieldType,
+          value: item.value,
+          isOptional: item.isOptional,
+        })
+      ) {
+        return NextResponse.json({ error: checklistCompletionError }, { status: 400 });
       }
     }
   }
@@ -303,29 +388,95 @@ export async function PATCH(
     updates.startedAt = new Date();
   }
 
+  const prevAssignees = await loadWorkOrderAssignees(id, wo.assigneeId);
+  const prevIdSet = new Set(prevAssignees.map((a) => a.id));
+
+  let nextAssigneeList: string[] | null = null;
+  if (session.role === "admin" && body.assigneeIds !== undefined) {
+    if (!Array.isArray(body.assigneeIds)) {
+      return NextResponse.json({ error: "assigneeIds inválido" }, { status: 400 });
+    }
+    nextAssigneeList = Array.from(
+      new Set(
+        body.assigneeIds
+          .map((x: unknown) => String(x).trim())
+          .filter(Boolean)
+      )
+    );
+    for (const uid of nextAssigneeList) {
+      const u = await db.query.users.findFirst({
+        where: eq(users.id, uid),
+        columns: { id: true },
+      });
+      if (!u) {
+        return NextResponse.json({ error: "Usuario no encontrado" }, { status: 400 });
+      }
+    }
+  } else if (session.role === "admin" && body.assigneeId !== undefined) {
+    nextAssigneeList =
+      body.assigneeId && String(body.assigneeId).trim()
+        ? [String(body.assigneeId).trim()]
+        : [];
+    if (nextAssigneeList.length) {
+      const u = await db.query.users.findFirst({
+        where: eq(users.id, nextAssigneeList[0]!),
+        columns: { id: true },
+      });
+      if (!u) {
+        return NextResponse.json({ error: "Usuario no encontrado" }, { status: 400 });
+      }
+    }
+  }
+
   await db.update(workOrders).set(updates).where(eq(workOrders.id, id));
 
-  const nextAssigneeId =
-    body.assigneeId !== undefined ? body.assigneeId || null : wo.assigneeId;
-  const assigneeChanged = body.assigneeId !== undefined && nextAssigneeId !== wo.assigneeId;
-  if (assigneeChanged && nextAssigneeId && nextAssigneeId !== session.id) {
-    await createNotification({
-      userId: nextAssigneeId,
-      type: "assignment",
-      title: "Nueva tarea asignada",
-      body: wo.title,
-      workOrderId: id,
-    });
+  let assigneeListUpdated = false;
+  if (nextAssigneeList !== null) {
+    await setWorkOrderAssigneeIds(id, nextAssigneeList);
+    assigneeListUpdated = true;
+    for (const uid of nextAssigneeList) {
+      if (!prevIdSet.has(uid) && uid !== session.id) {
+        await createNotification({
+          userId: uid,
+          type: "assignment",
+          title: "Nueva tarea asignada",
+          body: wo.title,
+          workOrderId: id,
+        });
+      }
+    }
   }
-  if (!assigneeChanged && nextAssigneeId && nextAssigneeId !== session.id) {
-    await createNotification({
-      userId: nextAssigneeId,
-      type: "work_order_update",
-      title: "Actualización en orden asignada",
-      body: wo.title,
-      workOrderId: id,
-    });
+
+  const nonAssigneePatch =
+    body.title !== undefined ||
+    body.description !== undefined ||
+    body.status !== undefined ||
+    body.priority !== undefined ||
+    body.assetId !== undefined ||
+    body.dueDate !== undefined ||
+    body.countsMachineDowntime !== undefined ||
+    body.manualDowntimeMinutes !== undefined;
+  if (!assigneeListUpdated && nonAssigneePatch) {
+    for (const a of prevAssignees) {
+      if (a.id !== session.id) {
+        await createNotification({
+          userId: a.id,
+          type: "work_order_update",
+          title: "Actualización en orden asignada",
+          body: wo.title,
+          workOrderId: id,
+        });
+      }
+    }
   }
+
+  const woFinal = await db.query.workOrders.findFirst({
+    where: eq(workOrders.id, id),
+  });
+  const assigneesAfter = await loadWorkOrderAssignees(
+    id,
+    woFinal?.assigneeId ?? null
+  );
 
   await recordAuditLog({
     entityType: "work_order",
@@ -342,7 +493,8 @@ export async function PATCH(
       after: {
         status: body.status ?? wo.status,
         priority: body.priority ?? wo.priority,
-        assigneeId: body.assigneeId ?? wo.assigneeId,
+        assigneeId: woFinal?.assigneeId ?? wo.assigneeId,
+        assigneeIds: assigneesAfter.map((a) => a.id),
         dueDate:
           body.dueDate !== undefined ? body.dueDate : wo.dueDate,
       },

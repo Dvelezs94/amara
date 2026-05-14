@@ -16,11 +16,13 @@ export function AssetForm() {
     const form = e.currentTarget;
     const name = (form.elements.namedItem("name") as HTMLInputElement).value.trim();
     const assetId = (form.elements.namedItem("assetId") as HTMLInputElement).value.trim();
+    const tracksMachineDowntime =
+      (form.elements.namedItem("tracksMachineDowntime") as HTMLInputElement)?.checked !== false;
     try {
       const res = await fetch("/api/assets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, assetId }),
+        body: JSON.stringify({ name, assetId, tracksMachineDowntime }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -66,6 +68,19 @@ export function AssetForm() {
           className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
       </div>
+      <label className="flex items-start gap-2.5 text-sm text-zinc-800">
+        <input
+          id="tracksMachineDowntime"
+          name="tracksMachineDowntime"
+          type="checkbox"
+          defaultChecked
+          className="tap-target mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-300 text-primary-600 focus:ring-primary-500"
+        />
+        <span>
+          Registrar paro de máquina en las tareas de este activo (desmarcar para desactivar el
+          seguimiento)
+        </span>
+      </label>
       <div className="flex gap-3 pt-2">
         <button
           type="submit"

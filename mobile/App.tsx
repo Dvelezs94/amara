@@ -3,9 +3,9 @@ import {
   CHECKLIST_REVISION_REVIEW_TITLE,
   checklistRevisionNotificationHref,
   parseChecklistRevisionNotificationBody,
-} from "../lib/checklist-notification-parse";
-import { checklistItemDepth, flattenChecklistTreeForDisplay } from "../lib/checklist-item-tree";
-import { workOrderChecklistIsCompleteForClosure } from "../lib/checklist-completion";
+} from "./lib/checklist-notification-parse";
+import { checklistItemDepth, flattenChecklistTreeForDisplay } from "./lib/checklist-item-tree";
+import { workOrderChecklistIsCompleteForClosure } from "./lib/checklist-completion";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   decodeSessionRoleFromCookie,
-  isOperatorApiPathAllowed,
-  isOperatorAppPathAllowed,
+  isTecnicoApiPathAllowed,
+  isTecnicoAppPathAllowed,
   isPathUnderAnyPrefix,
-  isSupervisorApiPathAllowed,
-  isSupervisorAppPathAllowed,
+  isCalidadApiPathAllowed,
+  isCalidadAppPathAllowed,
 } from "@/lib/middleware-rules";
 
 function makeSessionCookie(role: string) {
@@ -17,10 +17,16 @@ function makeSessionCookie(role: string) {
 
 describe("decodeSessionRoleFromCookie", () => {
   it("reads role from JWT-shaped cookie", () => {
+    expect(decodeSessionRoleFromCookie(makeSessionCookie("tecnico"))).toBe(
+      "tecnico"
+    );
     expect(decodeSessionRoleFromCookie(makeSessionCookie("operator"))).toBe(
       "operator"
     );
     expect(decodeSessionRoleFromCookie(makeSessionCookie("admin"))).toBe("admin");
+    expect(decodeSessionRoleFromCookie(makeSessionCookie("calidad"))).toBe(
+      "calidad"
+    );
     expect(decodeSessionRoleFromCookie(makeSessionCookie("supervisor"))).toBe(
       "supervisor"
     );
@@ -40,48 +46,51 @@ describe("isPathUnderAnyPrefix", () => {
   });
 });
 
-describe("isOperatorApiPathAllowed", () => {
+describe("isTecnicoApiPathAllowed", () => {
   it("allows auth and whitelisted APIs", () => {
-    expect(isOperatorApiPathAllowed("/api/auth/login")).toBe(true);
-    expect(isOperatorApiPathAllowed("/api/work-orders")).toBe(true);
-    expect(isOperatorApiPathAllowed("/api/work-orders/wo-1")).toBe(true);
-    expect(isOperatorApiPathAllowed("/api/assets")).toBe(true);
+    expect(isTecnicoApiPathAllowed("/api/auth/login")).toBe(true);
+    expect(isTecnicoApiPathAllowed("/api/work-orders")).toBe(true);
+    expect(isTecnicoApiPathAllowed("/api/work-orders/wo-1")).toBe(true);
+    expect(isTecnicoApiPathAllowed("/api/assets")).toBe(true);
   });
   it("blocks non-whitelisted APIs", () => {
-    expect(isOperatorApiPathAllowed("/api/admin/users")).toBe(false);
-    expect(isOperatorApiPathAllowed("/api/dashboard/overview")).toBe(false);
+    expect(isTecnicoApiPathAllowed("/api/admin/users")).toBe(false);
+    expect(isTecnicoApiPathAllowed("/api/dashboard/overview")).toBe(false);
   });
 });
 
-describe("isOperatorAppPathAllowed", () => {
-  it("allows operator app sections", () => {
-    expect(isOperatorAppPathAllowed("/tareas")).toBe(true);
-    expect(isOperatorAppPathAllowed("/tareas/x")).toBe(true);
-    expect(isOperatorAppPathAllowed("/knowledge-base")).toBe(true);
+describe("isTecnicoAppPathAllowed", () => {
+  it("allows tecnico app sections", () => {
+    expect(isTecnicoAppPathAllowed("/tareas")).toBe(true);
+    expect(isTecnicoAppPathAllowed("/tareas/x")).toBe(true);
+    expect(isTecnicoAppPathAllowed("/knowledge-base")).toBe(true);
+    expect(isTecnicoAppPathAllowed("/equipo/user1")).toBe(true);
   });
   it("blocks admin-only sections", () => {
-    expect(isOperatorAppPathAllowed("/calendario")).toBe(false);
-    expect(isOperatorAppPathAllowed("/assets")).toBe(false);
+    expect(isTecnicoAppPathAllowed("/calendario")).toBe(false);
+    expect(isTecnicoAppPathAllowed("/assets")).toBe(false);
   });
 });
 
-describe("isSupervisor*PathAllowed", () => {
-  it("allows supervisor checklist app and api paths", () => {
-    expect(isSupervisorAppPathAllowed("/checklists")).toBe(true);
-    expect(isSupervisorAppPathAllowed("/checklists/abc")).toBe(true);
-    expect(isSupervisorAppPathAllowed("/tareas")).toBe(true);
-    expect(isSupervisorAppPathAllowed("/tareas/abc")).toBe(true);
-    expect(isSupervisorApiPathAllowed("/api/checklist-templates")).toBe(true);
-    expect(isSupervisorApiPathAllowed("/api/checklist-templates/abc/revisions")).toBe(
+describe("isCalidad*PathAllowed", () => {
+  it("allows calidad checklist app and api paths", () => {
+    expect(isCalidadAppPathAllowed("/checklists")).toBe(true);
+    expect(isCalidadAppPathAllowed("/checklists/abc")).toBe(true);
+    expect(isCalidadAppPathAllowed("/tareas")).toBe(true);
+    expect(isCalidadAppPathAllowed("/tareas/abc")).toBe(true);
+    expect(isCalidadAppPathAllowed("/equipo/user1")).toBe(true);
+    expect(isCalidadApiPathAllowed("/api/checklist-templates")).toBe(true);
+    expect(isCalidadApiPathAllowed("/api/checklist-folders")).toBe(true);
+    expect(isCalidadApiPathAllowed("/api/checklist-templates/abc/revisions")).toBe(
       true
     );
-    expect(isSupervisorApiPathAllowed("/api/work-orders")).toBe(true);
+    expect(isCalidadApiPathAllowed("/api/work-orders")).toBe(true);
   });
 
-  it("blocks non-whitelisted supervisor paths", () => {
-    expect(isSupervisorAppPathAllowed("/calendario")).toBe(false);
-    expect(isSupervisorAppPathAllowed("/assets")).toBe(false);
-    expect(isSupervisorApiPathAllowed("/api/admin/users")).toBe(false);
-    expect(isSupervisorApiPathAllowed("/api/dashboard/overview")).toBe(false);
+  it("blocks non-whitelisted calidad paths", () => {
+    expect(isCalidadAppPathAllowed("/calendario")).toBe(false);
+    expect(isCalidadAppPathAllowed("/assets")).toBe(false);
+    expect(isCalidadApiPathAllowed("/api/admin/users")).toBe(false);
+    expect(isCalidadApiPathAllowed("/api/dashboard/overview")).toBe(false);
   });
 });

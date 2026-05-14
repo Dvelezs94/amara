@@ -51,9 +51,20 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => ({}));
-  const updates: { name?: string; assetId?: string; updatedAt?: Date } = {};
+  const updates: {
+    name?: string;
+    assetId?: string;
+    tracksMachineDowntime?: boolean;
+    updatedAt?: Date;
+  } = {};
   if (body.name !== undefined) updates.name = String(body.name).trim();
   if (body.assetId !== undefined) updates.assetId = String(body.assetId).trim();
+  if (body.tracksMachineDowntime !== undefined) {
+    if (typeof body.tracksMachineDowntime !== "boolean") {
+      return NextResponse.json({ error: "tracksMachineDowntime inválido" }, { status: 400 });
+    }
+    updates.tracksMachineDowntime = body.tracksMachineDowntime;
+  }
 
   if (updates.name !== undefined && !updates.name) {
     return NextResponse.json({ error: "Name required" }, { status: 400 });
@@ -61,7 +72,11 @@ export async function PATCH(
   if (updates.assetId !== undefined && !updates.assetId) {
     return NextResponse.json({ error: "Asset ID required" }, { status: 400 });
   }
-  if (Object.keys(updates).length === 0) {
+  const hasPatch =
+    updates.name !== undefined ||
+    updates.assetId !== undefined ||
+    updates.tracksMachineDowntime !== undefined;
+  if (!hasPatch) {
     return NextResponse.json({ ok: true });
   }
 
@@ -73,8 +88,12 @@ export async function PATCH(
     action: "updated",
     userId: session.id,
     metadata: {
-      before: { name: asset.name, assetId: asset.assetId },
-      after: { name: updates.name, assetId: updates.assetId },
+      before: { name: asset.name, assetId: asset.assetId, tracksMachineDowntime: asset.tracksMachineDowntime },
+      after: {
+        name: updates.name ?? asset.name,
+        assetId: updates.assetId ?? asset.assetId,
+        tracksMachineDowntime: updates.tracksMachineDowntime ?? asset.tracksMachineDowntime,
+      },
     },
   });
 

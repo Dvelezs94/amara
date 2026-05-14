@@ -5,6 +5,7 @@ import { workOrders } from "@/lib/db/schema";
 import { workOrderChecklist } from "@/lib/db/schema";
 import { checklistTemplates } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import { checklistAnalyticsDateBounds } from "@/lib/dashboard-date-range";
 
 /**
  * GET ?templateId=xxx&from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -22,8 +23,7 @@ export async function GET(req: Request) {
   }
   const fromParam = searchParams.get("from");
   const toParam = searchParams.get("to");
-  const from = fromParam ? new Date(fromParam) : null;
-  const to = toParam ? new Date(toParam) : null;
+  const { rangeStart, rangeEnd } = checklistAnalyticsDateBounds(fromParam, toParam);
 
   const template = await db.query.checklistTemplates.findFirst({
     where: eq(checklistTemplates.id, templateId),
@@ -52,12 +52,12 @@ export async function GET(req: Request) {
     .where(and(eq(workOrders.status, "completed"), inArray(workOrders.id, woIds)));
 
   let filtered = completedWOs;
-  if (from || to) {
+  if (rangeStart || rangeEnd) {
     filtered = completedWOs.filter((wo) => {
       if (!wo.completedAt) return false;
       const d = new Date(wo.completedAt).getTime();
-      if (from && d < from.getTime()) return false;
-      if (to && d > to.getTime()) return false;
+      if (rangeStart && d < rangeStart.getTime()) return false;
+      if (rangeEnd && d > rangeEnd.getTime()) return false;
       return true;
     });
   }

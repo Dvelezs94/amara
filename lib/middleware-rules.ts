@@ -1,22 +1,24 @@
 /**
- * Session cookie decoding and operator path allowlists for `middleware.ts`.
+ * Session cookie decoding and técnico path allowlists for `middleware.ts`.
  * Kept in `lib/` so Vitest can cover rules without importing Next middleware.
  */
 
 export const API_AUTH_PUBLIC_PREFIX = "/api/auth/";
 
-export const OPERATOR_ALLOWED_APP_PREFIXES = [
+export const TECNICO_ALLOWED_APP_PREFIXES = [
   "/tareas",
   "/knowledge-base",
   "/profile",
+  "/equipo",
 ] as const;
 
-export const SUPERVISOR_ALLOWED_APP_PREFIXES = [
+export const CALIDAD_ALLOWED_APP_PREFIXES = [
   "/checklists",
   "/tareas",
+  "/equipo",
 ] as const;
 
-export const OPERATOR_ALLOWED_API_PREFIXES = [
+export const TECNICO_ALLOWED_API_PREFIXES = [
   "/api/work-orders",
   "/api/knowledge-base",
   "/api/asset-files",
@@ -24,11 +26,13 @@ export const OPERATOR_ALLOWED_API_PREFIXES = [
   "/api/users",
   "/api/assets",
   "/api/checklist-templates",
+  "/api/checklist-folders",
   "/api/notifications",
 ] as const;
 
-export const SUPERVISOR_ALLOWED_API_PREFIXES = [
+export const CALIDAD_ALLOWED_API_PREFIXES = [
   "/api/checklist-templates",
+  "/api/checklist-folders",
   "/api/work-orders",
   "/api/assets",
   "/api/users",
@@ -62,20 +66,20 @@ export function isPathUnderAnyPrefix(
   );
 }
 
-export function isOperatorApiPathAllowed(path: string): boolean {
+export function isTecnicoApiPathAllowed(path: string): boolean {
   if (path.startsWith(API_AUTH_PUBLIC_PREFIX)) return true;
-  return isPathUnderAnyPrefix(path, OPERATOR_ALLOWED_API_PREFIXES);
+  return isPathUnderAnyPrefix(path, TECNICO_ALLOWED_API_PREFIXES);
 }
 
-export function isOperatorAppPathAllowed(path: string): boolean {
-  return isPathUnderAnyPrefix(path, OPERATOR_ALLOWED_APP_PREFIXES);
+export function isTecnicoAppPathAllowed(path: string): boolean {
+  return isPathUnderAnyPrefix(path, TECNICO_ALLOWED_APP_PREFIXES);
 }
 
-export function isSupervisorApiPathAllowed(path: string): boolean {
+export function isCalidadApiPathAllowed(path: string): boolean {
   if (path.startsWith(API_AUTH_PUBLIC_PREFIX)) return true;
-  return isPathUnderAnyPrefix(path, SUPERVISOR_ALLOWED_API_PREFIXES);
+  return isPathUnderAnyPrefix(path, CALIDAD_ALLOWED_API_PREFIXES);
 }
 
-export function isSupervisorAppPathAllowed(path: string): boolean {
-  return isPathUnderAnyPrefix(path, SUPERVISOR_ALLOWED_APP_PREFIXES);
+export function isCalidadAppPathAllowed(path: string): boolean {
+  return isPathUnderAnyPrefix(path, CALIDAD_ALLOWED_APP_PREFIXES);
 }

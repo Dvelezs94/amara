@@ -3,10 +3,10 @@ import type { NextRequest } from "next/server";
 import {
   API_AUTH_PUBLIC_PREFIX,
   decodeSessionRoleFromCookie,
-  isOperatorApiPathAllowed,
-  isOperatorAppPathAllowed,
-  isSupervisorApiPathAllowed,
-  isSupervisorAppPathAllowed,
+  isTecnicoApiPathAllowed,
+  isTecnicoAppPathAllowed,
+  isCalidadApiPathAllowed,
+  isCalidadAppPathAllowed,
 } from "@/lib/middleware-rules";
 
 export function middleware(req: NextRequest) {
@@ -45,36 +45,42 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  if (role !== "admin" && role !== "operator" && role !== "supervisor") {
+  if (
+    role !== "admin" &&
+    role !== "tecnico" &&
+    role !== "operator" &&
+    role !== "calidad" &&
+    role !== "supervisor"
+  ) {
     if (path.startsWith("/api/")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     return NextResponse.redirect(new URL("/tareas", req.url));
   }
 
-  if (role === "operator") {
+  if (role === "tecnico" || role === "operator") {
     if (path.startsWith("/api/")) {
-      if (isOperatorApiPathAllowed(path)) {
+      if (isTecnicoApiPathAllowed(path)) {
         return NextResponse.next();
       }
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    if (isOperatorAppPathAllowed(path)) {
+    if (isTecnicoAppPathAllowed(path)) {
       return NextResponse.next();
     }
     return NextResponse.redirect(new URL("/tareas", req.url));
   }
 
-  if (role === "supervisor") {
+  if (role === "calidad" || role === "supervisor") {
     if (path.startsWith("/api/")) {
-      if (isSupervisorApiPathAllowed(path)) {
+      if (isCalidadApiPathAllowed(path)) {
         return NextResponse.next();
       }
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    if (isSupervisorAppPathAllowed(path)) {
+    if (isCalidadAppPathAllowed(path)) {
       return NextResponse.next();
     }
     return NextResponse.redirect(new URL("/checklists", req.url));

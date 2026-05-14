@@ -1,10 +1,21 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, ChevronUp, ChevronsUp, Equal, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ChevronsUp,
+  CircleX,
+  Equal,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
 import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
+import { MaintenanceScheduleDetailEditForm } from "./MaintenanceScheduleDetailEditForm";
+import { AssigneeMultiSelect } from "@/components/AssigneeMultiSelect";
 import { UserAvatar } from "@/components/UserAvatar";
 import {
   expandOccurrencesInRange,
@@ -20,8 +31,11 @@ export type CalendarSchedulePayload = {
   name: string;
   recurrence: string;
   color?: string | null;
+  assigneeIds: string[];
   /** Para registros antiguos sin JSON en recurrence */
   nextRunAt: string | null;
+  checklistTemplateId?: string | null;
+  assetId?: string | null;
 };
 
 type SelectedMaintenanceEvent = {
@@ -29,6 +43,9 @@ type SelectedMaintenanceEvent = {
   name: string;
   recurrence: string;
   color?: string | null;
+  assigneeIds: string[];
+  checklistTemplateId?: string | null;
+  assetId?: string | null;
   dateLabel: string;
   dateYmd: string;
 };
@@ -58,6 +75,9 @@ export type CalendarCell = {
     name: string;
     recurrence: string;
     color?: string | null;
+    assigneeIds: string[];
+    checklistTemplateId?: string | null;
+    assetId?: string | null;
     hasWorkOrder?: boolean;
   }[];
 };
@@ -79,7 +99,15 @@ function buildMonthCells(
 
   const map = new Map<
     string,
-    { id: string; name: string; recurrence: string; color?: string | null }[]
+    {
+      id: string;
+      name: string;
+      recurrence: string;
+      color?: string | null;
+      assigneeIds: string[];
+      checklistTemplateId?: string | null;
+      assetId?: string | null;
+    }[]
   >();
 
   for (const s of schedules) {
@@ -105,6 +133,9 @@ function buildMonthCells(
           name: s.name,
           recurrence: s.recurrence,
           color: s.color ?? "#02257D",
+          assigneeIds: s.assigneeIds ?? [],
+          checklistTemplateId: s.checklistTemplateId ?? null,
+          assetId: s.assetId ?? null,
         });
         map.set(key, list);
       }
@@ -140,7 +171,15 @@ function buildMonthCells(
 type YearAuditRow = {
   ymd: string;
   date: Date;
-  ev: { id: string; name: string; recurrence: string; color?: string | null };
+  ev: {
+    id: string;
+    name: string;
+    recurrence: string;
+    color?: string | null;
+    assigneeIds: string[];
+    checklistTemplateId?: string | null;
+    assetId?: string | null;
+  };
 };
 
 const YEAR_AUDIT_PAGE_SIZE = 150;
@@ -154,7 +193,15 @@ function buildYearAuditRows(
   const rangeEnd = new Date(cellYear, 11, 31);
   const map = new Map<
     string,
-    { id: string; name: string; recurrence: string; color?: string | null }[]
+    {
+      id: string;
+      name: string;
+      recurrence: string;
+      color?: string | null;
+      assigneeIds: string[];
+      checklistTemplateId?: string | null;
+      assetId?: string | null;
+    }[]
   >();
 
   for (const s of schedules) {
@@ -181,6 +228,9 @@ function buildYearAuditRows(
           name: s.name,
           recurrence: s.recurrence,
           color: s.color ?? "#02257D",
+          assigneeIds: s.assigneeIds ?? [],
+          checklistTemplateId: s.checklistTemplateId ?? null,
+          assetId: s.assetId ?? null,
         });
         map.set(key, list);
       }
@@ -233,11 +283,67 @@ export function CalendarMonthView({
 
   const [creatingWorkOrder, setCreatingWorkOrder] = useState(false);
   const [createWorkOrderError, setCreateWorkOrderError] = useState<string | null>(null);
-  const [actionsOpen, setActionsOpen] = useState(false);
   const [userOptions, setUserOptions] = useState<{ id: string; name: string }[]>([]);
   const [loadingUserOptions, setLoadingUserOptions] = useState(false);
-  const [selectedAssigneeId, setSelectedAssigneeId] = useState("");
+  const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
   const [assigneePromptOpen, setAssigneePromptOpen] = useState(false);
+  const [undoBanner, setUndoBanner] = useState<
+    | { kind: "recurrence"; scheduleId: string }
+    | { kind: "restore"; scheduleId: string }
+    | null
+  >(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteScope, setDeleteScope] = useState<"single" | "future" | "all">(
+    "single"
+  );
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [editingScheduleName, setEditingScheduleName] = useState(false);
+  const [scheduleNameDraft, setScheduleNameDraft] = useState("");
+  const [savingScheduleFields, setSavingScheduleFields] = useState(false);
+  const scheduleEditBlockRef = useRef<HTMLDivElement>(null);
+  /** Detail form (recurrence/checklist) sits below the header; include it in blur-save containment. */
+  const scheduleDetailEditSectionRef = useRef<HTMLDivElement>(null);
+  /**
+   * Clicks on non-focusable nodes leave `activeElement` as body; `relatedTarget` on blur is often null.
+   * Set on pointerdown capture when the press is inside the schedule edit surfaces so we skip blur-save.
+   */
+  const scheduleBlurSaveSkipRef = useRef(false);
+  /** Avoid blur-save when focus moves to cancel-edit; must not use mousedown preventDefault there (click-through to backdrop). */
+  const cancelScheduleEditBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!editingScheduleName) scheduleBlurSaveSkipRef.current = false;
+  }, [editingScheduleName]);
+
+  useEffect(() => {
+    if (!editingScheduleName) return;
+    setAssigneePromptOpen(false);
+    setCreateWorkOrderError(null);
+  }, [editingScheduleName]);
+
+  useEffect(() => {
+    if (!undoBanner) return;
+    const t = window.setTimeout(() => setUndoBanner(null), 28000);
+    return () => window.clearTimeout(t);
+  }, [undoBanner]);
+
+  async function finishMaintenanceDelete(res: Response, scheduleId: string) {
+    const data = (await res.json().catch(() => ({}))) as {
+      canUndoRecurrence?: boolean;
+      canRestore?: boolean;
+    };
+    setSelectedEvent(null);
+    if (res.ok) {
+      if (data.canUndoRecurrence) {
+        setUndoBanner({ kind: "recurrence", scheduleId });
+      } else if (data.canRestore) {
+        setUndoBanner({ kind: "restore", scheduleId });
+      } else {
+        setUndoBanner(null);
+      }
+      router.refresh();
+    }
+  }
   const [linkedWorkOrders, setLinkedWorkOrders] = useState<
     {
       id: string;
@@ -249,6 +355,11 @@ export function CalendarMonthView({
       assigneeId?: string | null;
       assigneeName?: string | null;
       assigneeAvatarUrl?: string | null;
+      assignees?: {
+        id: string;
+        name: string;
+        avatarUrl?: string | null;
+      }[];
       createdAt: string | Date;
     }[]
   >([]);
@@ -261,9 +372,71 @@ export function CalendarMonthView({
   const [workOrderMarkerKeys, setWorkOrderMarkerKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!detailModalMounted && !createModalOpen) return;
+    if (!selectedEvent) setDeleteModalOpen(false);
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    setEditingScheduleName(false);
+    setScheduleNameDraft("");
+  }, [panelEvent?.id]);
+
+  async function saveScheduleNameFromDraft() {
+    if (!panelEvent) return;
+    const trimmed = scheduleNameDraft.trim();
+    if (!trimmed) {
+      setScheduleNameDraft(panelEvent.name);
+      setEditingScheduleName(false);
+      return;
+    }
+    if (trimmed === panelEvent.name) {
+      setEditingScheduleName(false);
+      return;
+    }
+    setSavingScheduleFields(true);
+    try {
+      const res = await fetch(`/api/maintenance-schedules/${panelEvent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) return;
+      setSelectedEvent((prev) =>
+        prev && prev.id === panelEvent.id ? { ...prev, name: trimmed } : prev
+      );
+      setEditingScheduleName(false);
+      router.refresh();
+    } finally {
+      setSavingScheduleFields(false);
+    }
+  }
+
+  async function saveScheduleDefaultAssignees(ids: string[]) {
+    if (!panelEvent) return;
+    setSavingScheduleFields(true);
+    try {
+      const res = await fetch(`/api/maintenance-schedules/${panelEvent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assigneeIds: ids }),
+      });
+      if (!res.ok) return;
+      setSelectedEvent((prev) =>
+        prev && prev.id === panelEvent.id ? { ...prev, assigneeIds: ids } : prev
+      );
+      router.refresh();
+    } finally {
+      setSavingScheduleFields(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!detailModalMounted && !createModalOpen && !deleteModalOpen) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      if (deleteModalOpen) {
+        setDeleteModalOpen(false);
+        return;
+      }
       if (createModalOpen) {
         setCreateModalOpen(false);
         return;
@@ -271,13 +444,13 @@ export function CalendarMonthView({
       if (detailModalMounted) {
         setSelectedEvent(null);
         setCreateWorkOrderError(null);
-        setActionsOpen(false);
         setAssigneePromptOpen(false);
+        setEditingScheduleName(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [detailModalMounted, createModalOpen]);
+  }, [detailModalMounted, createModalOpen, deleteModalOpen]);
 
   useEffect(() => {
     if (!detailModalMounted) return;
@@ -294,7 +467,7 @@ export function CalendarMonthView({
       setLinkedWorkOrdersHasMore(false);
       setLoadingLinkedWorkOrders(false);
       setLoadingMoreLinkedWorkOrders(false);
-      setSelectedAssigneeId("");
+      setSelectedAssigneeIds([]);
       setAssigneePromptOpen(false);
       return;
     }
@@ -711,6 +884,9 @@ export function CalendarMonthView({
                                       name: ev.name,
                                       recurrence: ev.recurrence,
                                       color: ev.color,
+                                      assigneeIds: ev.assigneeIds ?? [],
+                                      checklistTemplateId: ev.checklistTemplateId ?? null,
+                                      assetId: ev.assetId ?? null,
                                       dateLabel: cell.date.toLocaleDateString("es-MX", {
                                         year: "numeric",
                                         month: "short",
@@ -799,6 +975,9 @@ export function CalendarMonthView({
                                     name: row.ev.name,
                                     recurrence: row.ev.recurrence,
                                     color: row.ev.color,
+                                    assigneeIds: row.ev.assigneeIds ?? [],
+                                    checklistTemplateId: row.ev.checklistTemplateId ?? null,
+                                    assetId: row.ev.assetId ?? null,
                                     dateLabel: row.date.toLocaleDateString("es-MX", {
                                       year: "numeric",
                                       month: "short",
@@ -906,6 +1085,9 @@ export function CalendarMonthView({
                             name: ev.name,
                             recurrence: ev.recurrence,
                             color: ev.color,
+                            assigneeIds: ev.assigneeIds ?? [],
+                            checklistTemplateId: ev.checklistTemplateId ?? null,
+                            assetId: ev.assetId ?? null,
                             dateLabel: cell.date.toLocaleDateString("es-MX", {
                               year: "numeric",
                               month: "short",
@@ -970,8 +1152,8 @@ export function CalendarMonthView({
           onClick={() => {
             setSelectedEvent(null);
             setCreateWorkOrderError(null);
-            setActionsOpen(false);
             setAssigneePromptOpen(false);
+            setEditingScheduleName(false);
           }}
         >
           <div
@@ -981,19 +1163,135 @@ export function CalendarMonthView({
                 : "translate-y-full motion-reduce:translate-y-0 md:translate-y-4"
             }`}
             onClick={(e) => e.stopPropagation()}
+            onPointerDownCapture={(e) => {
+              if (!editingScheduleName) return;
+              const t = e.target as Node;
+              scheduleBlurSaveSkipRef.current =
+                Boolean(scheduleEditBlockRef.current?.contains(t)) ||
+                Boolean(scheduleDetailEditSectionRef.current?.contains(t));
+            }}
             onTransitionEnd={onDetailPanelTransitionEnd}
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
-              <h3 className="truncate pr-3 text-sm font-semibold text-zinc-900">
-                {panelEvent.name}
-              </h3>
+            <div className="flex min-h-0 shrink-0 items-start justify-between gap-3 border-b border-zinc-200 px-4 py-3">
+              <div className="flex min-h-0 min-w-0 flex-1 items-start gap-2">
+                <div className="min-h-0 min-w-0 flex-1">
+                  {editingScheduleName ? (
+                    <div
+                      ref={scheduleEditBlockRef}
+                      className="min-h-0 space-y-2 overflow-hidden"
+                    >
+                      <input
+                        type="text"
+                        autoFocus
+                        value={scheduleNameDraft}
+                        onChange={(e) => setScheduleNameDraft(e.target.value)}
+                        onBlur={(e) => {
+                          const rt = e.relatedTarget as Node | null;
+                          if (
+                            rt &&
+                            cancelScheduleEditBtnRef.current?.contains(rt)
+                          ) {
+                            return;
+                          }
+                          if (rt) {
+                            if (
+                              scheduleEditBlockRef.current?.contains(rt) ||
+                              scheduleDetailEditSectionRef.current?.contains(rt)
+                            ) {
+                              return;
+                            }
+                          }
+                          window.setTimeout(() => {
+                            if (scheduleBlurSaveSkipRef.current) {
+                              scheduleBlurSaveSkipRef.current = false;
+                              return;
+                            }
+                            const ae = document.activeElement;
+                            if (
+                              cancelScheduleEditBtnRef.current &&
+                              (cancelScheduleEditBtnRef.current === ae ||
+                                cancelScheduleEditBtnRef.current.contains(ae))
+                            ) {
+                              return;
+                            }
+                            if (
+                              scheduleEditBlockRef.current?.contains(ae) ||
+                              scheduleDetailEditSectionRef.current?.contains(ae)
+                            ) {
+                              return;
+                            }
+                            void saveScheduleNameFromDraft();
+                          }, 0);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void saveScheduleNameFromDraft();
+                          }
+                          if (e.key === "Escape") {
+                            e.stopPropagation();
+                            setScheduleNameDraft(panelEvent.name);
+                            setEditingScheduleName(false);
+                          }
+                        }}
+                        disabled={savingScheduleFields}
+                        className="w-full min-w-0 rounded-md border border-zinc-300 px-2 py-1 text-sm font-semibold text-zinc-900 disabled:opacity-60"
+                        aria-label="Nombre del evento"
+                      />
+                      <AssigneeMultiSelect
+                        id={`cal-default-assignee-${panelEvent.id}`}
+                        users={users}
+                        value={panelEvent.assigneeIds}
+                        disabled={savingScheduleFields}
+                        onChange={(ids) => void saveScheduleDefaultAssignees(ids)}
+                        label="Responsables por defecto"
+                        emptyHint="Nadie seleccionado"
+                      />
+                    </div>
+                  ) : (
+                    <h3 className="truncate text-sm font-semibold text-zinc-900">
+                      {panelEvent.name}
+                    </h3>
+                  )}
+                </div>
+                {editingScheduleName ? (
+                  <button
+                    ref={cancelScheduleEditBtnRef}
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setScheduleNameDraft(panelEvent.name);
+                      setEditingScheduleName(false);
+                    }}
+                    aria-label="Cancelar edición"
+                    title="Cancelar edición"
+                    className="inline-flex shrink-0 rounded-md border border-zinc-300 p-1 text-zinc-600 hover:bg-zinc-100"
+                  >
+                    <CircleX className="h-4 w-4 pointer-events-none" aria-hidden />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label="Editar nombre, frecuencia y checklist"
+                    title="Editar nombre, frecuencia y checklist"
+                    onClick={() => {
+                      setScheduleNameDraft(panelEvent.name);
+                      setEditingScheduleName(true);
+                    }}
+                    className="inline-flex shrink-0 rounded-md border border-zinc-300 p-1 text-zinc-600 hover:bg-zinc-100"
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => {
                   setSelectedEvent(null);
                   setCreateWorkOrderError(null);
-                  setActionsOpen(false);
                   setAssigneePromptOpen(false);
+                  setEditingScheduleName(false);
                 }}
                 aria-label="Cerrar modal"
                 className="inline-flex shrink-0 items-center justify-center rounded-sm border border-zinc-300 p-1 text-zinc-700 hover:bg-zinc-100"
@@ -1002,17 +1300,61 @@ export function CalendarMonthView({
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                {formatRecurrenceLabel(panelEvent.recurrence)}
-              </p>
-              {createWorkOrderError ? (
-                <p className="mb-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
-                  {createWorkOrderError}
+              {editingScheduleName ? (
+                <div ref={scheduleDetailEditSectionRef}>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    {formatRecurrenceLabel(panelEvent.recurrence)}
+                  </p>
+                  <MaintenanceScheduleDetailEditForm
+                    scheduleId={panelEvent.id}
+                    recurrenceJson={panelEvent.recurrence}
+                    checklistTemplateId={panelEvent.checklistTemplateId ?? null}
+                    assetId={panelEvent.assetId ?? null}
+                    color={panelEvent.color ?? null}
+                    assets={assets}
+                    checklistTemplates={checklistTemplates}
+                    fallbackAnchorYmd={panelEvent.dateYmd}
+                    onSaved={(patch) => {
+                      setSelectedEvent((prev) => {
+                        if (!prev || prev.id !== panelEvent.id) return prev;
+                        const n = { ...prev };
+                        if (typeof patch.name === "string") n.name = patch.name;
+                        if (typeof patch.recurrence === "string") {
+                          n.recurrence = patch.recurrence;
+                        }
+                        if ("checklistTemplateId" in patch) {
+                          n.checklistTemplateId =
+                            patch.checklistTemplateId == null
+                              ? null
+                              : String(patch.checklistTemplateId);
+                        }
+                        if ("assetId" in patch) {
+                          n.assetId =
+                            patch.assetId == null ? null : String(patch.assetId);
+                        }
+                        if (typeof patch.color === "string") n.color = patch.color;
+                        return n;
+                      });
+                      setEditingScheduleName(false);
+                      router.refresh();
+                    }}
+                  />
+                </div>
+              ) : (
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  {formatRecurrenceLabel(panelEvent.recurrence)}
                 </p>
-              ) : null}
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
-                Tareas asociadas en {panelEvent.dateLabel}
-              </p>
+              )}
+              {!editingScheduleName ? (
+                <>
+                  {createWorkOrderError ? (
+                    <p className="mb-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
+                      {createWorkOrderError}
+                    </p>
+                  ) : null}
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
+                    Tareas asociadas en {panelEvent.dateLabel}
+                  </p>
               {loadingLinkedWorkOrders ? (
                 <p className="mt-1 text-xs text-zinc-600">Cargando...</p>
               ) : linkedWorkOrders.length === 0 ? (
@@ -1061,17 +1403,38 @@ export function CalendarMonthView({
                               {statusLabel(wo.status)}
                             </span>
                           </div>
-                          {wo.assigneeName ? (
-                            <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-                              <span>Asignado:</span>
-                              <UserAvatar
-                                userId={wo.assigneeId ?? ""}
-                                name={wo.assigneeName}
-                                avatarUrl={wo.assigneeAvatarUrl}
-                                size="sm"
-                                className="!h-5 !w-5 !text-[8px]"
-                              />
-                              <span className="truncate">{wo.assigneeName}</span>
+                          {(wo.assignees && wo.assignees.length > 0) ||
+                          wo.assigneeName ? (
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
+                              <span className="shrink-0">Asignado:</span>
+                              <span className="flex min-w-0 flex-wrap items-center gap-1">
+                                {(wo.assignees?.length
+                                  ? wo.assignees
+                                  : wo.assigneeName
+                                    ? [
+                                        {
+                                          id: wo.assigneeId ?? "",
+                                          name: wo.assigneeName,
+                                          avatarUrl: wo.assigneeAvatarUrl,
+                                        },
+                                      ]
+                                    : []
+                                ).map((a) => (
+                                  <span
+                                    key={a.id}
+                                    className="inline-flex items-center gap-1 rounded-full bg-zinc-100 py-0.5 pl-0.5 pr-2"
+                                  >
+                                    <UserAvatar
+                                      userId={a.id}
+                                      name={a.name}
+                                      avatarUrl={a.avatarUrl ?? null}
+                                      size="sm"
+                                      className="!h-5 !w-5 !text-[8px]"
+                                    />
+                                    <span className="max-w-[9rem] truncate">{a.name}</span>
+                                  </span>
+                                ))}
+                              </span>
                             </div>
                           ) : null}
                           <p className="text-[10px] text-zinc-500">
@@ -1110,101 +1473,56 @@ export function CalendarMonthView({
                   {loadingMoreLinkedWorkOrders ? "Cargando…" : "Cargar más"}
                 </button>
               ) : null}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={creatingWorkOrder}
-                onClick={() => {
-                  setCreateWorkOrderError(null);
-                  setAssigneePromptOpen(true);
-                }}
-                className="rounded-sm bg-primary-600 px-2.5 py-1.5 text-[11px] font-semibold uppercase text-white hover:bg-primary-700 disabled:opacity-50"
-              >
-                {creatingWorkOrder ? "Creando..." : "Crear tarea"}
-              </button>
-              <button
-                type="button"
-                className="rounded-sm border border-zinc-300 px-2.5 py-1.5 text-[11px] font-semibold uppercase text-zinc-700 hover:bg-zinc-100"
-                onClick={() => setActionsOpen((prev) => !prev)}
-              >
-                Acciones
-              </button>
-              {actionsOpen ? (
-                <div className="min-w-[220px] rounded-sm border border-zinc-200 bg-white p-1 text-xs shadow-sm">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const firstConfirm = window.confirm(
-                        `Eliminar solo la ocurrencia del ${panelEvent.dateLabel}?`
-                      );
-                      if (!firstConfirm) return;
-                      const res = await fetch(
-                        `/api/maintenance-schedules/${panelEvent.id}?scope=single&date=${encodeURIComponent(
-                          panelEvent.dateYmd
-                        )}`,
-                        { method: "DELETE" }
-                      );
-                      setSelectedEvent(null);
-                      setActionsOpen(false);
-                      if (res.ok) router.refresh();
-                    }}
-                    className="block w-full rounded-sm px-2 py-1.5 text-left text-zinc-800 hover:bg-zinc-100"
-                  >
-                    Eliminar evento
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const firstConfirm = window.confirm(
-                        "Eliminar toda la serie de este evento? Esta acción no se puede deshacer."
-                      );
-                      if (!firstConfirm) return;
-                      const secondConfirm = window.confirm(
-                        "Confirmación final: se eliminará toda la serie completa. ¿Deseas continuar?"
-                      );
-                      if (!secondConfirm) return;
-                      const res = await fetch(
-                        `/api/maintenance-schedules/${panelEvent.id}?scope=all`,
-                        { method: "DELETE" }
-                      );
-                      setSelectedEvent(null);
-                      setActionsOpen(false);
-                      if (res.ok) router.refresh();
-                    }}
-                    className="block w-full rounded-sm px-2 py-1.5 text-left text-red-600 hover:bg-red-50"
-                  >
-                    Eliminar serie
-                  </button>
-                </div>
-              ) : null}
+              <div className="mt-3 flex w-full flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  disabled={creatingWorkOrder}
+                  onClick={() => {
+                    setCreateWorkOrderError(null);
+                    setSelectedAssigneeIds([...panelEvent.assigneeIds]);
+                    setAssigneePromptOpen(true);
+                  }}
+                  className="rounded-lg bg-primary-600 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {creatingWorkOrder ? "Creando..." : "Crear tarea"}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Eliminar del calendario"
+                  title="Eliminar del calendario"
+                  onClick={() => {
+                    setDeleteScope("single");
+                    setDeleteModalOpen(true);
+                  }}
+                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-2.5 text-zinc-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+                </button>
               </div>
               {assigneePromptOpen ? (
-                <div className="mt-2 rounded-sm border border-zinc-300 bg-zinc-50 p-2">
+                <div className="mt-2 min-h-0 overflow-hidden rounded-sm border border-zinc-300 bg-zinc-50 p-2">
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
-                  Asignar responsable
+                  Asignar responsables
                 </p>
-                <select
-                  value={selectedAssigneeId}
-                  onChange={(e) => setSelectedAssigneeId(e.target.value)}
-                  disabled={loadingUserOptions || creatingWorkOrder}
-                  className="w-full rounded-sm border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-800"
-                >
-                  <option value="">
-                    {loadingUserOptions ? "Cargando usuarios..." : "Selecciona un responsable"}
-                  </option>
-                  {userOptions.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
+                {loadingUserOptions ? (
+                  <p className="text-xs text-zinc-600">Cargando usuarios...</p>
+                ) : (
+                  <AssigneeMultiSelect
+                    users={userOptions}
+                    value={selectedAssigneeIds}
+                    onChange={setSelectedAssigneeIds}
+                    disabled={creatingWorkOrder}
+                    label=""
+                    emptyHint="Selecciona al menos una persona"
+                  />
+                )}
                 <div className="mt-2 flex justify-end gap-2">
                   <button
                     type="button"
                     className="rounded-sm bg-primary-600 px-2 py-1 text-[11px] font-semibold uppercase text-white hover:bg-primary-700 disabled:opacity-50"
-                    disabled={creatingWorkOrder || !selectedAssigneeId}
+                    disabled={creatingWorkOrder || selectedAssigneeIds.length === 0}
                     onClick={async () => {
-                      if (!panelEvent || !selectedAssigneeId) return;
+                      if (!panelEvent || selectedAssigneeIds.length === 0) return;
                       setCreateWorkOrderError(null);
                       setCreatingWorkOrder(true);
                       try {
@@ -1215,7 +1533,7 @@ export function CalendarMonthView({
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
                               dateYmd: panelEvent.dateYmd,
-                              assigneeId: selectedAssigneeId,
+                              assigneeIds: selectedAssigneeIds,
                             }),
                           }
                         );
@@ -1250,8 +1568,148 @@ export function CalendarMonthView({
                 </div>
                 </div>
               ) : null}
+                </>
+              ) : null}
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {deleteModalOpen && panelEvent ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-cal-modal-title"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4"
+          onClick={() => setDeleteModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              id="delete-cal-modal-title"
+              className="text-base font-semibold text-zinc-900"
+            >
+              Eliminar del calendario
+            </h3>
+            <div className="mt-4 space-y-3">
+              <label className="flex cursor-pointer items-center gap-3 rounded-lg py-0.5">
+                <input
+                  type="radio"
+                  name="calendar-delete-scope"
+                  checked={deleteScope === "single"}
+                  onChange={() => setDeleteScope("single")}
+                  className="accent-primary-600"
+                />
+                <span className="text-sm font-medium text-zinc-900">Este evento</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-3 rounded-lg py-0.5">
+                <input
+                  type="radio"
+                  name="calendar-delete-scope"
+                  checked={deleteScope === "future"}
+                  onChange={() => setDeleteScope("future")}
+                  className="accent-primary-600"
+                />
+                <span className="text-sm font-medium text-zinc-900">
+                  Este evento y los siguientes
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-3 rounded-lg py-0.5">
+                <input
+                  type="radio"
+                  name="calendar-delete-scope"
+                  checked={deleteScope === "all"}
+                  onChange={() => setDeleteScope("all")}
+                  className="accent-primary-600"
+                />
+                <span className="text-sm font-medium text-zinc-900">Todos los eventos</span>
+              </label>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-primary-600 hover:bg-primary-50"
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={deleteSubmitting}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deleteSubmitting}
+                className="rounded-full bg-primary-600 px-6 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+                onClick={async () => {
+                  if (!panelEvent) return;
+                  setDeleteSubmitting(true);
+                  try {
+                    let res: Response;
+                    if (deleteScope === "single") {
+                      res = await fetch(
+                        `/api/maintenance-schedules/${panelEvent.id}?scope=single&date=${encodeURIComponent(
+                          panelEvent.dateYmd
+                        )}`,
+                        { method: "DELETE" }
+                      );
+                    } else if (deleteScope === "future") {
+                      res = await fetch(
+                        `/api/maintenance-schedules/${panelEvent.id}?scope=future&date=${encodeURIComponent(
+                          panelEvent.dateYmd
+                        )}`,
+                        { method: "DELETE" }
+                      );
+                    } else {
+                      res = await fetch(
+                        `/api/maintenance-schedules/${panelEvent.id}?scope=all`,
+                        { method: "DELETE" }
+                      );
+                    }
+                    setDeleteModalOpen(false);
+                    await finishMaintenanceDelete(res, panelEvent.id);
+                  } finally {
+                    setDeleteSubmitting(false);
+                  }
+                }}
+              >
+                {deleteSubmitting ? "…" : "OK"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {undoBanner ? (
+        <div className="fixed bottom-4 left-1/2 z-[60] flex max-w-[min(100vw-1rem,420px)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-800 shadow-lg">
+          <span className="min-w-0 flex-1">
+            {undoBanner.kind === "recurrence"
+              ? "Cambio de evento aplicado. Puedes revertirlo en segundos."
+              : "Evento ocultadao. Puedes restaurarlao en segundos."}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold uppercase text-white hover:bg-primary-700"
+            onClick={async () => {
+              const sid = undoBanner.scheduleId;
+              const url =
+                undoBanner.kind === "recurrence"
+                  ? `/api/maintenance-schedules/${sid}/undo-last`
+                  : `/api/maintenance-schedules/${sid}/restore`;
+              const res = await fetch(url, { method: "POST" });
+              setUndoBanner(null);
+              if (res.ok) router.refresh();
+            }}
+          >
+            {undoBanner.kind === "recurrence" ? "Deshacer" : "Restaurar"}
+          </button>
+          <button
+            type="button"
+            className="shrink-0 rounded-lg px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100"
+            onClick={() => setUndoBanner(null)}
+            aria-label="Cerrar aviso"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       ) : null}
 

@@ -23,6 +23,11 @@ import {
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import type { SessionUser } from "@/lib/auth-shared";
+import {
+  checklistRevisionNotificationHref,
+  CHECKLIST_REVISION_REVIEW_TITLE,
+  parseChecklistRevisionNotificationBody,
+} from "@/lib/checklist-notification-parse";
 import { UserAvatar } from "@/components/UserAvatar";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
@@ -57,8 +62,8 @@ const baseNavSections: { type: string; items: NavItem[] }[] = [
 
 function roleLabel(role: string) {
  if (role === "admin") return "Administrador";
- if (role === "operator") return "Operador";
- if (role === "supervisor") return "Supervisor";
+ if (role === "tecnico") return "Técnico";
+ if (role === "calidad") return "Calidad";
  return role;
 }
 
@@ -73,7 +78,7 @@ function ProfileSubmenu({
   <div
    className="w-full rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
   >
-   {role !== "supervisor" && (
+   {role !== "calidad" && (
     <Link
      href="/profile"
      onClick={onClose}
@@ -110,7 +115,7 @@ export function AppShell({
  const navSections = [
   ...(user.role === "admin"
    ? baseNavSections
-   : user.role === "supervisor"
+   : user.role === "calidad"
     ? [
       {
        type: "Operaciones",
@@ -185,7 +190,7 @@ export function AppShell({
  const [unreadCount, setUnreadCount] = useState(0);
  const [searchQuery, setSearchQuery] = useState("");
  const canUseTaskFeatures =
-  user.role === "admin" || user.role === "operator" || user.role === "supervisor";
+  user.role === "admin" || user.role === "tecnico" || user.role === "calidad";
  const showBackButton =
   pathname.startsWith("/tareas/") ||
   pathname.startsWith("/checklists/") ||
@@ -282,22 +287,15 @@ export function AppShell({
   setUnreadCount(0);
  }
 
- function parseChecklistNotification(body: string | null) {
-  if (!body) return null;
-  const match = body.match(/^\[checklist:([^\]]+)\]\s*/);
-  if (!match) return null;
-  return { checklistId: match[1] ?? "", cleanBody: body.replace(match[0], "") };
- }
-
  function notificationHref(n: {
   title: string;
   workOrderId: string | null;
   noteId: string | null;
   body: string | null;
  }) {
-  const parsed = parseChecklistNotification(n.body);
-  if (n.title === "Nueva revisión de checklist" && parsed?.checklistId) {
-   return `/checklists/${parsed.checklistId}?mode=view`;
+  const parsed = parseChecklistRevisionNotificationBody(n.body);
+  if (n.title === CHECKLIST_REVISION_REVIEW_TITLE && parsed?.checklistId) {
+   return checklistRevisionNotificationHref(parsed);
   }
   return n.workOrderId ? `/tareas/${n.workOrderId}` : "/tareas";
  }
@@ -568,7 +566,7 @@ export function AppShell({
              <p className="font-semibold">{n.title}</p>
              {n.body && (
               <p className="mt-0.5 truncate">
-               {parseChecklistNotification(n.body)?.cleanBody ?? n.body}
+               {parseChecklistRevisionNotificationBody(n.body)?.cleanBody ?? n.body}
               </p>
              )}
             </Link>
@@ -698,7 +696,7 @@ export function AppShell({
              <p className="font-semibold">{n.title}</p>
              {n.body && (
               <p className="mt-0.5 truncate">
-               {parseChecklistNotification(n.body)?.cleanBody ?? n.body}
+               {parseChecklistRevisionNotificationBody(n.body)?.cleanBody ?? n.body}
               </p>
              )}
             </Link>

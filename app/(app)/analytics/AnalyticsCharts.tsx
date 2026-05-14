@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   BarChart,
@@ -17,8 +17,14 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { LayoutDashboard } from "lucide-react";
+import { LayoutDashboard, X } from "lucide-react";
 import { APP_TIME_ZONE } from "@/lib/timezone";
+import {
+  buildMultiCategoricalUnion,
+  buildMultiCheckboxBars,
+  buildMultiNumberTimeData,
+  commonFieldType,
+} from "@/lib/analytics-checklist-multi-chart";
 
 type Template = { id: string; name: string };
 type ChecklistItem = {
@@ -45,13 +51,37 @@ const COLORS = ["#02257D", "#F14C03", "#9E9F9F", "#000000", "#3355AA", "#E85A0A"
 export function AnalyticsCharts() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateId, setTemplateId] = useState("");
-  const [fieldLabel, setFieldLabel] = useState("");
+  const [selectedFieldLabels, setSelectedFieldLabels] = useState<string[]>([]);
+  const [fieldTypeHint, setFieldTypeHint] = useState<string | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [chartType, setChartType] = useState<"line" | "bar" | "pie">("line");
   const [addToDashboardStatus, setAddToDashboardStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [fieldsModalOpen, setFieldsModalOpen] = useState(false);
+
+  useEffect(() => {
+    setFieldsModalOpen(false);
+  }, [templateId]);
+
+  useEffect(() => {
+    if (!fieldsModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFieldsModalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fieldsModalOpen]);
+
+  useEffect(() => {
+    if (!fieldsModalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [fieldsModalOpen]);
 
   useEffect(() => {
     fetch("/api/checklist-templates")
@@ -63,7 +93,7 @@ export function AnalyticsCharts() {
   useEffect(() => {
     if (!templateId) {
       setData(null);
-      setFieldLabel("");
+      setSelectedFieldLabels([]);
       return;
     }
     setLoading(true);
@@ -74,76 +104,130 @@ export function AnalyticsCharts() {
       .then((r) => r.json())
       .then((d) => {
         setData(d);
-        if (d.fields?.length && !d.fields.includes(fieldLabel)) {
-          setFieldLabel(d.fields[0] ?? "");
-        }
+        setSelectedFieldLabels((prev) => {
+          const fields: string[] = Array.isArray(d.fields) ? d.fields : [];
+          const kept = prev.filter((x) => fields.includes(x));
+          if (kept.length > 0) return kept;
+          return fields[0] ? [fields[0]] : [];
+        });
       })
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [templateId, from, to]);
 
-  const selectedField = data?.workOrders?.flatMap((wo) =>
-    (wo.checklistItems ?? []).filter((i) => i.label === fieldLabel)
-  ) ?? [];
-  const fieldType = selectedField[0]?.fieldType ?? null;
+  const workOrders = data?.workOrders ?? [];
+
+  const fieldType = useMemo(
+    () =>
+      selectedFieldLabels.length > 0
+        ? commonFieldType(workOrders, selectedFieldLabels)
+        : null,
+    [workOrders, selectedFieldLabels]
+  );
+
+  const selectedFieldItems = useMemo(
+    () =>
+      workOrders.flatMap((wo) =>
+        (wo.checklistItems ?? []).filter((i) => selectedFieldLabels.includes(i.label))
+      ),
+    [workOrders, selectedFieldLabels]
+  );
+
+  const multiNumber = useMemo(() => {
+    if (fieldType !== "number" || selectedFieldLabels.length === 0) return null;
+    return buildMultiNumberTimeData(workOrders, selectedFieldLabels, APP_TIME_ZONE);
+  }, [fieldType, workOrders, selectedFieldLabels]);
+
+  const singleCategoricalChartData = useMemo(() => {
+    if (
+      (fieldType !== "dropdown" && fieldType !== "text") ||
+      selectedFieldLabels.length !== 1
+    ) {
+      return [];
+    }
+    const label = selectedFieldLabels[0]!;
+    const counts = new Map<string, number>();
+    for (const wo of workOrders) {
+      const item = wo.checklistItems.find((i) => i.label === label);
+      if (!item) continue;
+      const v = item.value != null ? String(item.value) : "(empty)";
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([name, value]) => ({
+      name: name === "(empty)" ? "(vacío)" : name,
+      value,
+    }));
+  }, [fieldType, workOrders, selectedFieldLabels]);
+
+  const multiCategorical = useMemo(() => {
+    if (
+      (fieldType !== "dropdown" && fieldType !== "text") ||
+      selectedFieldLabels.length <= 1
+    ) {
+      return null;
+    }
+    return buildMultiCategoricalUnion(workOrders, selectedFieldLabels);
+  }, [fieldType, workOrders, selectedFieldLabels]);
+
+  const singleCheckboxChartData = useMemo(() => {
+    if (fieldType !== "checkbox" || selectedFieldLabels.length !== 1) return [];
+    const label = selectedFieldLabels[0]!;
+    let yes = 0;
+    let no = 0;
+    for (const wo of workOrders) {
+      const item = wo.checklistItems.find((i) => i.label === label);
+      if (!item) continue;
+      if (item.value === true) yes++;
+      else no++;
+    }
+    return [
+      { name: "Sí", value: yes },
+      { name: "No", value: no },
+    ];
+  }, [fieldType, workOrders, selectedFieldLabels]);
+
+  const multiCheckboxBars = useMemo(() => {
+    if (fieldType !== "checkbox" || selectedFieldLabels.length <= 1) return [];
+    return buildMultiCheckboxBars(workOrders, selectedFieldLabels);
+  }, [fieldType, workOrders, selectedFieldLabels]);
+
+  function toggleFieldLabel(f: string) {
+    if (selectedFieldLabels.includes(f)) {
+      if (selectedFieldLabels.length <= 1) return;
+      setFieldTypeHint(null);
+      setSelectedFieldLabels((p) => p.filter((x) => x !== f));
+      return;
+    }
+    const next = [...selectedFieldLabels, f];
+    if (selectedFieldLabels.length > 0 && commonFieldType(workOrders, next) === null) {
+      setFieldTypeHint("Solo puedes combinar campos del mismo tipo.");
+      return;
+    }
+    setFieldTypeHint(null);
+    setSelectedFieldLabels(next);
+  }
 
   useEffect(() => {
+    if (!fieldType) return;
     if (fieldType === "number") {
       setChartType("line");
       return;
     }
     if (fieldType === "checkbox") {
-      setChartType("pie");
+      setChartType(selectedFieldLabels.length > 1 ? "bar" : "pie");
       return;
     }
     if (fieldType === "dropdown" || fieldType === "text") {
-      setChartType("bar");
+      setChartType(selectedFieldLabels.length > 1 ? "bar" : "bar");
     }
-  }, [fieldType, fieldLabel]);
+  }, [fieldType, selectedFieldLabels.join("|")]);
 
-  let chartData: { name: string; value: number }[] = [];
-  let lineData: { ts: number; date: string; value: number }[] = [];
-  if (fieldLabel && data?.workOrders) {
-    if (fieldType === "number") {
-      for (const wo of data.workOrders) {
-        const item = wo.checklistItems.find((i) => i.label === fieldLabel);
-        const val = item?.value != null ? Number(item.value) : null;
-        if (val === null || Number.isNaN(val)) continue;
-        const ts = wo.completedAt ? new Date(wo.completedAt).getTime() : NaN;
-        if (!Number.isFinite(ts)) continue;
-        lineData.push({
-          ts,
-          date: new Date(ts).toLocaleString("es-MX", {
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            timeZone: APP_TIME_ZONE,
-          }),
-          value: Math.round(val * 100) / 100,
-        });
-      }
-      lineData = lineData.sort((a, b) => a.ts - b.ts);
-    } else if (fieldType === "dropdown" || fieldType === "text") {
-      const counts = new Map<string, number>();
-      for (const item of selectedField) {
-        const v = item.value != null ? String(item.value) : "(empty)";
-        counts.set(v, (counts.get(v) ?? 0) + 1);
-      }
-      chartData = Array.from(counts.entries()).map(([name, value]) => ({ name: name === "(empty)" ? "(vacío)" : name, value }));
-    } else if (fieldType === "checkbox") {
-      let yes = 0,
-        no = 0;
-      for (const item of selectedField) {
-        if (item.value === true) yes++;
-        else no++;
-      }
-      chartData = [
-        { name: "Sí", value: yes },
-        { name: "No", value: no },
-      ];
-    }
-  }
+  const fieldsSelectionSummary = useMemo(() => {
+    if (selectedFieldLabels.length === 0) return "Sin campos";
+    if (selectedFieldLabels.length === 1) return selectedFieldLabels[0]!;
+    if (selectedFieldLabels.length === 2) return `${selectedFieldLabels[0]!} · ${selectedFieldLabels[1]!}`;
+    return `${selectedFieldLabels.length} campos seleccionados`;
+  }, [selectedFieldLabels]);
 
   return (
     <div className="space-y-6">
@@ -166,21 +250,24 @@ export function AnalyticsCharts() {
           </select>
         </div>
         {data && data.fields.length > 0 && (
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 mb-1">
-              Field
+          <div className="w-full min-w-0 sm:w-auto sm:min-w-[220px] sm:max-w-sm">
+            <label className="block text-sm font-medium text-zinc-700 mb-1" htmlFor="analytics-fields-trigger">
+              Campos (mismo tipo)
             </label>
-            <select
-              value={fieldLabel}
-              onChange={(e) => setFieldLabel(e.target.value)}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 min-w-[180px]"
+            <button
+              id="analytics-fields-trigger"
+              type="button"
+              onClick={() => setFieldsModalOpen(true)}
+              className="flex w-full min-w-0 flex-col gap-0.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-left text-sm text-zinc-900 shadow-sm hover:bg-zinc-50"
             >
-              {data.fields.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
+              <span className="font-medium text-primary-700">Elegir campos…</span>
+              <span className="truncate text-xs text-zinc-500" title={selectedFieldLabels.join(", ")}>
+                {fieldsSelectionSummary}
+              </span>
+            </button>
+            {fieldTypeHint && (
+              <p className="mt-1 text-xs text-amber-700">{fieldTypeHint}</p>
+            )}
           </div>
         )}
         <div className="flex w-full gap-4 sm:w-auto">
@@ -221,13 +308,13 @@ export function AnalyticsCharts() {
           This checklist has no custom fields; add text, number, date, dropdown, or checkbox fields to see graphs.
         </div>
       )}
-      {templateId && (data?.workOrders?.length ?? 0) > 0 && (data?.fields?.length ?? 0) > 0 && !fieldLabel && !loading && (
+      {templateId && (data?.workOrders?.length ?? 0) > 0 && (data?.fields?.length ?? 0) > 0 && selectedFieldLabels.length === 0 && !loading && (
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-8 text-center text-zinc-500">
-          Selecciona un campo para ver el gráfico.
+          Selecciona al menos un campo para ver el gráfico.
         </div>
       )}
 
-      {templateId && fieldLabel && data && (
+      {templateId && selectedFieldLabels.length > 0 && data && (
         <div className="flex flex-wrap items-center gap-2">
           {(fieldType === "number" || fieldType === "checkbox" || fieldType === "dropdown" || fieldType === "text") && (
             <select
@@ -240,6 +327,8 @@ export function AnalyticsCharts() {
                   <option value="line">Línea</option>
                   <option value="bar">Barras</option>
                 </>
+              ) : selectedFieldLabels.length > 1 ? (
+                <option value="bar">Barras</option>
               ) : (
                 <>
                   <option value="bar">Barras</option>
@@ -250,7 +339,7 @@ export function AnalyticsCharts() {
           )}
           <button
             type="button"
-            disabled={addToDashboardStatus === "saving"}
+            disabled={addToDashboardStatus === "saving" || !fieldType}
             onClick={async () => {
               setAddToDashboardStatus("saving");
               try {
@@ -260,7 +349,8 @@ export function AnalyticsCharts() {
                   body: JSON.stringify({
                     templateId,
                     templateName: data.templateName ?? "",
-                    fieldLabel,
+                    fieldLabel: selectedFieldLabels[0],
+                    fieldLabels: selectedFieldLabels,
                     dateFrom: from || null,
                     dateTo: to || null,
                     chartType: fieldType === "number" ? (chartType === "pie" ? "line" : chartType) : chartType,
@@ -292,37 +382,54 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {fieldLabel && fieldType === "number" && lineData.length > 0 && (
+      {selectedFieldLabels.length > 0 &&
+        fieldType === "number" &&
+        multiNumber &&
+        multiNumber.data.length > 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {fieldLabel} en el tiempo (punto por registro)
+            {selectedFieldLabels.join(", ")} en el tiempo (punto por orden)
           </h2>
           <div className="h-64 md:h-80">
             {chartType === "bar" ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={lineData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                <BarChart data={multiNumber.data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
                   <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={20} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#02257D" name={fieldLabel} radius={[4, 4, 0, 0]} />
+                  <Legend />
+                  {multiNumber.series.map((s, i) => (
+                    <Bar
+                      key={s.key}
+                      dataKey={s.key}
+                      fill={COLORS[i % COLORS.length]}
+                      name={s.name}
+                      radius={[2, 2, 0, 0]}
+                    />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={lineData}>
+                <LineChart data={multiNumber.data}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
                   <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={20} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#02257D"
-                    strokeWidth={2}
-                    name={fieldLabel}
-                    dot={{ r: 3 }}
-                  />
+                  <Legend />
+                  {multiNumber.series.map((s, i) => (
+                    <Line
+                      key={s.key}
+                      type="monotone"
+                      dataKey={s.key}
+                      stroke={COLORS[i % COLORS.length]}
+                      strokeWidth={2}
+                      name={s.name}
+                      dot={{ r: 3 }}
+                      connectNulls
+                    />
+                  ))}
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -330,17 +437,51 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {fieldLabel && (fieldType === "dropdown" || fieldType === "text") && chartData.length > 0 && (
+      {selectedFieldLabels.length > 0 &&
+        (fieldType === "dropdown" || fieldType === "text") &&
+        multiCategorical &&
+        multiCategorical.data.length > 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {fieldLabel} — distribución
+            {selectedFieldLabels.join(", ")} — comparación por categoría
+          </h2>
+          <div className="h-64 md:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={multiCategorical.data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Legend />
+                {multiCategorical.series.map((s, i) => (
+                  <Bar
+                    key={s.key}
+                    dataKey={s.key}
+                    fill={COLORS[i % COLORS.length]}
+                    name={s.name}
+                    radius={[2, 2, 0, 0]}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {selectedFieldLabels.length > 0 &&
+        (fieldType === "dropdown" || fieldType === "text") &&
+        selectedFieldLabels.length === 1 &&
+        singleCategoricalChartData.length > 0 && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-4">
+          <h2 className="text-sm font-medium text-zinc-700 mb-2">
+            {selectedFieldLabels[0]} — distribución
           </h2>
           <div className="h-64 md:h-80">
             {chartType === "pie" ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={chartData}
+                    data={singleCategoricalChartData}
                     dataKey="value"
                     nameKey="name"
                     cx="50%"
@@ -348,7 +489,7 @@ export function AnalyticsCharts() {
                     outerRadius={80}
                     label
                   >
-                    {chartData.map((_, i) => (
+                    {singleCategoricalChartData.map((_, i) => (
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
@@ -358,7 +499,7 @@ export function AnalyticsCharts() {
               </ResponsiveContainer>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                <BarChart data={singleCategoricalChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
@@ -371,15 +512,42 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {fieldLabel && fieldType === "checkbox" && (chartData[0]?.value > 0 || chartData[1]?.value > 0) && (
+      {selectedFieldLabels.length > 0 &&
+        fieldType === "checkbox" &&
+        selectedFieldLabels.length > 1 &&
+        multiCheckboxBars.some((r) => r.sí + r.no > 0) && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {fieldLabel} — sí / no
+            {selectedFieldLabels.join(", ")} — sí / no por campo
+          </h2>
+          <div className="h-64 md:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={multiCheckboxBars} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="sí" fill="#02257D" name="Sí" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="no" fill="#9E9F9F" name="No" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {selectedFieldLabels.length > 0 &&
+        fieldType === "checkbox" &&
+        selectedFieldLabels.length === 1 &&
+        (singleCheckboxChartData[0]?.value > 0 || singleCheckboxChartData[1]?.value > 0) && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-4">
+          <h2 className="text-sm font-medium text-zinc-700 mb-2">
+            {selectedFieldLabels[0]} — sí / no
           </h2>
           <div className="h-64 md:h-80">
             {chartType === "bar" ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                <BarChart data={singleCheckboxChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
@@ -391,7 +559,7 @@ export function AnalyticsCharts() {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={chartData}
+                    data={singleCheckboxChartData}
                     dataKey="value"
                     nameKey="name"
                     cx="50%"
@@ -399,7 +567,7 @@ export function AnalyticsCharts() {
                     outerRadius={80}
                     label
                   >
-                    {chartData.map((_, i) => (
+                    {singleCheckboxChartData.map((_, i) => (
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
@@ -412,24 +580,92 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {fieldLabel && fieldType === "date" && (
+      {selectedFieldLabels.length > 0 && fieldType === "date" && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-medium text-zinc-700 mb-2">{fieldLabel}</h2>
+          <h2 className="text-sm font-medium text-zinc-700 mb-2">
+            {selectedFieldLabels.join(", ")}
+          </h2>
           <p className="text-zinc-500 text-sm">
             Campos de fecha: vista de lista. Gráfico agregado próximamente.
           </p>
           <ul className="mt-2 space-y-1 text-sm">
-            {selectedField.slice(0, 10).map((item, i) => (
+            {selectedFieldItems.slice(0, 10).map((item, i) => (
               <li key={i}>
+                <span className="text-zinc-500">{item.label}: </span>
                 {item.value != null ? String(item.value).slice(0, 10) : "—"}
               </li>
             ))}
-            {selectedField.length > 10 && (
-              <li className="text-zinc-400">… and {selectedField.length - 10} more</li>
+            {selectedFieldItems.length > 10 && (
+              <li className="text-zinc-400">… y {selectedFieldItems.length - 10} más</li>
             )}
           </ul>
         </div>
       )}
+
+      {fieldsModalOpen && data && data.fields.length > 0 ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-0 md:items-center md:p-4"
+          role="presentation"
+          onClick={() => setFieldsModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="analytics-fields-modal-title"
+            className="flex max-h-[min(88dvh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-zinc-200 border-b-0 bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:max-h-[min(85vh,640px)] md:rounded-xl md:border-b md:shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
+              <h2 id="analytics-fields-modal-title" className="text-sm font-semibold text-zinc-900">
+                Campos del checklist
+              </h2>
+              <button
+                type="button"
+                onClick={() => setFieldsModalOpen(false)}
+                aria-label="Cerrar"
+                className="rounded-sm border border-zinc-300 p-1 text-zinc-700 hover:bg-zinc-100"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+            <p className="shrink-0 border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs text-zinc-600">
+              Marca uno o más campos del mismo tipo para graficarlos juntos. Hay {data.fields.length}{" "}
+              campos en esta plantilla.
+            </p>
+            {fieldTypeHint ? (
+              <p className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+                {fieldTypeHint}
+              </p>
+            ) : null}
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+              <ul className="space-y-0.5">
+                {data.fields.map((f) => (
+                  <li key={f}>
+                    <label className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50">
+                      <input
+                        type="checkbox"
+                        checked={selectedFieldLabels.includes(f)}
+                        onChange={() => toggleFieldLabel(f)}
+                        className="mt-0.5 shrink-0 rounded border-zinc-400"
+                      />
+                      <span className="min-w-0 break-words">{f}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex shrink-0 justify-end border-t border-zinc-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pb-3">
+              <button
+                type="button"
+                onClick={() => setFieldsModalOpen(false)}
+                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+              >
+                Listo
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
