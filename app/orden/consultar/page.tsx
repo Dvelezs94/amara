@@ -19,6 +19,8 @@ type FolioLookupResult = {
   status: string;
   priority: string;
   kind: string;
+  assetName: string | null;
+  assetCode: string | null;
   createdAt: string | null;
   dueDate: string | null;
   startedAt: string | null;
@@ -69,6 +71,8 @@ function normalizeLookupPayload(raw: Record<string, unknown>): FolioLookupResult
     status: String(raw.status ?? ""),
     priority: String(raw.priority ?? ""),
     kind: String(raw.kind ?? ""),
+    assetName: raw.assetName != null ? String(raw.assetName) : null,
+    assetCode: raw.assetCode != null ? String(raw.assetCode) : null,
     createdAt: raw.createdAt != null ? String(raw.createdAt) : null,
     dueDate: raw.dueDate != null ? String(raw.dueDate) : null,
     startedAt: raw.startedAt != null ? String(raw.startedAt) : null,
@@ -208,6 +212,15 @@ function ConsultarOrdenForm() {
                 <dt className="text-zinc-500">Titulo</dt>
                 <dd className="mt-0.5 font-medium">{lookupResult.title}</dd>
               </div>
+              {lookupResult.assetName ? (
+                <div>
+                  <dt className="text-zinc-500">Máquina</dt>
+                  <dd className="mt-0.5">
+                    {lookupResult.assetName}
+                    {lookupResult.assetCode ? ` (${lookupResult.assetCode})` : ""}
+                  </dd>
+                </div>
+              ) : null}
               <div className="flex flex-wrap justify-between gap-2">
                 <dt className="text-zinc-500">Estado</dt>
                 <dd>{STATUS_LABEL[lookupResult.status] ?? lookupResult.status}</dd>

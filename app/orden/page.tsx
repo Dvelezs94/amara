@@ -1,13 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+type PublicAsset = { id: string; name: string; assetId: string };
 
 export default function OrdenPublicaPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [successFolio, setSuccessFolio] = useState<number | null>(null);
+  const [assets, setAssets] = useState<PublicAsset[]>([]);
+  const [assetsLoading, setAssetsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/solicitud/assets")
+      .then((r) => r.json())
+      .then((d) => setAssets(Array.isArray(d) ? d : []))
+      .catch(() => setAssets([]))
+      .finally(() => setAssetsLoading(false));
+  }, []);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,6 +33,7 @@ export default function OrdenPublicaPage() {
     const prioridad = (form.elements.namedItem("prioridad") as HTMLSelectElement).value;
     const nombreContacto = (form.elements.namedItem("nombreContacto") as HTMLInputElement).value.trim();
     const emailContacto = (form.elements.namedItem("emailContacto") as HTMLInputElement).value.trim();
+    const assetId = (form.elements.namedItem("assetId") as HTMLSelectElement).value.trim();
 
     try {
       const res = await fetch("/api/solicitud", {
@@ -32,6 +45,7 @@ export default function OrdenPublicaPage() {
           prioridad,
           nombreContacto,
           emailContacto,
+          assetId: assetId || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -114,6 +128,30 @@ export default function OrdenPublicaPage() {
               placeholder="Describe el problema, sintomas y area del equipo."
               className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             />
+          </div>
+          <div>
+            <label htmlFor="assetId" className="mb-1 block text-sm font-medium text-zinc-700">
+              Máquina
+            </label>
+            <select
+              id="assetId"
+              name="assetId"
+              disabled={assetsLoading}
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-zinc-50"
+            >
+              <option value="">
+                {assetsLoading
+                  ? "Cargando máquinas…"
+                  : assets.length === 0
+                    ? "Sin máquinas registradas"
+                    : "Seleccionar máquina (opcional)"}
+              </option>
+              {assets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.assetId})
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label htmlFor="prioridad" className="mb-1 block text-sm font-medium text-zinc-700">

@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { attachments, notes, users, workOrders } from "@/lib/db/schema";
+import { assets, attachments, notes, users, workOrders } from "@/lib/db/schema";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
 import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
@@ -36,8 +36,11 @@ export async function GET(req: Request) {
       dueDate: workOrders.dueDate,
       startedAt: workOrders.startedAt,
       completedAt: workOrders.completedAt,
+      assetName: assets.name,
+      assetCode: assets.assetId,
     })
     .from(workOrders)
+    .leftJoin(assets, eq(workOrders.assetId, assets.id))
     .where(and(eq(workOrders.folio, folio), publicWebWorkOrderFilter))
     .limit(1);
 
@@ -88,6 +91,8 @@ export async function GET(req: Request) {
     status: wo.status,
     priority: wo.priority,
     kind: wo.kind,
+    assetName: wo.assetName ?? null,
+    assetCode: wo.assetCode ?? null,
     createdAt: wo.createdAt?.toISOString() ?? null,
     dueDate: wo.dueDate?.toISOString() ?? null,
     startedAt: wo.startedAt?.toISOString() ?? null,
@@ -110,6 +115,7 @@ export async function POST(req: Request) {
       : "medium";
   const nombreContacto = (body.nombreContacto ?? "").trim();
   const emailContacto = (body.emailContacto ?? "").trim().toLowerCase();
+  const rawAssetId = String(body.assetId ?? "").trim();
 
   if (!titulo || !descripcion || !nombreContacto) {
     return NextResponse.json(
@@ -118,7 +124,23 @@ export async function POST(req: Request) {
     );
   }
 
+  let assetId: string | null = null;
+  let assetLabel: string | null = null;
+  if (rawAssetId) {
+    const [asset] = await db
+      .select({ id: assets.id, name: assets.name, assetId: assets.assetId })
+      .from(assets)
+      .where(eq(assets.id, rawAssetId))
+      .limit(1);
+    if (!asset) {
+      return NextResponse.json({ error: "Máquina no válida." }, { status: 400 });
+    }
+    assetId = asset.id;
+    assetLabel = `${asset.name} (${asset.assetId})`;
+  }
+
   const detalleContacto = [
+    assetLabel ? `Máquina: ${assetLabel}` : null,
     nombreContacto ? `Nombre contacto: ${nombreContacto}` : null,
     emailContacto ? `Email contacto: ${emailContacto}` : null,
   ]
@@ -140,6 +162,7 @@ export async function POST(req: Request) {
     status: "pending",
     priority: prioridad,
     kind: "on_demand",
+    assetId,
     requesterId: null,
     createdAt: now,
     updatedAt: now,
@@ -155,6 +178,7 @@ export async function POST(req: Request) {
       title: titulo,
       priority: prioridad,
       hasContact: Boolean(nombreContacto),
+      assetId,
     },
   });
 

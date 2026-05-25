@@ -25,7 +25,11 @@ export function middleware(req: NextRequest) {
   }
   if (path.startsWith(API_AUTH_PUBLIC_PREFIX)) return NextResponse.next();
   /** Public: crear orden, consulta por folio, descarga de adjuntos con `?folio=` */
-  if (path === "/api/solicitud" || path.startsWith("/api/solicitud/attachments/")) {
+  if (
+    path === "/api/solicitud" ||
+    path === "/api/solicitud/assets" ||
+    path.startsWith("/api/solicitud/attachments/")
+  ) {
     return NextResponse.next();
   }
   const session = req.cookies.get("session")?.value;
