@@ -638,7 +638,7 @@ export default function DashboardPage() {
                   fieldLabels={w.fieldLabels}
                   dateFrom={range.from}
                   dateTo={range.to}
-                  title={w.chartTitle}
+                  title={w.chartTitle ?? undefined}
                   size={widgetSizes[w.id] ?? "md"}
                   refreshIntervalMs={
                     chartAutoRefresh ? CHART_REFRESH_INTERVAL_MS : undefined
