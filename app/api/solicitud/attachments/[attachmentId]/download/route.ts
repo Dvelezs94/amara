@@ -5,6 +5,8 @@ import { attachments, workOrders } from "@/lib/db/schema";
 import { publicWebWorkOrderFilter } from "@/lib/public-web-work-order-filter";
 import { presignS3PublicUrl } from "@/lib/s3-storage";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Download an attachment when the requester proves knowledge of the work order folio.
  * (Unauthenticated; pair `attachmentId` + `folio` must match DB.)

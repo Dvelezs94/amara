@@ -12,6 +12,8 @@ import {
   rewriteNoteBodyToPublicDownloadUrls,
 } from "@/lib/solicitud-public-note-urls";
 
+export const dynamic = "force-dynamic";
+
 /** Public lookup by folio: solo ordenes desde formulario publico; sin id interno; adjuntos con `?folio=`. */
 export async function GET(req: Request) {
   const url = new URL(req.url);

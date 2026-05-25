@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 
+export const dynamic = "force-dynamic";
+
 /** Public list of machines for the /orden form (id, name, asset code only). */
 export async function GET() {
   const list = await db
