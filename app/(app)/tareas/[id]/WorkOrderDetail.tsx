@@ -38,6 +38,11 @@ import {
 } from "@/lib/machine-downtime";
 import { checklistItemDepth, flattenChecklistTreeForDisplay } from "@/lib/checklist-item-tree";
 import { workOrderChecklistIsCompleteForClosure } from "@/lib/checklist-completion";
+import { ChecklistGroupedList } from "@/components/ChecklistGroupedList";
+import {
+  WorkOrderAssetSelect,
+  type WorkOrderAssetOption,
+} from "@/components/WorkOrderAssetSelect";
 
 const statusColors: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800",
@@ -249,8 +254,90 @@ export function WorkOrderDetail({
   const [commentFiles, setCommentFiles] = useState<File[]>([]);
 
   const isCancelled = initial.status === "cancelled";
+  const canEditAsset = !isCompleted && !isCancelled;
+  const [assetsList, setAssetsList] = useState<WorkOrderAssetOption[]>([]);
+  const [assetsLoading, setAssetsLoading] = useState(true);
+  const [workOrderAssetId, setWorkOrderAssetId] = useState<string | null>(
+    () => initial.asset?.id ?? null
+  );
+  const [assetSaving, setAssetSaving] = useState(false);
+  const [assetError, setAssetError] = useState<string | null>(null);
+
+  const workOrderAsset = useMemo(() => {
+    if (!workOrderAssetId) return null;
+    const fromList = assetsList.find((a) => a.id === workOrderAssetId);
+    if (fromList) {
+      return {
+        id: fromList.id,
+        name: fromList.name,
+        assetId: fromList.assetId,
+        tracksMachineDowntime: fromList.tracksMachineDowntime,
+      };
+    }
+    if (initial.asset?.id === workOrderAssetId) return initial.asset;
+    return null;
+  }, [workOrderAssetId, assetsList, initial.asset]);
+
   const machineDowntimeBlocked =
-    initial.asset != null && initial.asset.tracksMachineDowntime === false;
+    workOrderAsset != null && workOrderAsset.tracksMachineDowntime === false;
+
+  useEffect(() => {
+    setWorkOrderAssetId(initial.asset?.id ?? null);
+  }, [initial.id, initial.asset?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAssetsLoading(true);
+    fetch("/api/assets")
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        setAssetsList(
+          Array.isArray(d)
+            ? d.map((a: WorkOrderAssetOption) => ({
+                id: a.id,
+                name: a.name,
+                assetId: a.assetId,
+                tracksMachineDowntime: a.tracksMachineDowntime,
+              }))
+            : []
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setAssetsList([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAssetsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function saveWorkOrderAsset(nextAssetId: string | null) {
+    if (!canEditAsset || nextAssetId === workOrderAssetId) return;
+    const prevId = workOrderAssetId;
+    setAssetSaving(true);
+    setAssetError(null);
+    setWorkOrderAssetId(nextAssetId);
+    try {
+      const res = await fetch(`/api/work-orders/${initial.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assetId: nextAssetId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error ?? "No se pudo guardar la máquina");
+      }
+      router.refresh();
+    } catch (e) {
+      setWorkOrderAssetId(prevId);
+      setAssetError(e instanceof Error ? e.message : "Error");
+    } finally {
+      setAssetSaving(false);
+    }
+  }
   const [countsMachineDowntime, setCountsMachineDowntime] = useState(
     () =>
       initial.asset?.tracksMachineDowntime === false
@@ -265,7 +352,7 @@ export function WorkOrderDetail({
   const [downtimeError, setDowntimeError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (initial.asset?.tracksMachineDowntime === false) {
+    if (workOrderAsset?.tracksMachineDowntime === false) {
       setCountsMachineDowntime(false);
     } else {
       setCountsMachineDowntime(initial.countsMachineDowntime === true);
@@ -275,7 +362,7 @@ export function WorkOrderDetail({
     initial.id,
     initial.countsMachineDowntime,
     initial.manualDowntimeMinutes,
-    initial.asset?.tracksMachineDowntime,
+    workOrderAsset?.tracksMachineDowntime,
   ]);
 
   const autoDowntimePreviewMinutes = useMemo(() => {
@@ -726,22 +813,20 @@ export function WorkOrderDetail({
               editar el checklist.
             </p>
           )}
-          <ul className="divide-y divide-zinc-100">
-            {checklistOrdered.map((item) => {
+          <ChecklistGroupedList
+            flat={checklistOrdered}
+            all={checklist}
+            className="mt-3 space-y-5"
+            collapseContextKey={initial.id}
+            renderItem={(item, { insideSection }) => {
               const depth = checklistItemDepth(item, checklist);
               const padStyle = { paddingLeft: Math.min(depth, 8) * 16 };
-              return (
-              item.type === "section" ? (
-                <li key={item.id} style={padStyle} className="list-none py-3 first:pt-1">
-                  <div className="border-b border-zinc-200 pb-2">
-                    <p className="text-sm font-semibold tracking-tight text-zinc-900">{item.label}</p>
-                  </div>
-                </li>
-              ) : item.type === "step" ? (
+              const rowPad = insideSection ? "py-3 px-4" : "";
+              return item.type === "step" ? (
                 <li
                   key={item.id}
                   style={padStyle}
-                  className="flex items-center gap-2 py-3 text-zinc-900"
+                  className={`flex items-center gap-2 text-zinc-900 ${rowPad || "py-3"}`}
                 >
                   {!checklistUnlocked ? (
                     <span className="text-zinc-600">
@@ -776,7 +861,7 @@ export function WorkOrderDetail({
                   </span>
                 </li>
               ) : item.type === "text_block" ? (
-                <li key={item.id} style={padStyle} className="py-3 text-zinc-900">
+                <li key={item.id} style={padStyle} className={`text-zinc-900 ${rowPad || "py-3"}`}>
                   {item.fieldType === "title" ? (
                     <h3 className="text-lg font-semibold text-zinc-900">{item.label}</h3>
                   ) : item.fieldType === "subtitle" ? (
@@ -786,7 +871,7 @@ export function WorkOrderDetail({
                   )}
                 </li>
               ) : (
-                <li key={item.id} style={padStyle} className="flex flex-col gap-1.5 py-3 text-zinc-900">
+                <li key={item.id} style={padStyle} className={`flex flex-col gap-1.5 text-zinc-900 ${rowPad || "py-3"}`}>
                   {item.fieldType !== "checkbox" ? (
                     <label className="text-sm font-medium text-zinc-700">
                       {item.label}
@@ -997,9 +1082,9 @@ export function WorkOrderDetail({
                     </>
                   )}
                 </li>
-              ));
-            })}
-          </ul>
+              );
+            }}
+          />
           {checklistUnlocked && (
             <div className="mt-4">
               <button
@@ -1188,7 +1273,7 @@ export function WorkOrderDetail({
             )}
           </div>
 
-          {!isCancelled && initial.asset ? (
+          {!isCancelled && workOrderAsset ? (
             <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Paro de máquina
@@ -1196,7 +1281,7 @@ export function WorkOrderDetail({
               {machineDowntimeBlocked ? (
                 <p className="mb-3 text-sm text-zinc-600">
                   El seguimiento de paro está desactivado para la máquina asignada. Actívalo en{" "}
-                  <Link href={`/assets/${initial.asset!.id}/edit`} className="font-medium text-primary-600 hover:underline">
+                  <Link href={`/assets/${workOrderAsset.id}/edit`} className="font-medium text-primary-600 hover:underline">
                     editar máquina
                   </Link>
                   .
@@ -1415,24 +1500,43 @@ export function WorkOrderDetail({
                 </div>
               ) : null}
 
-              {initial.asset ? (
-                <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
-                  <span className="text-zinc-500">Máquina</span>
-                  <div className="min-w-0">
+              <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                <label htmlFor="wo-asset" className="text-zinc-500">
+                  Máquina
+                </label>
+                <div className="min-w-0 space-y-1.5">
+                  {canEditAsset ? (
+                    <WorkOrderAssetSelect
+                      id="wo-asset"
+                      value={workOrderAssetId}
+                      assets={assetsList}
+                      loading={assetsLoading}
+                      disabled={assetSaving}
+                      onChange={(id) => void saveWorkOrderAsset(id)}
+                    />
+                  ) : workOrderAsset ? (
                     <Link
-                      href={`/assets/${initial.asset.id}`}
+                      href={`/assets/${workOrderAsset.id}`}
                       className="font-medium text-[#F14C03] hover:underline"
                     >
-                      <span className="block truncate">
-                        {initial.asset.name}
-                      </span>
+                      <span className="block truncate">{workOrderAsset.name}</span>
                       <span className="text-xs font-normal text-zinc-500">
-                        {initial.asset.assetId}
+                        {workOrderAsset.assetId}
                       </span>
                     </Link>
-                  </div>
+                  ) : (
+                    <span className="text-sm text-zinc-400">Sin máquina</span>
+                  )}
+                  {assetError ? (
+                    <p className="text-xs text-red-600">{assetError}</p>
+                  ) : null}
+                  {canEditAsset && !workOrderAssetId ? (
+                    <p className="text-xs text-zinc-500">
+                      Asigna una máquina para registrar paro y vincular la tarea al activo.
+                    </p>
+                  ) : null}
                 </div>
-              ) : null}
+              </div>
 
               <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
                 <span className="text-zinc-500">Vencimiento</span>

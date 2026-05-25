@@ -4,7 +4,11 @@ import {
   checklistRevisionNotificationHref,
   parseChecklistRevisionNotificationBody,
 } from "./lib/checklist-notification-parse";
-import { checklistItemDepth, flattenChecklistTreeForDisplay } from "./lib/checklist-item-tree";
+import {
+  checklistItemDepth,
+  flattenChecklistTreeForDisplay,
+  groupFlattenedChecklistBySection,
+} from "./lib/checklist-item-tree";
 import { workOrderChecklistIsCompleteForClosure } from "./lib/checklist-completion";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -1222,6 +1226,16 @@ function AppContent() {
     itemId: string;
     draft: Date;
   } | null>(null);
+  const [machines, setMachines] = useState<
+    Array<{ id: string; name: string; assetId: string; tracksMachineDowntime?: boolean }>
+  >([]);
+  const [machinesLoading, setMachinesLoading] = useState(false);
+  const [machinePickerVisible, setMachinePickerVisible] = useState(false);
+  const [machineSaving, setMachineSaving] = useState(false);
+  /** Per work-order section expand state; missing key = expanded. */
+  const [checklistSectionExpanded, setChecklistSectionExpanded] = useState<
+    Record<string, boolean>
+  >({});
 
   const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
   const [kbLoading, setKbLoading] = useState(false);
@@ -1400,6 +1414,20 @@ function AppContent() {
     }
   }
 
+  async function loadMachines() {
+    setMachinesLoading(true);
+    try {
+      const data = await apiFetch<
+        Array<{ id: string; name: string; assetId: string; tracksMachineDowntime?: boolean }>
+      >("/api/assets");
+      setMachines(Array.isArray(data) ? data : []);
+    } catch {
+      setMachines([]);
+    } finally {
+      setMachinesLoading(false);
+    }
+  }
+
   async function loadKnowledge() {
     setKbLoading(true);
     setKbError(null);
@@ -1494,13 +1522,20 @@ function AppContent() {
   }
 
   async function loadInitialData() {
-    await Promise.all([loadWorkOrders(), loadKnowledge(), loadMe(), loadNotifications(), loadUsers()]);
+    await Promise.all([
+      loadWorkOrders(),
+      loadKnowledge(),
+      loadMe(),
+      loadNotifications(),
+      loadUsers(),
+      loadMachines(),
+    ]);
   }
 
   async function refreshWorkOrdersFeed() {
     setWorkOrdersRefreshing(true);
     try {
-      await Promise.all([loadWorkOrders(), loadUsers()]);
+      await Promise.all([loadWorkOrders(), loadUsers(), loadMachines()]);
     } finally {
       setWorkOrdersRefreshing(false);
     }
@@ -1782,6 +1817,52 @@ function AppContent() {
       setDowntimeError(error instanceof Error ? error.message : "No se pudo guardar el paro.");
     } finally {
       setDowntimeSaving(false);
+    }
+  }
+
+  async function patchWorkOrderAsset(assetId: string | null) {
+    if (!selectedWorkOrder) return;
+    const woId = selectedWorkOrder.id;
+    if (selectedWorkOrder.status === "completed" || selectedWorkOrder.status === "cancelled") {
+      return;
+    }
+    const nextId = assetId?.trim() ? assetId.trim() : null;
+    if ((selectedWorkOrder.asset?.id ?? null) === nextId) {
+      setMachinePickerVisible(false);
+      return;
+    }
+    setMachineSaving(true);
+    setDetailError(null);
+    const snapshot = selectedWorkOrder;
+    const picked = nextId ? machines.find((m) => m.id === nextId) : null;
+    setSelectedWorkOrder((wo) => {
+      if (!wo || wo.id !== woId) return wo;
+      return {
+        ...wo,
+        asset: picked
+          ? {
+              id: picked.id,
+              name: picked.name,
+              assetId: picked.assetId,
+              tracksMachineDowntime: picked.tracksMachineDowntime,
+            }
+          : null,
+        ...(picked?.tracksMachineDowntime === false ? { countsMachineDowntime: false } : {}),
+      };
+    });
+    setMachinePickerVisible(false);
+    try {
+      await apiFetch<{ ok: true }>(`/api/work-orders/${woId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ assetId: nextId }),
+      });
+      void loadWorkOrders();
+      void openWorkOrder(woId, { silent: true });
+    } catch (error) {
+      setSelectedWorkOrder(snapshot);
+      setDetailError(error instanceof Error ? error.message : "No se pudo asignar la máquina.");
+    } finally {
+      setMachineSaving(false);
     }
   }
 
@@ -2238,6 +2319,31 @@ function AppContent() {
     return flattenChecklistTreeForDisplay(list);
   }, [selectedWorkOrder?.id, selectedWorkOrder?.checklist]);
 
+  const displayChecklistGroups = useMemo(() => {
+    const list = selectedWorkOrder?.checklist;
+    if (!list?.length || !displayChecklist.length) return [];
+    return groupFlattenedChecklistBySection(displayChecklist, list);
+  }, [selectedWorkOrder?.checklist, displayChecklist]);
+
+  const checklistSectionExpandKey = useCallback(
+    (sectionId: string) =>
+      selectedWorkOrderId ? `${selectedWorkOrderId}:${sectionId}` : sectionId,
+    [selectedWorkOrderId]
+  );
+
+  const isChecklistSectionExpanded = useCallback(
+    (sectionId: string) => checklistSectionExpanded[checklistSectionExpandKey(sectionId)] !== false,
+    [checklistSectionExpanded, checklistSectionExpandKey]
+  );
+
+  const toggleChecklistSectionExpanded = useCallback((sectionId: string) => {
+    const key = checklistSectionExpandKey(sectionId);
+    setChecklistSectionExpanded((prev) => ({
+      ...prev,
+      [key]: prev[key] === false,
+    }));
+  }, [checklistSectionExpandKey]);
+
   const detailSlideDockVisible =
     selectedWorkOrder != null &&
     !detailLoading &&
@@ -2550,20 +2656,53 @@ function AppContent() {
                             </View>
                           </>
                         ) : null}
-                        {selectedWorkOrder.asset ? (
-                          <>
-                            <View style={styles.detailRowDivider} />
-                            <View style={styles.detailRow}>
-                              <Text style={styles.detailRowLabel}>Activo</Text>
-                              <View style={styles.detailRowValue}>
-                                <Text style={styles.detailRowValueText} numberOfLines={2}>
-                                  {selectedWorkOrder.asset.name}
-                                </Text>
-                                <Text style={styles.detailRowSub}>{selectedWorkOrder.asset.assetId}</Text>
-                              </View>
-                            </View>
-                          </>
-                        ) : null}
+                        <View style={styles.detailRowDivider} />
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailRowLabel}>Máquina</Text>
+                          <View style={styles.detailRowValue}>
+                            {selectedWorkOrder.status === "completed" ||
+                            selectedWorkOrder.status === "cancelled" ? (
+                              selectedWorkOrder.asset ? (
+                                <>
+                                  <Text style={styles.detailRowValueText} numberOfLines={2}>
+                                    {selectedWorkOrder.asset.name}
+                                  </Text>
+                                  <Text style={styles.detailRowSub}>
+                                    {selectedWorkOrder.asset.assetId}
+                                  </Text>
+                                </>
+                              ) : (
+                                <Text style={styles.detailRowMuted}>Sin máquina</Text>
+                              )
+                            ) : (
+                              <Pressable
+                                style={styles.machinePickerTrigger}
+                                onPress={() => setMachinePickerVisible(true)}
+                                disabled={machineSaving || machinesLoading}
+                                accessibilityRole="button"
+                                accessibilityLabel="Seleccionar máquina"
+                              >
+                                {machineSaving ? (
+                                  <ActivityIndicator size="small" color={theme.primary} />
+                                ) : selectedWorkOrder.asset ? (
+                                  <>
+                                    <Text style={styles.detailRowValueText} numberOfLines={2}>
+                                      {selectedWorkOrder.asset.name}
+                                    </Text>
+                                    <Text style={styles.detailRowSub}>
+                                      {selectedWorkOrder.asset.assetId}
+                                    </Text>
+                                  </>
+                                ) : (
+                                  <Text style={styles.detailRowMuted}>
+                                    {machinesLoading ? "Cargando…" : "Seleccionar máquina…"}
+                                  </Text>
+                                )}
+                                <Ionicons name="chevron-down" size={18} color={theme.zinc500} />
+                              </Pressable>
+                            )}
+                          </View>
+                        </View>
                         <View style={styles.detailRowDivider} />
                         <View style={styles.detailRow}>
                           <Text style={styles.detailRowLabel}>Vencimiento</Text>
@@ -2769,27 +2908,34 @@ function AppContent() {
                               editar el checklist.
                             </Text>
                           ) : null}
-                          {displayChecklist.map((item, displayIdx) => {
+                          <View style={styles.checklistGroupsStack}>
+                          {displayChecklistGroups.map((group, groupIdx) => {
+                            const renderChecklistItem = (
+                              item: (typeof displayChecklist)[number],
+                              ctx: { insideSection: boolean; loose?: boolean; isLast?: boolean }
+                            ) => {
                             const depth = checklistItemDepth(item, selectedWorkOrder.checklist);
-                            const indent = { marginLeft: Math.min(depth, 8) * 12 };
-                            return item.type === "section" ? (
-                              <View
-                                key={item.id}
-                                style={[
-                                  styles.checklistSectionHeading,
-                                  displayIdx === 0 ? styles.checklistSectionHeadingFirst : null,
-                                  indent,
-                                ]}
-                              >
-                                <Text style={styles.checklistSectionTitle}>{item.label}</Text>
-                              </View>
-                            ) : item.type === "step" ? (
+                            const indent = ctx.insideSection
+                              ? undefined
+                              : { marginLeft: Math.min(depth, 8) * 12 };
+                            const rowStyle = ctx.insideSection
+                              ? [
+                                  styles.checklistSectionRow,
+                                  ctx.isLast ? styles.checklistSectionRowLast : null,
+                                ]
+                              : ctx.loose
+                                ? [
+                                    styles.checklistLooseRow,
+                                    ctx.isLast ? styles.checklistLooseRowLast : null,
+                                    indent,
+                                  ]
+                                : [styles.checklistCard, indent];
+                            return item.type === "step" ? (
                               <Pressable
                                 key={item.id}
                                 style={[
-                                  styles.checklistCard,
+                                  ...rowStyle,
                                   !detailCanEditChecklist && styles.checklistCardDisabled,
-                                  indent,
                                 ]}
                                 onPress={() =>
                                   detailCanEditChecklist &&
@@ -2824,7 +2970,23 @@ function AppContent() {
                                 </View>
                               </Pressable>
                             ) : item.type === "text_block" ? (
-                              <View key={item.id} style={[{ marginBottom: 10 }, indent]}>
+                              <View
+                                key={item.id}
+                                style={[
+                                  ctx.insideSection
+                                    ? [
+                                        styles.checklistSectionRow,
+                                        ctx.isLast ? styles.checklistSectionRowLast : null,
+                                      ]
+                                    : ctx.loose
+                                      ? [
+                                          styles.checklistLooseRow,
+                                          ctx.isLast ? styles.checklistLooseRowLast : null,
+                                          indent,
+                                        ]
+                                      : [{ marginBottom: 10 }, indent],
+                                ]}
+                              >
                                 {item.fieldType === "title" ? (
                                   <Text style={styles.checklistTextBlockTitle}>{item.label}</Text>
                                 ) : item.fieldType === "subtitle" ? (
@@ -2834,7 +2996,12 @@ function AppContent() {
                                 )}
                               </View>
                             ) : (
-                              <View key={item.id} style={[styles.checklistCard, indent]}>
+                              <View
+                                key={item.id}
+                                style={[
+                                  ...rowStyle,
+                                ]}
+                              >
                                 {item.fieldType !== "checkbox" ? (
                                   <Text style={styles.checklistFieldLabel}>
                                     {item.label}
@@ -3123,7 +3290,76 @@ function AppContent() {
                                 )}
                               </View>
                             );
+                            };
+                            if (group.kind === "section") {
+                              if (group.items.length === 0) {
+                                return (
+                                  <Text
+                                    key={group.section.id}
+                                    style={[
+                                      styles.checklistGroupHeading,
+                                      groupIdx > 0 ? styles.checklistSectionCardGap : null,
+                                    ]}
+                                  >
+                                    {group.section.label}
+                                  </Text>
+                                );
+                              }
+                              const sectionExpanded = isChecklistSectionExpanded(group.section.id);
+                              return (
+                                <View
+                                  key={group.section.id}
+                                  style={[
+                                    styles.checklistSectionCard,
+                                    groupIdx > 0 ? styles.checklistSectionCardGap : null,
+                                  ]}
+                                >
+                                  <Pressable
+                                    style={styles.checklistSectionCardHeader}
+                                    onPress={() => toggleChecklistSectionExpanded(group.section.id)}
+                                    accessibilityRole="button"
+                                    accessibilityState={{ expanded: sectionExpanded }}
+                                    accessibilityLabel={`${group.section.label}, ${sectionExpanded ? "contraer" : "expandir"} sección`}
+                                  >
+                                    <Text style={styles.checklistSectionTitle}>{group.section.label}</Text>
+                                    <Ionicons
+                                      name={sectionExpanded ? "chevron-up" : "chevron-down"}
+                                      size={20}
+                                      color={theme.zinc600}
+                                    />
+                                  </Pressable>
+                                  {sectionExpanded ? (
+                                    <View style={styles.checklistSectionCardBody}>
+                                      {group.items.map((item, itemIdx) =>
+                                        renderChecklistItem(item, {
+                                          insideSection: true,
+                                          isLast: itemIdx === group.items.length - 1,
+                                        })
+                                      )}
+                                    </View>
+                                  ) : null}
+                                </View>
+                              );
+                            }
+                            return (
+                              <View
+                                key={`loose-${groupIdx}`}
+                                style={[
+                                  styles.checklistLooseGroup,
+                                  groupIdx > 0 ? styles.checklistSectionCardGap : null,
+                                ]}
+                              >
+                                {group.items.map((item, itemIdx) =>
+                                  renderChecklistItem(item, {
+                                    insideSection: false,
+                                    loose: true,
+                                    isLast: itemIdx === group.items.length - 1,
+                                  })
+                                )}
+                              </View>
+                            );
                           })}
+                          </View>
                         </View>
                       </View>
                     ) : null}
@@ -3291,6 +3527,75 @@ function AppContent() {
                     )}
                   </View>
                 ) : null}
+
+                <Modal
+                  visible={machinePickerVisible}
+                  transparent
+                  animationType="fade"
+                  onRequestClose={() => setMachinePickerVisible(false)}
+                >
+                  <View style={styles.checklistDropdownModalRoot}>
+                    <Pressable
+                      style={styles.checklistDropdownBackdrop}
+                      onPress={() => setMachinePickerVisible(false)}
+                    />
+                    <View
+                      style={[
+                        styles.checklistDropdownSheet,
+                        { paddingBottom: Math.max(insets.bottom, 16) },
+                      ]}
+                    >
+                      <Text style={styles.checklistDropdownSheetTitle}>Máquina</Text>
+                      <ScrollView
+                        style={styles.checklistDropdownScroll}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator
+                      >
+                        <Pressable
+                          style={styles.checklistDropdownOption}
+                          onPress={() => void patchWorkOrderAsset(null)}
+                        >
+                          <Text style={styles.checklistDropdownOptionTextMuted}>Sin máquina</Text>
+                        </Pressable>
+                        {machines.map((m) => {
+                          const selected = selectedWorkOrder?.asset?.id === m.id;
+                          return (
+                            <Pressable
+                              key={m.id}
+                              style={[
+                                styles.checklistDropdownOption,
+                                selected && styles.checklistDropdownOptionSelected,
+                              ]}
+                              onPress={() => void patchWorkOrderAsset(m.id)}
+                            >
+                              <View style={{ flex: 1, minWidth: 0 }}>
+                                <Text
+                                  style={[
+                                    styles.checklistDropdownOptionText,
+                                    selected && styles.checklistDropdownOptionTextSelected,
+                                  ]}
+                                  numberOfLines={2}
+                                >
+                                  {m.name}
+                                </Text>
+                                <Text style={styles.detailRowSub}>{m.assetId}</Text>
+                              </View>
+                              {selected ? (
+                                <Ionicons name="checkmark" size={20} color={theme.primary} />
+                              ) : null}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                      <Pressable
+                        style={styles.checklistDropdownCloseBtn}
+                        onPress={() => setMachinePickerVisible(false)}
+                      >
+                        <Text style={styles.checklistDropdownCloseBtnText}>Cerrar</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </Modal>
 
                 <Modal
                   visible={checklistDropdownModal != null}
@@ -4607,6 +4912,14 @@ const styles = StyleSheet.create({
   detailRowInline: { flexDirection: "row", alignItems: "center", gap: 10 },
   detailRowValueText: { fontSize: 14, fontWeight: "600", color: theme.zinc900 },
   detailRowSub: { fontSize: 12, fontWeight: "400", color: theme.zinc500, marginTop: 2 },
+  machinePickerTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    minHeight: 40,
+    paddingVertical: 4,
+  },
   downtimeSwitchRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -5026,21 +5339,80 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
-  checklistSectionHeading: {
+  checklistSectionCard: {
+    marginTop: 4,
+    backgroundColor: theme.white,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: theme.zinc300,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  checklistSectionCardGap: {
     marginTop: 16,
-    marginBottom: 8,
-    paddingBottom: 8,
+  },
+  checklistSectionCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    backgroundColor: theme.zinc100,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.zinc200,
   },
-  checklistSectionHeadingFirst: {
-    marginTop: 4,
+  checklistSectionCardBody: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    backgroundColor: theme.white,
+  },
+  checklistGroupsStack: {
+    gap: 16,
+  },
+  checklistLooseGroup: {
+    backgroundColor: theme.white,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: theme.zinc300,
+    overflow: "hidden",
+  },
+  checklistLooseRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.zinc100,
+    backgroundColor: theme.white,
+  },
+  checklistLooseRowLast: {
+    borderBottomWidth: 0,
+  },
+  checklistSectionRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.zinc100,
+    backgroundColor: theme.white,
+  },
+  checklistSectionRowLast: {
+    borderBottomWidth: 0,
   },
   checklistSectionTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
     color: theme.zinc900,
     letterSpacing: 0.15,
+  },
+  checklistGroupHeading: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: theme.zinc900,
+    marginTop: 4,
+    marginBottom: 2,
   },
   checklistTextBlockTitle: {
     fontSize: 18,

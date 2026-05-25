@@ -1,6 +1,6 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
@@ -119,6 +119,20 @@
       "version": "6",
       "when": 1780200000000,
       "tag": "0017_asset_tracks_machine_downtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1780300000000,
+      "tag": "0018_dashboard_widget_thresholds",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1780400000000,
+      "tag": "0019_dashboard_widget_chart_title",
       "breakpoints": true
     }
   ]

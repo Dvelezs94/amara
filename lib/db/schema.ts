@@ -327,6 +327,13 @@ export const dashboardWidgets = pgTable("dashboard_widgets", {
   chartType: text("chart_type", { enum: ["line", "bar", "pie"] })
     .notNull()
     .default("line"),
+  /** Horizontal reference lines for numeric time-series charts (value + optional label). */
+  thresholds: jsonb("thresholds")
+    .$type<{ id: string; value: number; label?: string; color?: string }[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  /** Título personalizado del gráfico; null = título por defecto según campos. */
+  chartTitle: text("chart_title"),
   dateFrom: text("date_from"), // YYYY-MM-DD or null
   dateTo: text("date_to"),
   sortOrder: integer("sort_order").notNull().default(0),

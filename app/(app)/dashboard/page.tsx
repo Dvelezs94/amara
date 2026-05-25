@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import Link from "next/link";
 import {
   GripVertical,
@@ -13,8 +13,10 @@ import {
   ChevronsUp,
   Equal,
   Minus,
+  Pencil,
 } from "lucide-react";
 import { AnalyticsChartCard } from "@/components/AnalyticsChartCard";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   DashboardDateRangeModal,
   formatDashboardRangeTrigger,
@@ -36,6 +38,8 @@ type Widget = {
   /** Múltiples campos del mismo tipo para un mismo gráfico */
   fieldLabels?: string[];
   chartType?: "line" | "bar" | "pie" | string;
+  thresholds?: { id: string; value: number; label?: string; color?: string }[];
+  chartTitle?: string | null;
   dateFrom: string | null;
   dateTo: string | null;
   sortOrder: number;
@@ -101,8 +105,20 @@ export default function DashboardPage() {
   const WIDGET_SIZE_KEY = "dashboard-widget-sizes-v1";
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
   const [chartAutoRefresh, setChartAutoRefresh] = useState(true);
+  const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null);
+  const [widgetDeleteConfirmId, setWidgetDeleteConfirmId] = useState<string | null>(null);
+  const [widgetDeleteLoading, setWidgetDeleteLoading] = useState(false);
 
   const showLists = isDefaultLast30DaysRange(range);
+
+  function patchWidget(id: string, patch: Partial<Widget>) {
+    setWidgets((prev) => prev.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  }
+
+  /** Evita que los clics en la barra de herramientas inicien el arrastre del widget. */
+  function stopWidgetDrag(e: MouseEvent | PointerEvent) {
+    e.stopPropagation();
+  }
 
   useEffect(() => {
     try {
@@ -222,9 +238,18 @@ export default function DashboardPage() {
     return `${value}${suffix}`;
   }
 
-  async function removeWidget(id: string) {
-    await fetch(`/api/dashboard/widgets/${id}`, { method: "DELETE" });
-    setWidgets((prev) => prev.filter((w) => w.id !== id));
+  async function confirmRemoveWidget() {
+    const id = widgetDeleteConfirmId;
+    if (!id) return;
+    setWidgetDeleteLoading(true);
+    try {
+      await fetch(`/api/dashboard/widgets/${id}`, { method: "DELETE" });
+      setWidgets((prev) => prev.filter((w) => w.id !== id));
+      if (editingWidgetId === id) setEditingWidgetId(null);
+      setWidgetDeleteConfirmId(null);
+    } finally {
+      setWidgetDeleteLoading(false);
+    }
   }
 
   function handleDragStart(e: React.DragEvent, id: string) {
@@ -531,9 +556,11 @@ export default function DashboardPage() {
               className={`relative rounded-lg border-2 bg-white transition-colors ${
                 draggedId === w.id
                   ? "opacity-50 border-primary-300"
-                  : dropIndex === index && draggedId !== w.id
-                    ? "border-primary-400 bg-primary-50/50"
-                    : "border-zinc-200"
+                  : editingWidgetId === w.id
+                    ? "border-primary-500 ring-1 ring-primary-200"
+                    : dropIndex === index && draggedId !== w.id
+                      ? "border-primary-400 bg-primary-50/50"
+                      : "border-zinc-200"
               } ${
                 (widgetSizes[w.id] ?? "md") === "lg"
                   ? "md:col-span-2 xl:col-span-4"
@@ -552,6 +579,8 @@ export default function DashboardPage() {
                     <button
                       key={size}
                       type="button"
+                      onPointerDown={stopWidgetDrag}
+                      onMouseDown={stopWidgetDrag}
                       onClick={() => setWidgetSize(w.id, size)}
                       className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
                         (widgetSizes[w.id] ?? "md") === size
@@ -566,9 +595,32 @@ export default function DashboardPage() {
                   ))}
                   <button
                     type="button"
-                    onClick={() => removeWidget(w.id)}
-                    className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50"
+                    onPointerDown={stopWidgetDrag}
+                    onMouseDown={stopWidgetDrag}
+                    onClick={() =>
+                      setEditingWidgetId((cur) => (cur === w.id ? null : w.id))
+                    }
+                    className={`rounded-lg p-1.5 ${
+                      editingWidgetId === w.id
+                        ? "bg-primary-600 text-white"
+                        : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700"
+                    }`}
+                    aria-pressed={editingWidgetId === w.id}
+                    aria-label={
+                      editingWidgetId === w.id ? "Terminar edición" : "Editar gráfico"
+                    }
+                    title={editingWidgetId === w.id ? "Terminar edición" : "Editar gráfico"}
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    onPointerDown={stopWidgetDrag}
+                    onMouseDown={stopWidgetDrag}
+                    onClick={() => setWidgetDeleteConfirmId(w.id)}
+                    className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
                     aria-label="Quitar del dashboard"
+                    title="Quitar del dashboard"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -577,23 +629,39 @@ export default function DashboardPage() {
               <div className="p-3">
                 <AnalyticsChartCard
                   widgetId={w.id}
+                  editMode={editingWidgetId === w.id}
                   initialChartType={w.chartType}
+                  initialThresholds={w.thresholds}
                   templateId={w.templateId}
                   templateName={w.templateName}
                   fieldLabel={w.fieldLabel}
                   fieldLabels={w.fieldLabels}
                   dateFrom={range.from}
                   dateTo={range.to}
+                  title={w.chartTitle}
                   size={widgetSizes[w.id] ?? "md"}
                   refreshIntervalMs={
                     chartAutoRefresh ? CHART_REFRESH_INTERVAL_MS : undefined
                   }
+                  onSettingsChange={(patch) => patchWidget(w.id, patch)}
                 />
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={widgetDeleteConfirmId != null}
+        title="Quitar gráfico"
+        message="¿Quitar este gráfico del dashboard? Esta acción no se puede deshacer."
+        confirmLabel="Quitar"
+        onConfirm={() => void confirmRemoveWidget()}
+        onCancel={() => {
+          if (!widgetDeleteLoading) setWidgetDeleteConfirmId(null);
+        }}
+        loading={widgetDeleteLoading}
+      />
     </div>
   );
 }

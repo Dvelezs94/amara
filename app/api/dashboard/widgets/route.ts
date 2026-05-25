@@ -5,6 +5,7 @@ import { dashboardWidgets } from "@/lib/db/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { parseChartTypeFromRequest } from "@/lib/dashboard-widget-chart-type";
+import { parseChartThresholds } from "@/lib/chart-thresholds";
 
 export async function GET() {
   const session = await getSession();
@@ -24,16 +25,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await req.json().catch(() => ({}));
-  const { templateId, templateName, fieldLabel, fieldLabels: rawFieldLabels, dateFrom, dateTo, chartType: rawChartType } =
-    body as {
-      templateId?: unknown;
-      templateName?: unknown;
-      fieldLabel?: unknown;
-      fieldLabels?: unknown;
-      dateFrom?: unknown;
-      dateTo?: unknown;
-      chartType?: unknown;
-    };
+  const {
+    templateId,
+    templateName,
+    fieldLabel,
+    fieldLabels: rawFieldLabels,
+    dateFrom,
+    dateTo,
+    chartType: rawChartType,
+    thresholds: rawThresholds,
+    chartTitle: rawChartTitle,
+  } = body as {
+    templateId?: unknown;
+    templateName?: unknown;
+    fieldLabel?: unknown;
+    fieldLabels?: unknown;
+    dateFrom?: unknown;
+    dateTo?: unknown;
+    chartType?: unknown;
+    thresholds?: unknown;
+    chartTitle?: unknown;
+  };
   const fromArray = Array.isArray(rawFieldLabels)
     ? rawFieldLabels.map((s) => String(s).trim()).filter(Boolean)
     : [];
@@ -51,6 +63,11 @@ export async function POST(req: Request) {
   }
   const primaryLabel = fieldLabels[0]!;
   const chartType = parseChartTypeFromRequest(rawChartType);
+  const thresholds = parseChartThresholds(rawThresholds);
+  const chartTitle =
+    rawChartTitle != null && String(rawChartTitle).trim()
+      ? String(rawChartTitle).trim().slice(0, 200)
+      : null;
   const maxOrder = await db
     .select({ sortOrder: dashboardWidgets.sortOrder })
     .from(dashboardWidgets)
@@ -68,6 +85,8 @@ export async function POST(req: Request) {
     fieldLabel: primaryLabel,
     fieldLabels,
     chartType,
+    thresholds,
+    chartTitle,
     dateFrom: dateFrom != null ? String(dateFrom).slice(0, 10) : null,
     dateTo: dateTo != null ? String(dateTo).slice(0, 10) : null,
     sortOrder,

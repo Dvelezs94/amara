@@ -10,13 +10,27 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
   PieChart,
   Pie,
   Cell,
   Legend,
 } from "recharts";
+import { NumberTimeSeriesChart } from "@/components/NumberTimeSeriesChart";
+import { ChartThresholdEditor } from "@/components/ChartThresholdEditor";
+import { EditableChartTitle } from "@/components/EditableChartTitle";
+import {
+  analyticsChartTitleStorageKey,
+  buildDefaultAnalyticsChartTitle,
+  inferAnalyticsChartTitlePreset,
+  loadChartTitleFromStorage,
+  saveChartTitleToStorage,
+} from "@/lib/analytics-chart-title";
+import {
+  analyticsThresholdsStorageKey,
+  loadThresholdsFromStorage,
+  saveThresholdsToStorage,
+  type ChartThreshold,
+} from "@/lib/chart-thresholds";
 import { LayoutDashboard, X } from "lucide-react";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
@@ -60,6 +74,24 @@ export function AnalyticsCharts() {
   const [chartType, setChartType] = useState<"line" | "bar" | "pie">("line");
   const [addToDashboardStatus, setAddToDashboardStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [fieldsModalOpen, setFieldsModalOpen] = useState(false);
+  const [thresholds, setThresholds] = useState<ChartThreshold[]>([]);
+  const [chartTitle, setChartTitle] = useState("");
+
+  const thresholdsStorageKey = useMemo(
+    () =>
+      templateId && selectedFieldLabels.length > 0
+        ? analyticsThresholdsStorageKey(templateId, selectedFieldLabels)
+        : null,
+    [templateId, selectedFieldLabels.join("|")]
+  );
+
+  useEffect(() => {
+    if (!thresholdsStorageKey) {
+      setThresholds([]);
+      return;
+    }
+    setThresholds(loadThresholdsFromStorage(thresholdsStorageKey));
+  }, [thresholdsStorageKey]);
 
   useEffect(() => {
     setFieldsModalOpen(false);
@@ -124,6 +156,28 @@ export function AnalyticsCharts() {
         : null,
     [workOrders, selectedFieldLabels]
   );
+
+  const chartTitleStorageKey = useMemo(
+    () =>
+      templateId && selectedFieldLabels.length > 0
+        ? analyticsChartTitleStorageKey(templateId, selectedFieldLabels)
+        : null,
+    [templateId, selectedFieldLabels.join("|")]
+  );
+
+  const defaultChartTitle = useMemo(() => {
+    const preset = inferAnalyticsChartTitlePreset(fieldType, selectedFieldLabels.length);
+    if (!preset) return "";
+    return buildDefaultAnalyticsChartTitle(selectedFieldLabels, preset);
+  }, [fieldType, selectedFieldLabels]);
+
+  useEffect(() => {
+    if (!chartTitleStorageKey || !defaultChartTitle) {
+      setChartTitle("");
+      return;
+    }
+    setChartTitle(loadChartTitleFromStorage(chartTitleStorageKey) ?? defaultChartTitle);
+  }, [chartTitleStorageKey, defaultChartTitle]);
 
   const selectedFieldItems = useMemo(
     () =>
@@ -354,6 +408,8 @@ export function AnalyticsCharts() {
                     dateFrom: from || null,
                     dateTo: to || null,
                     chartType: fieldType === "number" ? (chartType === "pie" ? "line" : chartType) : chartType,
+                    thresholds: fieldType === "number" ? thresholds : [],
+                    chartTitle: chartTitle.trim() || null,
                   }),
                 });
                 if (res.ok) {
@@ -387,52 +443,29 @@ export function AnalyticsCharts() {
         multiNumber &&
         multiNumber.data.length > 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {selectedFieldLabels.join(", ")} en el tiempo (punto por orden)
-          </h2>
-          <div className="h-64 md:h-80">
-            {chartType === "bar" ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={multiNumber.data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                  <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={20} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Legend />
-                  {multiNumber.series.map((s, i) => (
-                    <Bar
-                      key={s.key}
-                      dataKey={s.key}
-                      fill={COLORS[i % COLORS.length]}
-                      name={s.name}
-                      radius={[2, 2, 0, 0]}
-                    />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={multiNumber.data}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                  <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={20} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Legend />
-                  {multiNumber.series.map((s, i) => (
-                    <Line
-                      key={s.key}
-                      type="monotone"
-                      dataKey={s.key}
-                      stroke={COLORS[i % COLORS.length]}
-                      strokeWidth={2}
-                      name={s.name}
-                      dot={{ r: 3 }}
-                      connectNulls
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            )}
+          <EditableChartTitle
+            value={chartTitle}
+            onChange={setChartTitle}
+            onCommit={(next) => {
+              if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
+            }}
+          />
+          <ChartThresholdEditor
+            thresholds={thresholds}
+            onChange={(next) => {
+              setThresholds(next);
+              if (thresholdsStorageKey) saveThresholdsToStorage(thresholdsStorageKey, next);
+            }}
+          />
+          <div className="h-64 md:h-80 mt-3">
+            <NumberTimeSeriesChart
+              data={multiNumber.data}
+              series={multiNumber.series}
+              chartType={chartType === "bar" ? "bar" : "line"}
+              thresholds={thresholds}
+              colors={COLORS}
+              tickFontSize={12}
+            />
           </div>
         </div>
       )}
@@ -442,9 +475,13 @@ export function AnalyticsCharts() {
         multiCategorical &&
         multiCategorical.data.length > 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {selectedFieldLabels.join(", ")} — comparación por categoría
-          </h2>
+          <EditableChartTitle
+            value={chartTitle}
+            onChange={setChartTitle}
+            onCommit={(next) => {
+              if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
+            }}
+          />
           <div className="h-64 md:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={multiCategorical.data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -473,9 +510,13 @@ export function AnalyticsCharts() {
         selectedFieldLabels.length === 1 &&
         singleCategoricalChartData.length > 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {selectedFieldLabels[0]} — distribución
-          </h2>
+          <EditableChartTitle
+            value={chartTitle}
+            onChange={setChartTitle}
+            onCommit={(next) => {
+              if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
+            }}
+          />
           <div className="h-64 md:h-80">
             {chartType === "pie" ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -517,9 +558,13 @@ export function AnalyticsCharts() {
         selectedFieldLabels.length > 1 &&
         multiCheckboxBars.some((r) => r.sí + r.no > 0) && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {selectedFieldLabels.join(", ")} — sí / no por campo
-          </h2>
+          <EditableChartTitle
+            value={chartTitle}
+            onChange={setChartTitle}
+            onCommit={(next) => {
+              if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
+            }}
+          />
           <div className="h-64 md:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={multiCheckboxBars} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -541,9 +586,13 @@ export function AnalyticsCharts() {
         selectedFieldLabels.length === 1 &&
         (singleCheckboxChartData[0]?.value > 0 || singleCheckboxChartData[1]?.value > 0) && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {selectedFieldLabels[0]} — sí / no
-          </h2>
+          <EditableChartTitle
+            value={chartTitle}
+            onChange={setChartTitle}
+            onCommit={(next) => {
+              if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
+            }}
+          />
           <div className="h-64 md:h-80">
             {chartType === "bar" ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -582,9 +631,13 @@ export function AnalyticsCharts() {
 
       {selectedFieldLabels.length > 0 && fieldType === "date" && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-medium text-zinc-700 mb-2">
-            {selectedFieldLabels.join(", ")}
-          </h2>
+          <EditableChartTitle
+            value={chartTitle}
+            onChange={setChartTitle}
+            onCommit={(next) => {
+              if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
+            }}
+          />
           <p className="text-zinc-500 text-sm">
             Campos de fecha: vista de lista. Gráfico agregado próximamente.
           </p>

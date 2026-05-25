@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { checklistItemDepth } from "@/lib/checklist-item-tree";
+import { ChecklistGroupedList } from "@/components/ChecklistGroupedList";
+import {
+  checklistItemDepth,
+  flattenChecklistTreeForDisplay,
+} from "@/lib/checklist-item-tree";
 
 export type SerializableRevision = {
   id: string;
@@ -19,11 +23,45 @@ export type SerializableRevision = {
 };
 
 type ItemSnapshot = {
+  id?: string;
+  parentItemId?: string | null;
+  sortOrder?: number;
   type?: string;
   label?: string;
   fieldType?: string | null;
   options?: string[] | null;
 };
+
+type SnapshotTreeItem = {
+  id: string;
+  parentItemId: string | null;
+  sortOrder: number;
+  type: string;
+  label: string;
+  fieldType: string | null;
+  options: string[] | null;
+};
+
+function normalizeSnapshotItems(items: ItemSnapshot[]): SnapshotTreeItem[] {
+  return items.map((it, index) => {
+    const o = it as Record<string, unknown>;
+    const id =
+      typeof o.id === "string" && String(o.id).trim()
+        ? String(o.id).trim()
+        : `snap-${index}`;
+    const parentItemId =
+      typeof o.parentItemId === "string" && String(o.parentItemId).trim()
+        ? String(o.parentItemId).trim()
+        : null;
+    const sortOrder = typeof o.sortOrder === "number" ? o.sortOrder : index;
+    const type = typeof o.type === "string" ? o.type : "custom_field";
+    const label = typeof o.label === "string" ? o.label : "";
+    const fieldType =
+      typeof o.fieldType === "string" || o.fieldType === null ? (o.fieldType as string | null) : null;
+    const options = Array.isArray(o.options) ? (o.options as string[]) : null;
+    return { id, parentItemId, sortOrder, type, label, fieldType, options };
+  });
+}
 
 type ItemChange = {
   kind: "added" | "removed" | "edited";
@@ -229,6 +267,13 @@ export function ChecklistRevisionInspect({
   }
 
   const snapshot = getAfterSnapshot(revision.metadata);
+  const snapshotDisplay = useMemo(() => {
+    if (!snapshot?.items.length) {
+      return { treeRows: [] as SnapshotTreeItem[], flat: [] as SnapshotTreeItem[] };
+    }
+    const treeRows = normalizeSnapshotItems(snapshot.items);
+    return { treeRows, flat: flattenChecklistTreeForDisplay(treeRows) };
+  }, [snapshot]);
 
   return (
     <>
@@ -405,70 +450,80 @@ export function ChecklistRevisionInspect({
             </div>
             <div className="rounded-lg border border-zinc-200 bg-white p-3">
               <p className="text-xs font-medium text-zinc-500">Elementos</p>
-              <ul className="mt-2 divide-y divide-zinc-100">
-                {(() => {
-                  const depthRows = snapshot.items.map((it, i) => {
-                    const o = it as Record<string, unknown>;
-                    const id =
-                      typeof o.id === "string" && String(o.id).trim()
-                        ? String(o.id).trim()
-                        : `snap-${i}`;
-                    const parentItemId =
-                      typeof o.parentItemId === "string" && String(o.parentItemId).trim()
-                        ? String(o.parentItemId).trim()
-                        : null;
-                    return { id, parentItemId };
-                  });
-                  return snapshot.items.map((item, idx) => {
-                    const depth = checklistItemDepth(depthRows[idx]!, depthRows);
-                    const padStyle = { paddingLeft: Math.min(depth, 8) * 16 };
-                    return (
-                  <li
-                    key={depthRows[idx]!.id}
-                    style={padStyle}
-                    className={item.type === "section" ? "list-none py-3 first:pt-1" : undefined}
-                  >
-                    {item.type === "section" ? (
-                      <div className="border-b border-zinc-200 pb-2">
-                        <p className="text-sm font-semibold tracking-tight text-zinc-900">{item.label}</p>
-                      </div>
-                    ) : item.type === "text_block" ? (
-                      <div className="py-3">
-                        {item.fieldType === "title" ? (
-                          <h3 className="text-lg font-semibold text-zinc-900">{item.label}</h3>
-                        ) : item.fieldType === "subtitle" ? (
-                          <h4 className="text-base font-semibold text-zinc-800">{item.label}</h4>
-                        ) : (
-                          <p className="text-sm leading-relaxed text-zinc-700">{item.label}</p>
-                        )}
-                      </div>
-                    ) : item.type === "step" ? (
-                      <div className="flex items-center gap-2 py-3 text-zinc-900">
-                        <input
-                          type="checkbox"
-                          disabled
-                          checked={false}
-                          className="h-4 w-4 rounded border-zinc-300 text-primary-600 accent-primary-600"
-                        />
-                        <span className="text-zinc-900">{item.label}</span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-1.5 py-3 text-zinc-900">
-                        <label className="text-sm font-medium text-zinc-700">{item.label}</label>
-                        <input
-                          disabled
-                          value=""
-                          placeholder="Campo vacío"
-                          className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 shadow-sm"
-                          onChange={() => undefined}
-                        />
-                      </div>
-                    )}
-                  </li>
-                    );
-                  });
-                })()}
-              </ul>
+              <ChecklistGroupedList
+                flat={snapshotDisplay.flat}
+                all={snapshotDisplay.treeRows}
+                className="mt-3 space-y-5"
+                collapseContextKey={`revision-${revision.id}`}
+                renderItem={(item, { insideSection }) => {
+                  const depth = checklistItemDepth(item, snapshotDisplay.treeRows);
+                  const padStyle = { paddingLeft: Math.min(depth, 8) * 16 };
+                  const rowPad = insideSection ? "px-4 py-3" : "py-3";
+                  return (
+                    <li key={item.id} style={padStyle} className={rowPad}>
+                      {item.type === "text_block" ? (
+                        <div>
+                          {item.fieldType === "title" ? (
+                            <h3 className="text-lg font-semibold text-zinc-900">{item.label}</h3>
+                          ) : item.fieldType === "subtitle" ? (
+                            <h4 className="text-base font-semibold text-zinc-800">{item.label}</h4>
+                          ) : (
+                            <p className="text-sm leading-relaxed text-zinc-700">{item.label}</p>
+                          )}
+                        </div>
+                      ) : item.type === "step" ? (
+                        <div className="flex items-center gap-2 text-zinc-900">
+                          <input
+                            type="checkbox"
+                            disabled
+                            checked={false}
+                            className="h-4 w-4 rounded border-zinc-300 text-primary-600 accent-primary-600"
+                          />
+                          <span>{item.label}</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1.5 text-zinc-900">
+                          <label className="text-sm font-medium text-zinc-700">{item.label}</label>
+                          {item.fieldType === "checkbox" ? (
+                            <div className="self-start">
+                              <label className="inline-flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  disabled
+                                  checked={false}
+                                  className="h-4 w-4 shrink-0 rounded border-zinc-300 text-primary-600 accent-primary-600"
+                                />
+                                <span className="text-sm text-zinc-500">Marcar si aplica</span>
+                              </label>
+                            </div>
+                          ) : item.fieldType === "dropdown" ? (
+                            <select
+                              disabled
+                              value=""
+                              className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 shadow-sm"
+                            >
+                              <option value="">Seleccionar…</option>
+                              {(item.options ?? []).map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              disabled
+                              value=""
+                              placeholder="Campo vacío"
+                              className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 shadow-sm"
+                              onChange={() => undefined}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                }}
+              />
             </div>
           </div>
         )}

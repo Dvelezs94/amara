@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getChecklistTemplateById } from "@/lib/checklist-templates";
-import { checklistItemDepth } from "@/lib/checklist-item-tree";
+import { checklistItemDepth, flattenChecklistTreeForDisplay } from "@/lib/checklist-item-tree";
+import { ChecklistGroupedList } from "@/components/ChecklistGroupedList";
 import { PrintChecklistButton } from "./PrintChecklistButton";
 
 export default async function ChecklistTemplatePage({
@@ -32,6 +33,17 @@ export default async function ChecklistTemplatePage({
   if (!template) notFound();
 
   const notice = resolvedSearchParams?.notice;
+  const checklistRows = template.items ?? [];
+  const checklistTreeRows = checklistRows.map((r) => ({
+    id: r.id,
+    parentItemId: r.parentItemId ?? null,
+    sortOrder: r.sortOrder,
+    type: r.type,
+    label: r.label,
+    fieldType: r.fieldType,
+    options: r.options,
+  }));
+  const checklistFlat = flattenChecklistTreeForDisplay(checklistTreeRows);
 
   return (
     <div className="space-y-4">
@@ -79,26 +91,22 @@ export default async function ChecklistTemplatePage({
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <h2 className="text-sm font-medium text-zinc-500">Elementos</h2>
-          <ul className="mt-2 divide-y divide-zinc-100">
-            {(template.items ?? []).map((item) => {
-              const rows = template.items ?? [];
+          <ChecklistGroupedList
+            flat={checklistFlat}
+            all={checklistTreeRows}
+            className="mt-3 space-y-5"
+            collapseContextKey={id}
+            renderItem={(item, { insideSection }) => {
               const depth = checklistItemDepth(
                 { id: item.id, parentItemId: item.parentItemId ?? null },
-                rows.map((r) => ({ id: r.id, parentItemId: r.parentItemId ?? null }))
+                checklistTreeRows
               );
               const padStyle = { paddingLeft: Math.min(depth, 8) * 16 };
+              const rowPad = insideSection ? "px-4 py-3" : "py-3";
               return (
-              <li
-                key={item.id}
-                style={padStyle}
-                className={item.type === "section" ? "list-none py-3 first:pt-1" : undefined}
-              >
-                {item.type === "section" ? (
-                  <div className="border-b border-zinc-200 pb-2">
-                    <p className="text-sm font-semibold tracking-tight text-zinc-900">{item.label}</p>
-                  </div>
-                ) : item.type === "text_block" ? (
-                  <div className="py-3">
+              <li key={item.id} style={padStyle} className={rowPad}>
+                {item.type === "text_block" ? (
+                  <div>
                     {item.fieldType === "title" ? (
                       <h3 className="text-lg font-semibold text-zinc-900">{item.label}</h3>
                     ) : item.fieldType === "subtitle" ? (
@@ -184,8 +192,8 @@ export default async function ChecklistTemplatePage({
                 )}
               </li>
               );
-            })}
-          </ul>
+            }}
+          />
         </div>
       </div>
     </div>

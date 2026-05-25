@@ -60,7 +60,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 ### Data layer
 
 - **Drizzle + PostgreSQL** (`pg` connection pool) — schema in `lib/db/schema.ts` (users, assets, work orders, checklists, notifications, maintenance schedules, audit logs, etc.)
-- **Migrations / push** — `drizzle/`; scripts: `npm run db:*` at repo root; `DATABASE_URL` required
+- **Migrations / push** — `drizzle/` (PostgreSQL only; no SQLite); scripts: `npm run db:*` at repo root; `DATABASE_URL` must be a `postgresql://` URL
 
 ### Testing (required for agents)
 

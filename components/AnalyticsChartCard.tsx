@@ -9,13 +9,22 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
   PieChart,
   Pie,
   Cell,
   Legend,
 } from "recharts";
+import { NumberTimeSeriesChart } from "@/components/NumberTimeSeriesChart";
+import { ChartThresholdEditor } from "@/components/ChartThresholdEditor";
+import { EditableChartTitle } from "@/components/EditableChartTitle";
+import {
+  buildDefaultAnalyticsChartTitle,
+  inferAnalyticsChartTitlePreset,
+} from "@/lib/analytics-chart-title";
+import {
+  parseChartThresholds,
+  type ChartThreshold,
+} from "@/lib/chart-thresholds";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
   buildMultiCategoricalUnion,
@@ -54,6 +63,7 @@ const MIN_REFRESH_MS = 5_000;
 export function AnalyticsChartCard({
   widgetId,
   initialChartType,
+  initialThresholds,
   templateId,
   templateName,
   fieldLabel,
@@ -63,11 +73,23 @@ export function AnalyticsChartCard({
   title,
   size = "md",
   refreshIntervalMs,
+  editMode: editModeProp,
+  onSettingsChange,
 }: {
   /** Si se define, los cambios de tipo de gráfico se guardan en el widget del dashboard. */
   widgetId?: string;
+  /** En dashboard: false = solo gráfico; true = título, umbrales y tipo editables. */
+  editMode?: boolean;
+  /** Sincroniza estado local del widget tras guardar (dashboard). */
+  onSettingsChange?: (patch: {
+    chartTitle?: string | null;
+    chartType?: DashboardWidgetChartType;
+    thresholds?: ChartThreshold[];
+  }) => void;
   /** Preferencia guardada (`dashboard_widgets.chart_type`). */
   initialChartType?: string | null;
+  /** Umbrales guardados (`dashboard_widgets.thresholds`). */
+  initialThresholds?: ChartThreshold[] | null;
   templateId: string;
   templateName: string;
   fieldLabel: string;
@@ -85,9 +107,14 @@ export function AnalyticsChartCard({
     [fieldLabel, fieldLabels]
   );
 
+  const editMode = editModeProp ?? widgetId == null;
+
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [chartType, setChartType] = useState<DashboardWidgetChartType>("line");
+  const [thresholds, setThresholds] = useState<ChartThreshold[]>(() =>
+    parseChartThresholds(initialThresholds ?? [])
+  );
   const chartHeightClass =
     size === "lg" ? "h-80 md:h-96" : size === "sm" ? "h-44 md:h-52" : "h-56 md:h-64";
   const emptyHeightClass = size === "lg" ? "h-[26rem]" : size === "sm" ? "h-60" : "h-80";
@@ -191,16 +218,21 @@ export function AnalyticsChartCard({
     return buildMultiCheckboxBars(workOrders, selectedLabels);
   }, [fieldType, workOrders, selectedLabels]);
 
-  const persistWidgetChartType = useCallback(
-    (next: DashboardWidgetChartType) => {
+  const persistWidgetSettings = useCallback(
+    (patch: {
+      chartType?: DashboardWidgetChartType;
+      thresholds?: ChartThreshold[];
+      chartTitle?: string | null;
+    }) => {
       if (!widgetId) return;
+      onSettingsChange?.(patch);
       void fetch(`/api/dashboard/widgets/${widgetId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chartType: next }),
+        body: JSON.stringify(patch),
       });
     },
-    [widgetId]
+    [widgetId, onSettingsChange]
   );
 
   useEffect(() => {
@@ -208,8 +240,122 @@ export function AnalyticsChartCard({
     setChartType(clampWidgetChartType(initialChartType, fieldType, selectedLabels.length));
   }, [fieldType, selectedLabels.join("|"), initialChartType]);
 
+  useEffect(() => {
+    setThresholds(parseChartThresholds(initialThresholds ?? []));
+  }, [widgetId, JSON.stringify(initialThresholds ?? [])]);
+
   const labelsTitle = selectedLabels.join(", ");
-  const displayTitle = title ?? `${templateName} — ${labelsTitle}`;
+  const displayTitle = `${templateName} — ${labelsTitle}`;
+
+  const defaultChartTitle = useMemo(() => {
+    const preset = inferAnalyticsChartTitlePreset(fieldType, selectedLabels.length);
+    if (!preset) return displayTitle;
+    return buildDefaultAnalyticsChartTitle(selectedLabels, preset);
+  }, [fieldType, selectedLabels, displayTitle]);
+
+  const [chartTitle, setChartTitle] = useState(defaultChartTitle);
+
+  useEffect(() => {
+    setChartTitle(title?.trim() || defaultChartTitle);
+  }, [widgetId, title, defaultChartTitle]);
+
+  const commitChartTitle = useCallback(
+    (next: string) => {
+      if (!widgetId) return;
+      const trimmed = next.trim().slice(0, 200);
+      persistWidgetSettings({
+        chartTitle: trimmed && trimmed !== defaultChartTitle ? trimmed : null,
+      });
+    },
+    [widgetId, defaultChartTitle, persistWidgetSettings]
+  );
+
+  const titleControl = editMode ? (
+    <EditableChartTitle
+      value={chartTitle}
+      onChange={setChartTitle}
+      onCommit={widgetId ? commitChartTitle : undefined}
+      className="mb-0 min-w-0 flex-1"
+    />
+  ) : (
+    <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800" title={chartTitle}>
+      {chartTitle}
+    </h2>
+  );
+
+  const metaLine = (
+    <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
+  );
+
+  const editHint =
+    widgetId && editMode ? (
+      <p className="mb-2 text-[11px] text-zinc-500 leading-snug">
+        El rango de fechas sigue el selector del dashboard. Para cambiar plantilla o campos, añade un
+        gráfico nuevo en{" "}
+        <a href="/analytics" className="font-medium text-primary-600 hover:underline">
+          Analíticas
+        </a>
+        .
+      </p>
+    ) : null;
+
+  const numericChartTypeSelect = (value: "line" | "bar") =>
+    editMode ? (
+      <select
+        value={value}
+        onChange={(e) => {
+          const next = e.target.value as "line" | "bar";
+          setChartType(next);
+          persistWidgetSettings({ chartType: next });
+        }}
+        className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
+      >
+        <option value="line">Línea</option>
+        <option value="bar">Barras</option>
+      </select>
+    ) : null;
+
+  const barPieChartTypeSelect = (
+    <select
+      value={chartType}
+      onChange={(e) => {
+        const next = e.target.value as "bar" | "pie";
+        setChartType(next);
+        persistWidgetSettings({ chartType: next });
+      }}
+      className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
+    >
+      <option value="bar">Barras</option>
+      <option value="pie">Pastel</option>
+    </select>
+  );
+
+  const checkboxChartTypeSelect = (
+    <select
+      value={chartType}
+      onChange={(e) => {
+        const next = e.target.value as "bar" | "pie";
+        setChartType(next);
+        persistWidgetSettings({ chartType: next });
+      }}
+      className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
+    >
+      <option value="pie">Pastel</option>
+      <option value="bar">Barras</option>
+    </select>
+  );
+
+  const thresholdEditor =
+    editMode && fieldType === "number" ? (
+      <ChartThresholdEditor
+        compact
+        thresholds={thresholds}
+        onChange={(next) => {
+          setThresholds(next);
+          persistWidgetSettings({ thresholds: next });
+        }}
+      />
+    ) : null;
 
   if (loading) {
     return (
@@ -234,69 +380,27 @@ export function AnalyticsChartCard({
   }
 
   if (fieldType === "number" && multiNumber && multiNumber.data.length > 0) {
+    const numericChartType = chartType === "bar" ? "bar" : "line";
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-zinc-700">
-            {labelsTitle} en el tiempo (punto por registro)
-          </h2>
-          <select
-            value={chartType}
-            onChange={(e) => {
-              const next = e.target.value as "line" | "bar";
-              setChartType(next);
-              persistWidgetChartType(next);
-            }}
-            className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
-          >
-            <option value="line">Línea</option>
-            <option value="bar">Barras</option>
-          </select>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          {titleControl}
+          {numericChartTypeSelect(numericChartType)}
         </div>
-        <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
-        <div className={chartHeightClass}>
-          {chartType === "bar" ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={multiNumber.data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={20} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Legend />
-                {multiNumber.series.map((s, i) => (
-                  <Bar
-                    key={s.key}
-                    dataKey={s.key}
-                    fill={COLORS[i % COLORS.length]}
-                    name={s.name}
-                    radius={[2, 2, 0, 0]}
-                  />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={multiNumber.data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={20} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Legend />
-                {multiNumber.series.map((s, i) => (
-                  <Line
-                    key={s.key}
-                    type="monotone"
-                    dataKey={s.key}
-                    stroke={COLORS[i % COLORS.length]}
-                    strokeWidth={2}
-                    name={s.name}
-                    dot={{ r: 3 }}
-                    connectNulls
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+        {editMode ? editHint : null}
+        {editMode ? metaLine : (
+          <p className="mb-1 truncate text-[10px] text-zinc-400">{displayTitle}</p>
+        )}
+        {thresholdEditor}
+        <div className={`${chartHeightClass} ${editMode ? "mt-3" : "mt-0"}`}>
+          <NumberTimeSeriesChart
+            data={multiNumber.data}
+            series={multiNumber.series}
+            chartType={numericChartType}
+            thresholds={thresholds}
+            colors={COLORS}
+            tickFontSize={11}
+          />
         </div>
       </div>
     );
@@ -305,10 +409,9 @@ export function AnalyticsChartCard({
   if (multiCategorical && multiCategorical.data.length > 0) {
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-zinc-700">{labelsTitle} — comparación</h2>
-        </div>
-        <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
+        <div className="mb-2 flex items-center justify-between gap-2">{titleControl}</div>
+        {editMode ? editHint : null}
+        {editMode ? metaLine : null}
         <div className={chartHeightClass}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={multiCategorical.data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -337,21 +440,11 @@ export function AnalyticsChartCard({
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-zinc-700">{labelsTitle} — distribución</h2>
-          <select
-            value={chartType}
-            onChange={(e) => {
-              const next = e.target.value as "bar" | "pie";
-              setChartType(next);
-              persistWidgetChartType(next);
-            }}
-            className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
-          >
-            <option value="bar">Barras</option>
-            <option value="pie">Pastel</option>
-          </select>
+          {titleControl}
+          {editMode ? barPieChartTypeSelect : null}
         </div>
-        <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
+        {editMode ? editHint : null}
+        {editMode ? metaLine : null}
         <div className={chartHeightClass}>
           {chartType === "pie" ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -396,10 +489,9 @@ export function AnalyticsChartCard({
   ) {
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-zinc-700">{labelsTitle} — sí / no por campo</h2>
-        </div>
-        <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
+        <div className="mb-2 flex items-center justify-between gap-2">{titleControl}</div>
+        {editMode ? editHint : null}
+        {editMode ? metaLine : null}
         <div className={chartHeightClass}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={multiCheckboxBars} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -425,21 +517,11 @@ export function AnalyticsChartCard({
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-zinc-700">{labelsTitle} — sí / no</h2>
-          <select
-            value={chartType}
-            onChange={(e) => {
-              const next = e.target.value as "bar" | "pie";
-              setChartType(next);
-              persistWidgetChartType(next);
-            }}
-            className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
-          >
-            <option value="pie">Pastel</option>
-            <option value="bar">Barras</option>
-          </select>
+          {titleControl}
+          {editMode ? checkboxChartTypeSelect : null}
         </div>
-        <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
+        {editMode ? editHint : null}
+        {editMode ? metaLine : null}
         <div className={chartHeightClass}>
           {chartType === "bar" ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -480,8 +562,9 @@ export function AnalyticsChartCard({
   if (fieldType === "date") {
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <h2 className="text-sm font-medium text-zinc-700 mb-2">{labelsTitle}</h2>
-        <p className="text-xs text-zinc-400 mb-1">{displayTitle}</p>
+        {titleControl}
+        {editMode ? editHint : null}
+        {editMode ? <p className="text-xs text-zinc-400 mb-1 mt-2">{displayTitle}</p> : null}
         <p className="text-zinc-500 text-sm">Campos de fecha: lista. Gráfico próximamente.</p>
         <ul className="mt-2 space-y-1 text-sm">
           {selectedFieldItems.slice(0, 5).map((item, i) => (

@@ -1,1 +1,1 @@
-ALTER TABLE `users` ADD `avatar_background_color` text;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "avatar_background_color" text;

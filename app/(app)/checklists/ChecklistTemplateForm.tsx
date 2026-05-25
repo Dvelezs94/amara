@@ -585,7 +585,7 @@ export function ChecklistTemplateForm({
                   className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
                 {item.type === "section" && (
-                  <div className="flex flex-wrap gap-2 border-t border-primary-200/60 pt-2">
+                  <div className="flex flex-wrap gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => addStepUnderSection(item.id)}
