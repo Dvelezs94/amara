@@ -138,9 +138,7 @@ export function AnalyticsCharts() {
         setData(d);
         setSelectedFieldLabels((prev) => {
           const fields: string[] = Array.isArray(d.fields) ? d.fields : [];
-          const kept = prev.filter((x) => fields.includes(x));
-          if (kept.length > 0) return kept;
-          return fields[0] ? [fields[0]] : [];
+          return prev.filter((x) => fields.includes(x));
         });
       })
       .catch(() => setData(null))
@@ -247,7 +245,6 @@ export function AnalyticsCharts() {
 
   function toggleFieldLabel(f: string) {
     if (selectedFieldLabels.includes(f)) {
-      if (selectedFieldLabels.length <= 1) return;
       setFieldTypeHint(null);
       setSelectedFieldLabels((p) => p.filter((x) => x !== f));
       return;
