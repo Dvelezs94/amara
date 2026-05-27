@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getChecklistTemplateById } from "@/lib/checklist-templates";
 import { checklistItemDepth, flattenChecklistTreeForDisplay } from "@/lib/checklist-item-tree";
 import { ChecklistGroupedList } from "@/components/ChecklistGroupedList";
+import { DeleteChecklistButton } from "./DeleteChecklistButton";
 import { PrintChecklistButton } from "./PrintChecklistButton";
 
 export default async function ChecklistTemplatePage({
@@ -33,6 +34,7 @@ export default async function ChecklistTemplatePage({
   if (!template) notFound();
 
   const notice = resolvedSearchParams?.notice;
+  const canManage = session?.role !== "calidad";
   const checklistRows = template.items ?? [];
   const checklistTreeRows = checklistRows.map((r) => ({
     id: r.id,
@@ -49,7 +51,12 @@ export default async function ChecklistTemplatePage({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-zinc-900">Plantilla publicada</h1>
-        <PrintChecklistButton targetId="checklist-visualization" />
+        <div className="flex flex-wrap items-center gap-2">
+          <PrintChecklistButton targetId="checklist-visualization" />
+          {canManage && (
+            <DeleteChecklistButton templateId={id} templateName={template.name} />
+          )}
+        </div>
       </div>
       {notice === "revision_submitted" && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
