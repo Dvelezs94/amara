@@ -34,6 +34,7 @@ export async function GET(req: Request) {
     .select({
       description: workOrders.description,
       dueDate: workOrders.dueDate,
+      status: workOrders.status,
     })
     .from(workOrders)
     .where(
@@ -45,15 +46,15 @@ export async function GET(req: Request) {
       )
     );
 
-  const keys: string[] = [];
+  const markers: Record<string, string> = {};
   for (const row of rows) {
     if (!row.description || !row.dueDate) continue;
     const match = row.description.match(/calendario de mantenimiento \(([^)]+)\)/i);
     const scheduleId = match?.[1];
     if (!scheduleId) continue;
     const ymd = toYmdLocal(new Date(row.dueDate));
-    keys.push(`${scheduleId}|${ymd}`);
+    markers[`${scheduleId}|${ymd}`] = row.status;
   }
 
-  return NextResponse.json({ keys });
+  return NextResponse.json({ markers });
 }

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { AppShell } from "@/components/AppShell";
+import { getWorkOrderStatusColors } from "@/lib/work-order-status-colors-db";
 
 export default async function AppLayout({
   children,
@@ -9,5 +10,10 @@ export default async function AppLayout({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  return <AppShell user={session}>{children}</AppShell>;
+  const workOrderStatusColors = await getWorkOrderStatusColors();
+  return (
+    <AppShell user={session} workOrderStatusColors={workOrderStatusColors}>
+      {children}
+    </AppShell>
+  );
 }

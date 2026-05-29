@@ -15,6 +15,7 @@ import {
   Legend,
 } from "recharts";
 import { NumberTimeSeriesChart } from "@/components/NumberTimeSeriesChart";
+import { CategoricalDailyStackedChart } from "@/components/CategoricalDailyStackedChart";
 import { ChartThresholdEditor } from "@/components/ChartThresholdEditor";
 import { EditableChartTitle } from "@/components/EditableChartTitle";
 import {
@@ -27,6 +28,7 @@ import {
 } from "@/lib/chart-thresholds";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
+  buildCategoricalDailyTimeData,
   buildMultiCategoricalUnion,
   buildMultiCheckboxBars,
   buildMultiNumberTimeData,
@@ -171,6 +173,13 @@ export function AnalyticsChartCard({
     return buildMultiNumberTimeData(workOrders, selectedLabels, APP_TIME_ZONE);
   }, [fieldType, workOrders, selectedLabels]);
 
+  const categoricalDaily = useMemo(() => {
+    if ((fieldType !== "dropdown" && fieldType !== "text") || selectedLabels.length !== 1) {
+      return null;
+    }
+    return buildCategoricalDailyTimeData(workOrders, selectedLabels[0]!, APP_TIME_ZONE);
+  }, [fieldType, workOrders, selectedLabels]);
+
   const singleCategoricalChartData = useMemo(() => {
     if ((fieldType !== "dropdown" && fieldType !== "text") || selectedLabels.length !== 1) {
       return [];
@@ -248,10 +257,14 @@ export function AnalyticsChartCard({
   const displayTitle = `${templateName} — ${labelsTitle}`;
 
   const defaultChartTitle = useMemo(() => {
-    const preset = inferAnalyticsChartTitlePreset(fieldType, selectedLabels.length);
+    const preset = inferAnalyticsChartTitlePreset(
+      fieldType,
+      selectedLabels.length,
+      chartType
+    );
     if (!preset) return displayTitle;
     return buildDefaultAnalyticsChartTitle(selectedLabels, preset);
-  }, [fieldType, selectedLabels, displayTitle]);
+  }, [fieldType, selectedLabels, chartType, displayTitle]);
 
   const [chartTitle, setChartTitle] = useState(defaultChartTitle);
 
@@ -315,18 +328,19 @@ export function AnalyticsChartCard({
       </select>
     ) : null;
 
-  const barPieChartTypeSelect = (
+  const categoricalSingleChartTypeSelect = (
     <select
       value={chartType}
       onChange={(e) => {
-        const next = e.target.value as "bar" | "pie";
+        const next = e.target.value as DashboardWidgetChartType;
         setChartType(next);
         persistWidgetSettings({ chartType: next });
       }}
       className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
     >
-      <option value="bar">Barras</option>
-      <option value="pie">Pastel</option>
+      <option value="stacked">Por día</option>
+      <option value="bar">Distribución (barras)</option>
+      <option value="pie">Distribución (pastel)</option>
     </select>
   );
 
@@ -436,12 +450,38 @@ export function AnalyticsChartCard({
     );
   }
 
+  if (
+    (fieldType === "dropdown" || fieldType === "text") &&
+    chartType === "stacked" &&
+    categoricalDaily &&
+    categoricalDaily.data.length > 0
+  ) {
+    return (
+      <div className="rounded-xl border border-zinc-200 bg-white p-4">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          {titleControl}
+          {editMode ? categoricalSingleChartTypeSelect : null}
+        </div>
+        {editMode ? editHint : null}
+        {editMode ? metaLine : null}
+        <div className={chartHeightClass}>
+          <CategoricalDailyStackedChart
+            data={categoricalDaily.data}
+            series={categoricalDaily.series}
+            colors={COLORS}
+            tickFontSize={11}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if ((fieldType === "dropdown" || fieldType === "text") && singleCategoricalChartData.length > 0) {
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
           {titleControl}
-          {editMode ? barPieChartTypeSelect : null}
+          {editMode ? categoricalSingleChartTypeSelect : null}
         </div>
         {editMode ? editHint : null}
         {editMode ? metaLine : null}

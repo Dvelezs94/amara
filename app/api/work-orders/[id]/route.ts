@@ -14,6 +14,7 @@ import { loadWorkOrderAssignees, setWorkOrderAssigneeIds } from "@/lib/assignees
 import { createNotification } from "@/lib/notifications";
 import { clampManualDowntimeMinutes } from "@/lib/machine-downtime";
 import { checklistItemBlocksWorkOrderCompletion } from "@/lib/checklist-completion";
+import { validateWorkOrderCompletedAt } from "@/lib/datetime-local";
 
 async function assetAllowsDowntimeTracking(assetId: string | null): Promise<boolean> {
   if (!assetId) return false;
@@ -226,9 +227,16 @@ export async function PATCH(
   if (wo.status === "completed") {
     const keys = Object.keys(body);
     const allowed = new Set(["manualDowntimeMinutes", "countsMachineDowntime"]);
+    if (session.role === "admin") allowed.add("completedAt");
     if (keys.length === 0 || keys.some((k) => !allowed.has(k))) {
       return NextResponse.json(
         { error: "No se puede modificar una orden completada" },
+        { status: 403 }
+      );
+    }
+    if (body.completedAt !== undefined && session.role !== "admin") {
+      return NextResponse.json(
+        { error: "Solo administradores pueden cambiar la fecha de completado" },
         { status: 403 }
       );
     }
@@ -258,6 +266,27 @@ export async function PATCH(
       }
       updates.countsMachineDowntime = body.countsMachineDowntime === true && allows;
     }
+    if (body.completedAt !== undefined) {
+      const parsed =
+        typeof body.completedAt === "string" || body.completedAt instanceof Date
+          ? new Date(body.completedAt)
+          : null;
+      if (!parsed || Number.isNaN(parsed.getTime())) {
+        return NextResponse.json(
+          { error: "Fecha de completado inválida" },
+          { status: 400 }
+        );
+      }
+      const validationError = validateWorkOrderCompletedAt(
+        parsed,
+        wo.startedAt,
+        wo.createdAt
+      );
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 });
+      }
+      updates.completedAt = parsed;
+    }
     await db.update(workOrders).set(updates).where(eq(workOrders.id, id));
     const woAfter = await db.query.workOrders.findFirst({
       where: eq(workOrders.id, id),
@@ -271,12 +300,14 @@ export async function PATCH(
         before: {
           countsMachineDowntime: wo.countsMachineDowntime,
           manualDowntimeMinutes: wo.manualDowntimeMinutes,
+          completedAt: wo.completedAt,
         },
         after: {
           countsMachineDowntime: woAfter?.countsMachineDowntime ?? wo.countsMachineDowntime,
           manualDowntimeMinutes: woAfter?.manualDowntimeMinutes ?? wo.manualDowntimeMinutes,
+          completedAt: woAfter?.completedAt ?? wo.completedAt,
         },
-        note: "downtime_fields_on_completed",
+        note: body.completedAt !== undefined ? "completed_at_on_completed" : "downtime_fields_on_completed",
       },
     });
     return NextResponse.json({ ok: true });

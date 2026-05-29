@@ -16,6 +16,7 @@ import {
   Legend,
 } from "recharts";
 import { NumberTimeSeriesChart } from "@/components/NumberTimeSeriesChart";
+import { CategoricalDailyStackedChart } from "@/components/CategoricalDailyStackedChart";
 import { ChartThresholdEditor } from "@/components/ChartThresholdEditor";
 import { EditableChartTitle } from "@/components/EditableChartTitle";
 import {
@@ -34,11 +35,13 @@ import {
 import { LayoutDashboard, X } from "lucide-react";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
+  buildCategoricalDailyTimeData,
   buildMultiCategoricalUnion,
   buildMultiCheckboxBars,
   buildMultiNumberTimeData,
   commonFieldType,
 } from "@/lib/analytics-checklist-multi-chart";
+import type { DashboardWidgetChartType } from "@/lib/dashboard-widget-chart-type";
 
 type Template = { id: string; name: string };
 type ChecklistItem = {
@@ -71,7 +74,7 @@ export function AnalyticsCharts() {
   const [to, setTo] = useState("");
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [chartType, setChartType] = useState<"line" | "bar" | "pie">("line");
+  const [chartType, setChartType] = useState<DashboardWidgetChartType>("line");
   const [addToDashboardStatus, setAddToDashboardStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [fieldsModalOpen, setFieldsModalOpen] = useState(false);
   const [thresholds, setThresholds] = useState<ChartThreshold[]>([]);
@@ -164,10 +167,14 @@ export function AnalyticsCharts() {
   );
 
   const defaultChartTitle = useMemo(() => {
-    const preset = inferAnalyticsChartTitlePreset(fieldType, selectedFieldLabels.length);
+    const preset = inferAnalyticsChartTitlePreset(
+      fieldType,
+      selectedFieldLabels.length,
+      chartType
+    );
     if (!preset) return "";
     return buildDefaultAnalyticsChartTitle(selectedFieldLabels, preset);
-  }, [fieldType, selectedFieldLabels]);
+  }, [fieldType, selectedFieldLabels, chartType]);
 
   useEffect(() => {
     if (!chartTitleStorageKey || !defaultChartTitle) {
@@ -188,6 +195,20 @@ export function AnalyticsCharts() {
   const multiNumber = useMemo(() => {
     if (fieldType !== "number" || selectedFieldLabels.length === 0) return null;
     return buildMultiNumberTimeData(workOrders, selectedFieldLabels, APP_TIME_ZONE);
+  }, [fieldType, workOrders, selectedFieldLabels]);
+
+  const categoricalDaily = useMemo(() => {
+    if (
+      (fieldType !== "dropdown" && fieldType !== "text") ||
+      selectedFieldLabels.length !== 1
+    ) {
+      return null;
+    }
+    return buildCategoricalDailyTimeData(
+      workOrders,
+      selectedFieldLabels[0]!,
+      APP_TIME_ZONE
+    );
   }, [fieldType, workOrders, selectedFieldLabels]);
 
   const singleCategoricalChartData = useMemo(() => {
@@ -269,7 +290,7 @@ export function AnalyticsCharts() {
       return;
     }
     if (fieldType === "dropdown" || fieldType === "text") {
-      setChartType(selectedFieldLabels.length > 1 ? "bar" : "bar");
+      setChartType(selectedFieldLabels.length > 1 ? "bar" : "stacked");
     }
   }, [fieldType, selectedFieldLabels.join("|")]);
 
@@ -370,7 +391,9 @@ export function AnalyticsCharts() {
           {(fieldType === "number" || fieldType === "checkbox" || fieldType === "dropdown" || fieldType === "text") && (
             <select
               value={chartType}
-              onChange={(e) => setChartType(e.target.value as "line" | "bar" | "pie")}
+              onChange={(e) =>
+                setChartType(e.target.value as DashboardWidgetChartType)
+              }
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
             >
               {fieldType === "number" ? (
@@ -382,8 +405,9 @@ export function AnalyticsCharts() {
                 <option value="bar">Barras</option>
               ) : (
                 <>
-                  <option value="bar">Barras</option>
-                  <option value="pie">Pastel</option>
+                  <option value="stacked">Por día</option>
+                  <option value="bar">Distribución (barras)</option>
+                  <option value="pie">Distribución (pastel)</option>
                 </>
               )}
             </select>
@@ -505,6 +529,31 @@ export function AnalyticsCharts() {
       {selectedFieldLabels.length > 0 &&
         (fieldType === "dropdown" || fieldType === "text") &&
         selectedFieldLabels.length === 1 &&
+        chartType === "stacked" &&
+        categoricalDaily &&
+        categoricalDaily.data.length > 0 && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-4">
+          <EditableChartTitle
+            value={chartTitle}
+            onChange={setChartTitle}
+            onCommit={(next) => {
+              if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
+            }}
+          />
+          <div className="h-64 md:h-80 mt-3">
+            <CategoricalDailyStackedChart
+              data={categoricalDaily.data}
+              series={categoricalDaily.series}
+              colors={COLORS}
+            />
+          </div>
+        </div>
+      )}
+
+      {selectedFieldLabels.length > 0 &&
+        (fieldType === "dropdown" || fieldType === "text") &&
+        selectedFieldLabels.length === 1 &&
+        chartType !== "stacked" &&
         singleCategoricalChartData.length > 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <EditableChartTitle

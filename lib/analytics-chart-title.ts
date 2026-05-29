@@ -2,18 +2,22 @@ export type AnalyticsChartTitlePreset =
   | "number-time"
   | "categorical-multi"
   | "categorical-single"
+  | "categorical-daily"
   | "checkbox-multi"
   | "checkbox-single"
   | "date";
 
 export function inferAnalyticsChartTitlePreset(
   fieldType: string | null,
-  labelCount: number
+  labelCount: number,
+  chartType?: string | null
 ): AnalyticsChartTitlePreset | null {
   if (!fieldType || labelCount === 0) return null;
   if (fieldType === "number") return "number-time";
   if (fieldType === "dropdown" || fieldType === "text") {
-    return labelCount > 1 ? "categorical-multi" : "categorical-single";
+    if (labelCount > 1) return "categorical-multi";
+    if (chartType === "stacked") return "categorical-daily";
+    return "categorical-single";
   }
   if (fieldType === "checkbox") {
     return labelCount > 1 ? "checkbox-multi" : "checkbox-single";
@@ -34,6 +38,8 @@ export function buildDefaultAnalyticsChartTitle(
       return `${joined} — comparación por categoría`;
     case "categorical-single":
       return `${labels[0] ?? joined} — distribución`;
+    case "categorical-daily":
+      return `${labels[0] ?? joined} — por día`;
     case "checkbox-multi":
       return `${joined} — sí / no por campo`;
     case "checkbox-single":

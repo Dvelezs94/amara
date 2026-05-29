@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { canEditLockedWorkOrderChecklist } from "@/lib/auth-shared";
 import { db } from "@/lib/db";
 import { workOrders } from "@/lib/db/schema";
 import { workOrderChecklist } from "@/lib/db/schema";
@@ -22,9 +23,12 @@ export async function POST(
   if (!wo) {
     return NextResponse.json({ error: "Work order not found" }, { status: 404 });
   }
-  if (wo.status === "completed") {
+  if (
+    (wo.status === "completed" || wo.status === "cancelled") &&
+    !canEditLockedWorkOrderChecklist(session.role)
+  ) {
     return NextResponse.json(
-      { error: "No se puede modificar el checklist de una orden completada" },
+      { error: "No se puede modificar el checklist de una orden cerrada" },
       { status: 403 }
     );
   }
@@ -71,9 +75,12 @@ export async function PATCH(
   if (!wo) {
     return NextResponse.json({ error: "Work order not found" }, { status: 404 });
   }
-  if (wo.status === "completed") {
+  if (
+    (wo.status === "completed" || wo.status === "cancelled") &&
+    !canEditLockedWorkOrderChecklist(session.role)
+  ) {
     return NextResponse.json(
-      { error: "No se puede modificar el checklist de una orden completada" },
+      { error: "No se puede modificar el checklist de una orden cerrada" },
       { status: 403 }
     );
   }

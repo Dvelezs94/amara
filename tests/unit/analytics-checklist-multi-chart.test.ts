@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCategoricalDailyTimeData,
   buildMultiCategoricalUnion,
   buildMultiCheckboxBars,
   buildMultiNumberTimeData,
@@ -86,6 +87,34 @@ describe("buildMultiCheckboxBars", () => {
     const out = buildMultiCheckboxBars(rows, ["A", "B"]);
     expect(out.find((x) => x.name === "A")).toEqual({ name: "A", sí: 1, no: 1 });
     expect(out.find((x) => x.name === "B")).toEqual({ name: "B", sí: 1, no: 1 });
+  });
+});
+
+describe("buildCategoricalDailyTimeData", () => {
+  it("groups dropdown values by completion day", () => {
+    const rows = [
+      wo("2024-01-02T18:00:00Z", [
+        { label: "Puerta", fieldType: "dropdown", value: "Óptimo (100% - 85%)" },
+      ]),
+      wo("2024-01-02T10:00:00Z", [
+        { label: "Puerta", fieldType: "dropdown", value: "Regular ( 84% - 70%)" },
+      ]),
+      wo("2024-01-01T12:00:00Z", [
+        { label: "Puerta", fieldType: "dropdown", value: "Óptimo (100% - 85%)" },
+      ]),
+    ];
+    const { data, series } = buildCategoricalDailyTimeData(rows, "Puerta", "UTC");
+    expect(data).toHaveLength(2);
+    expect(series).toHaveLength(2);
+    const day1 = data[0]!;
+    const day2 = data[1]!;
+    expect(day1.day).toBe("2024-01-01");
+    expect(day1.d0).toBe(1);
+    expect(day2.day).toBe("2024-01-02");
+    const optKey = series.find((s) => s.name.includes("Óptimo"))?.key;
+    const regKey = series.find((s) => s.name.includes("Regular"))?.key;
+    expect(day2[optKey!]).toBe(1);
+    expect(day2[regKey!]).toBe(1);
   });
 });
 

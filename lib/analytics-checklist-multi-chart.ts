@@ -57,6 +57,85 @@ export function seriesKeyAt(index: number): string {
   return `s${index}`;
 }
 
+export function categoricalSeriesKeyAt(index: number): string {
+  return `d${index}`;
+}
+
+/** Calendar day (YYYY-MM-DD) for a timestamp in the given IANA timezone. */
+export function formatYmdInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const y = parts.find((p) => p.type === "year")?.value ?? "";
+  const m = parts.find((p) => p.type === "month")?.value ?? "";
+  const d = parts.find((p) => p.type === "day")?.value ?? "";
+  return `${y}-${m}-${d}`;
+}
+
+export function formatDayLabelShort(ymd: string, timeZone: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  const noon = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  return noon.toLocaleDateString("es-MX", {
+    month: "short",
+    day: "numeric",
+    timeZone,
+  });
+}
+
+function normalizeCategoricalValue(value: unknown): string {
+  const raw = value != null ? String(value).trim() : "";
+  return raw === "" ? "(vacío)" : raw;
+}
+
+/**
+ * Stacked-bar time series: one row per calendar day, one series key per dropdown option.
+ */
+export function buildCategoricalDailyTimeData(
+  workOrders: WoChecklistRow[],
+  label: string,
+  timeZone: string
+): { data: Record<string, string | number>[]; series: { key: string; name: string }[] } {
+  const dayMap = new Map<string, Map<string, number>>();
+  const categorySet = new Set<string>();
+
+  for (const wo of workOrders) {
+    if (!wo.completedAt) continue;
+    const item = wo.checklistItems.find((x) => x.label === label);
+    if (!item) continue;
+    const day = formatYmdInTimeZone(new Date(wo.completedAt), timeZone);
+    const cat = normalizeCategoricalValue(item.value);
+    categorySet.add(cat);
+    if (!dayMap.has(day)) dayMap.set(day, new Map());
+    const counts = dayMap.get(day)!;
+    counts.set(cat, (counts.get(cat) ?? 0) + 1);
+  }
+
+  const categories = Array.from(categorySet).sort((a, b) => a.localeCompare(b, "es"));
+  const series = categories.map((name, i) => ({
+    key: categoricalSeriesKeyAt(i),
+    name,
+  }));
+
+  const days = Array.from(dayMap.keys()).sort();
+  const data = days.map((day) => {
+    const row: Record<string, string | number> = {
+      day,
+      dateLabel: formatDayLabelShort(day, timeZone),
+    };
+    const counts = dayMap.get(day)!;
+    categories.forEach((cat, i) => {
+      row[categoricalSeriesKeyAt(i)] = counts.get(cat) ?? 0;
+    });
+    return row;
+  });
+
+  return { data, series };
+}
+
 export function buildMultiNumberTimeData(
   workOrders: WoChecklistRow[],
   labels: string[],

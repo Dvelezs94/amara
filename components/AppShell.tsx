@@ -29,6 +29,8 @@ import {
   parseChecklistRevisionNotificationBody,
 } from "@/lib/checklist-notification-parse";
 import { UserAvatar } from "@/components/UserAvatar";
+import { WorkOrderStatusColorsProvider } from "@/components/WorkOrderStatusColorsProvider";
+import type { WorkOrderStatusColors } from "@/lib/work-order-status-colors";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
 
@@ -103,9 +105,11 @@ function ProfileSubmenu({
 
 export function AppShell({
  user,
+ workOrderStatusColors,
  children,
 }: {
  user: SessionUser;
+ workOrderStatusColors: WorkOrderStatusColors;
  children: React.ReactNode;
 }) {
  const pathname = usePathname();
@@ -304,6 +308,7 @@ export function AppShell({
   pathname.startsWith("/profile") || profileMenuOpen;
 
  return (
+  <WorkOrderStatusColorsProvider initialColors={workOrderStatusColors}>
   <div className="min-h-screen flex flex-col md:flex-row">
    {/* Desktop sidebar */}
    <aside
@@ -715,5 +720,6 @@ export function AppShell({
     </main>
    </div>
   </div>
+  </WorkOrderStatusColorsProvider>
  );
 }

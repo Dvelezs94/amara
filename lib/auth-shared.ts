@@ -16,3 +16,8 @@ export type SessionUser = {
   avatarUrl: string | null;
   avatarBackgroundColor: string | null;
 };
+
+/** Admins and calidad may edit checklist on completed/cancelled work orders. */
+export function canEditLockedWorkOrderChecklist(role: UserRole): boolean {
+  return role === "admin" || role === "calidad";
+}

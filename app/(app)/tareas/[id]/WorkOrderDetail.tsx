@@ -43,13 +43,13 @@ import {
   WorkOrderAssetSelect,
   type WorkOrderAssetOption,
 } from "@/components/WorkOrderAssetSelect";
-
-const statusColors: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-800",
-  in_progress: "bg-blue-100 text-blue-800",
-  completed: "bg-emerald-100 text-emerald-800",
-  cancelled: "bg-zinc-100 text-zinc-600",
-};
+import { useWorkOrderStatusColors } from "@/components/WorkOrderStatusColorsProvider";
+import { workOrderStatusBadgeStyle } from "@/lib/work-order-status-colors";
+import {
+  formatUtcDateToDatetimeLocalValue,
+  parseDatetimeLocalValue,
+  validateWorkOrderCompletedAt,
+} from "@/lib/datetime-local";
 
 const priorityDetail: Record<
   string,
@@ -133,6 +133,8 @@ function parseCommentBody(body: string): {
 export function WorkOrderDetail({
   initial,
   canEditAssignee = false,
+  canEditCompletedAt = false,
+  canEditChecklistWhenLocked = false,
 }: {
   initial: {
     id: string;
@@ -167,8 +169,11 @@ export function WorkOrderDetail({
     manualDowntimeMinutes?: number | null;
   };
   canEditAssignee?: boolean;
+  canEditCompletedAt?: boolean;
+  canEditChecklistWhenLocked?: boolean;
 }) {
   const router = useRouter();
+  const { colors: statusColors } = useWorkOrderStatusColors();
   function toRenderablePhotoUrl(raw: string): string {
     const trimmed = raw.trim();
     if (!trimmed) return trimmed;
@@ -244,6 +249,16 @@ export function WorkOrderDetail({
   const detailsPanelRef = useRef<HTMLDetailsElement>(null);
   const isCompleted = initial.status === "completed";
   const checklistUnlocked = initial.status === "in_progress";
+  const [checklistForceEdit, setChecklistForceEdit] = useState(false);
+  const checklistEditable =
+    checklistUnlocked ||
+    (checklistForceEdit &&
+      canEditChecklistWhenLocked &&
+      (initial.status === "completed" || initial.status === "cancelled"));
+  const showChecklistEditToggle =
+    canEditChecklistWhenLocked &&
+    !checklistUnlocked &&
+    (initial.status === "completed" || initial.status === "cancelled");
   const kind = parseWorkOrderKind(initial.kind);
   const [durationTick, setDurationTick] = useState(0);
   const [comments, setComments] = useState<WorkOrderComment[]>([]);
@@ -255,6 +270,10 @@ export function WorkOrderDetail({
 
   const isCancelled = initial.status === "cancelled";
   const canEditAsset = !isCompleted && !isCancelled;
+
+  useEffect(() => {
+    setChecklistForceEdit(false);
+  }, [initial.id, initial.status]);
   const [assetsList, setAssetsList] = useState<WorkOrderAssetOption[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [workOrderAssetId, setWorkOrderAssetId] = useState<string | null>(
@@ -350,6 +369,16 @@ export function WorkOrderDetail({
   const [manualUnit, setManualUnit] = useState<"min" | "h">("min");
   const [downtimeSaving, setDowntimeSaving] = useState(false);
   const [downtimeError, setDowntimeError] = useState<string | null>(null);
+  const [completedAtDraft, setCompletedAtDraft] = useState(() =>
+    formatUtcDateToDatetimeLocalValue(initial.completedAt)
+  );
+  const [completedAtSaving, setCompletedAtSaving] = useState(false);
+  const [completedAtError, setCompletedAtError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCompletedAtDraft(formatUtcDateToDatetimeLocalValue(initial.completedAt));
+    setCompletedAtError(null);
+  }, [initial.id, initial.completedAt]);
 
   useEffect(() => {
     if (workOrderAsset?.tracksMachineDowntime === false) {
@@ -391,6 +420,56 @@ export function WorkOrderDetail({
     initial.completedAt,
     countsMachineDowntime,
   ]);
+
+  async function patchCompletedAt(iso: string) {
+    setCompletedAtSaving(true);
+    setCompletedAtError(null);
+    try {
+      const res = await fetch(`/api/work-orders/${initial.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completedAt: iso }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error ?? "No se pudo guardar");
+      }
+      router.refresh();
+    } catch (e) {
+      setCompletedAtError(e instanceof Error ? e.message : "Error");
+      setCompletedAtDraft(formatUtcDateToDatetimeLocalValue(initial.completedAt));
+      throw e;
+    } finally {
+      setCompletedAtSaving(false);
+    }
+  }
+
+  async function saveCompletedAtDraft() {
+    if (!canEditCompletedAt || !initial.completedAt) return;
+    const current = formatUtcDateToDatetimeLocalValue(initial.completedAt);
+    if (completedAtDraft === current) return;
+    const parsed = parseDatetimeLocalValue(completedAtDraft);
+    if (!parsed) {
+      setCompletedAtError("Fecha u hora inválida");
+      setCompletedAtDraft(current);
+      return;
+    }
+    const validationError = validateWorkOrderCompletedAt(
+      parsed,
+      initial.startedAt,
+      initial.createdAt
+    );
+    if (validationError) {
+      setCompletedAtError(validationError);
+      setCompletedAtDraft(current);
+      return;
+    }
+    try {
+      await patchCompletedAt(parsed.toISOString());
+    } catch {
+      // error handled in patchCompletedAt
+    }
+  }
 
   async function patchDowntimeFields(patch: {
     countsMachineDowntime?: boolean;
@@ -570,7 +649,7 @@ export function WorkOrderDetail({
   }
 
   async function onChecklistPhotoSelected(itemId: string, e: React.ChangeEvent<HTMLInputElement>) {
-    if (!checklistUnlocked) return;
+    if (!checklistEditable) return;
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
     setUploadError(null);
@@ -599,7 +678,7 @@ export function WorkOrderDetail({
   }
 
   async function removeChecklistPhoto(itemId: string, photoUrl: string) {
-    if (!checklistUnlocked) return;
+    if (!checklistEditable) return;
     const existing = checklistPhotoUrls(checklist.find((i) => i.id === itemId)?.value);
     const next = existing.filter((url) => url !== photoUrl);
     setChecklist((prev) => prev.map((i) => (i.id === itemId ? { ...i, value: next } : i)));
@@ -611,7 +690,7 @@ export function WorkOrderDetail({
   }
 
   async function toggleStep(itemId: string, completed: boolean) {
-    if (!checklistUnlocked) return;
+    if (!checklistEditable) return;
     setChecklist((prev) =>
       prev.map((i) => (i.id === itemId ? { ...i, completed } : i))
     );
@@ -623,7 +702,7 @@ export function WorkOrderDetail({
   }
 
   async function updateFieldValue(itemId: string, value: unknown) {
-    if (!checklistUnlocked) return;
+    if (!checklistEditable) return;
     setChecklist((prev) =>
       prev.map((i) => (i.id === itemId ? { ...i, value } : i))
     );
@@ -798,21 +877,42 @@ export function WorkOrderDetail({
 
       {checklist.length > 0 && (
         <section className="max-w-none rounded-xl border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-zinc-900">
-            Checklist
-            {initial.checklistMeta ? ` · ${initial.checklistMeta.templateName}` : ""}
-            {initial.checklistMeta?.revisionName
-              ? ` · Revisión ${initial.checklistMeta.revisionName}`
-              : initial.checklistMeta?.revisionNumber != null
-                ? ` · Revisión ${initial.checklistMeta.revisionNumber}`
-                : ""}
-          </h2>
-          {!checklistUnlocked && initial.status === "pending" && (
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="min-w-0 text-sm font-semibold text-zinc-900">
+              Checklist
+              {initial.checklistMeta ? ` · ${initial.checklistMeta.templateName}` : ""}
+              {initial.checklistMeta?.revisionName
+                ? ` · Revisión ${initial.checklistMeta.revisionName}`
+                : initial.checklistMeta?.revisionNumber != null
+                  ? ` · Revisión ${initial.checklistMeta.revisionNumber}`
+                  : ""}
+            </h2>
+            {showChecklistEditToggle ? (
+              <button
+                type="button"
+                onClick={() => setChecklistForceEdit((v) => !v)}
+                className={`tap-target inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
+                  checklistForceEdit
+                    ? "border-primary-300 bg-primary-50 text-primary-800"
+                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+                }`}
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden />
+                {checklistForceEdit ? "Listo" : "Editar"}
+              </button>
+            ) : null}
+          </div>
+          {!checklistEditable && initial.status === "pending" && (
             <p className="mb-2 mt-1 text-xs text-amber-700">
               Cambia el estado a <strong>En curso</strong> en el panel derecho para
               editar el checklist.
             </p>
           )}
+          {checklistForceEdit && checklistEditable && !checklistUnlocked ? (
+            <p className="mb-2 mt-1 text-xs text-primary-700">
+              Modo edición activo. Los cambios se guardan al modificar cada campo.
+            </p>
+          ) : null}
           <ChecklistGroupedList
             flat={checklistOrdered}
             all={checklist}
@@ -828,7 +928,7 @@ export function WorkOrderDetail({
                   style={padStyle}
                   className={`flex items-center gap-2 text-zinc-900 ${rowPad || "py-3"}`}
                 >
-                  {!checklistUnlocked ? (
+                  {!checklistEditable ? (
                     <span className="text-zinc-600">
                       {item.completed ? (
                         <Check className="h-5 w-5 text-emerald-600" />
@@ -880,7 +980,7 @@ export function WorkOrderDetail({
                       ) : null}
                     </label>
                   ) : null}
-                  {!checklistUnlocked ? (
+                  {!checklistEditable ? (
                     <div className="text-zinc-900">
                       {item.fieldType === "checkbox" ? (
                         <div className="inline-flex min-h-11 w-full flex-wrap items-center gap-2 py-1">
@@ -1049,7 +1149,7 @@ export function WorkOrderDetail({
                                       className="pointer-events-none h-24 w-24 rounded-lg border border-zinc-200 object-cover"
                                     />
                                   </button>
-                                  {checklistUnlocked && (
+                                  {checklistEditable && (
                                     <button
                                       type="button"
                                       onClick={() => removeChecklistPhoto(item.id, photoUrl)}
@@ -1252,9 +1352,8 @@ export function WorkOrderDetail({
             </label>
             {isCompleted || initial.status === "cancelled" ? (
               <div
-                className={`inline-flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold ${
-                  statusColors[initial.status] ?? "bg-zinc-100 text-zinc-600"
-                }`}
+                className="inline-flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold"
+                style={workOrderStatusBadgeStyle(initial.status, statusColors)}
               >
                 {statusLabel}
               </div>
@@ -1592,9 +1691,31 @@ export function WorkOrderDetail({
               {initial.status === "completed" && initial.completedAt ? (
                 <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
                   <span className="text-zinc-500">Completada</span>
-                  <span className="font-medium text-zinc-900">
-                    {formatDate(initial.completedAt)}
-                  </span>
+                  <div className="min-w-0 space-y-1">
+                    {canEditCompletedAt ? (
+                      <>
+                        <input
+                          type="datetime-local"
+                          value={completedAtDraft}
+                          disabled={completedAtSaving}
+                          onChange={(e) => {
+                            setCompletedAtDraft(e.target.value);
+                            setCompletedAtError(null);
+                          }}
+                          onBlur={() => void saveCompletedAtDraft()}
+                          className="tap-target w-full max-w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 font-medium text-zinc-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:opacity-60"
+                          aria-label="Fecha de completado"
+                        />
+                        {completedAtError ? (
+                          <p className="text-xs text-red-600">{completedAtError}</p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="font-medium text-zinc-900">
+                        {formatDate(initial.completedAt)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ) : null}
             </div>

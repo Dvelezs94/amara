@@ -324,7 +324,7 @@ export const dashboardWidgets = pgTable("dashboard_widgets", {
     .notNull()
     .default(sql`'[]'::jsonb`),
   /** Vista del gráfico al abrir el dashboard (línea/barras/pastel según tipo de campo). */
-  chartType: text("chart_type", { enum: ["line", "bar", "pie"] })
+  chartType: text("chart_type", { enum: ["line", "bar", "pie", "stacked"] })
     .notNull()
     .default("line"),
   /** Horizontal reference lines for numeric time-series charts (value + optional label). */
@@ -397,6 +397,14 @@ export const maintenanceSchedules = pgTable("maintenance_schedules", {
   /** Soft-delete: null = activo en calendario */
   deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+});
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<unknown>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
     .notNull()
     .defaultNow(),
 });

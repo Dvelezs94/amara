@@ -8,15 +8,13 @@ import { maintenanceSchedules, users, workOrders } from "@/lib/db/schema";
 import { createId } from "@/lib/id";
 import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
 import { recordAuditLog } from "@/lib/audit";
-
-function parseYmd(value: unknown): Date | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
-  const d = new Date(`${text}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
+import {
+  dueDateFromYmd,
+  maintenanceScheduleWorkOrderDescription,
+  parseScheduleYmd,
+} from "@/lib/maintenance-schedule-work-order";
+import { workOrderExistsForScheduleDay } from "@/lib/maintenance-schedule-work-order-db";
+import { toYmdLocal } from "@/lib/maintenance-recurrence";
 
 export async function POST(
   req: Request,
@@ -39,7 +37,18 @@ export async function POST(
   }
 
   const body = await req.json().catch(() => ({}));
-  const dueDate = parseYmd(body?.dateYmd) ?? schedule.nextRunAt ?? null;
+  const dateYmd =
+    parseScheduleYmd(body?.dateYmd) ??
+    (schedule.nextRunAt ? toYmdLocal(new Date(schedule.nextRunAt)) : null);
+  const dueDate =
+    (dateYmd ? dueDateFromYmd(dateYmd) : null) ?? schedule.nextRunAt ?? null;
+
+  if (dateYmd && (await workOrderExistsForScheduleDay(id, dateYmd))) {
+    return NextResponse.json(
+      { error: "Ya existe una tarea para este evento en este día" },
+      { status: 409 }
+    );
+  }
   let assigneeIds: string[] = [];
   if (Array.isArray(body?.assigneeIds)) {
     assigneeIds = Array.from(
@@ -80,7 +89,7 @@ export async function POST(
     id: workOrderId,
     folio,
     title: schedule.name,
-    description: `Generada desde calendario de mantenimiento (${schedule.id}).`,
+    description: maintenanceScheduleWorkOrderDescription(schedule.id),
     status: "pending",
     priority: "medium",
     kind: "routine",

@@ -17,6 +17,10 @@ export default async function WorkOrderDetailPage({
     <WorkOrderDetail
       initial={wo}
       canEditAssignee={session?.role === "admin"}
+      canEditCompletedAt={session?.role === "admin"}
+      canEditChecklistWhenLocked={
+        session?.role === "admin" || session?.role === "calidad"
+      }
     />
   );
 }

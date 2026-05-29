@@ -25,6 +25,12 @@ import {
 } from "@/lib/maintenance-recurrence";
 import { useSheetModalPresence } from "@/lib/use-sheet-modal-presence";
 import { APP_TIME_ZONE } from "@/lib/timezone";
+import { useWorkOrderStatusColors } from "@/components/WorkOrderStatusColorsProvider";
+import {
+  workOrderStatusBadgeStyle,
+  workOrderStatusMarkerColor,
+  workOrderStatusMarkerLabel,
+} from "@/lib/work-order-status-colors";
 
 export type CalendarSchedulePayload = {
   id: string;
@@ -262,6 +268,7 @@ export function CalendarMonthView({
   checklistTemplates: { id: string; name: string }[];
 }) {
   const router = useRouter();
+  const { colors: statusColors } = useWorkOrderStatusColors();
   const [viewMode, setViewMode] = useState<"year" | "month" | "week" | "day">("month");
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [yearAuditPage, setYearAuditPage] = useState(0);
@@ -369,7 +376,9 @@ export function CalendarMonthView({
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalDate, setCreateModalDate] = useState<string | undefined>(undefined);
-  const [workOrderMarkerKeys, setWorkOrderMarkerKeys] = useState<Set<string>>(new Set());
+  const [workOrderMarkerStatusByKey, setWorkOrderMarkerStatusByKey] = useState<
+    Map<string, string>
+  >(new Map());
 
   useEffect(() => {
     if (!selectedEvent) setDeleteModalOpen(false);
@@ -500,6 +509,19 @@ export function CalendarMonthView({
   }, [panelEvent]);
 
   useEffect(() => {
+    if (!panelEvent || linkedWorkOrders.length === 0) return;
+    const status = linkedWorkOrders[0]?.status;
+    if (!status) return;
+    const key = `${panelEvent.id}|${panelEvent.dateYmd}`;
+    setWorkOrderMarkerStatusByKey((prev) => {
+      if (prev.get(key) === status) return prev;
+      const next = new Map(prev);
+      next.set(key, status);
+      return next;
+    });
+  }, [panelEvent, linkedWorkOrders]);
+
+  useEffect(() => {
     if (!panelEvent) {
       setUserOptions([]);
       setLoadingUserOptions(false);
@@ -535,13 +557,6 @@ export function CalendarMonthView({
     return status;
   }
 
-  function statusBadgeClass(status: string) {
-    if (status === "pending") return "bg-amber-100 text-amber-800";
-    if (status === "in_progress") return "bg-blue-100 text-blue-800";
-    if (status === "completed") return "bg-emerald-100 text-emerald-800";
-    if (status === "cancelled") return "bg-zinc-100 text-zinc-600";
-    return "bg-zinc-100 text-zinc-700";
-  }
 
   function priorityLabel(priority?: string | null) {
     if (priority === "low") return "Baja";
@@ -591,7 +606,7 @@ export function CalendarMonthView({
 
   useEffect(() => {
     if (!markerRange) {
-      setWorkOrderMarkerKeys(new Set());
+      setWorkOrderMarkerStatusByKey(new Map());
       return;
     }
     let cancelled = false;
@@ -603,14 +618,20 @@ export function CalendarMonthView({
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        const keys = Array.isArray(data?.keys)
-          ? data.keys.filter((k: unknown): k is string => typeof k === "string")
-          : [];
-        setWorkOrderMarkerKeys(new Set(keys));
+        const raw = data?.markers;
+        const next = new Map<string, string>();
+        if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+          for (const [key, status] of Object.entries(raw)) {
+            if (typeof key === "string" && typeof status === "string") {
+              next.set(key, status);
+            }
+          }
+        }
+        setWorkOrderMarkerStatusByKey(next);
       })
       .catch(() => {
         if (cancelled) return;
-        setWorkOrderMarkerKeys(new Set());
+        setWorkOrderMarkerStatusByKey(new Map());
       });
     return () => {
       cancelled = true;
@@ -631,6 +652,14 @@ export function CalendarMonthView({
     () => (viewMode === "year" ? buildYearAuditRows(yearForView, schedules) : []),
     [viewMode, yearForView, schedules]
   );
+
+  const panelEventHasWorkOrder = useMemo(() => {
+    if (!panelEvent) return false;
+    if (workOrderMarkerStatusByKey.has(`${panelEvent.id}|${panelEvent.dateYmd}`)) {
+      return true;
+    }
+    return linkedWorkOrders.length > 0;
+  }, [panelEvent, workOrderMarkerStatusByKey, linkedWorkOrders.length]);
 
   useEffect(() => {
     setYearAuditPage(0);
@@ -898,15 +927,19 @@ export function CalendarMonthView({
                                   }}
                                   onMouseDown={(e) => e.stopPropagation()}
                                   className="h-2 w-2 shrink-0 rounded-full"
-                                  style={
-                                    workOrderMarkerKeys.has(`${ev.id}|${dateYmd}`)
-                                      ? {
-                                          background: `linear-gradient(90deg, ${
-                                            ev.color ?? "#02257D"
-                                          } 0 50%, #86efac 50% 100%)`,
-                                        }
-                                      : { backgroundColor: ev.color ?? "#02257D" }
-                                  }
+                                  style={(() => {
+                                    const woStatus = workOrderMarkerStatusByKey.get(
+                                      `${ev.id}|${dateYmd}`
+                                    );
+                                    if (!woStatus) {
+                                      return { backgroundColor: ev.color ?? "#02257D" };
+                                    }
+                                    return {
+                                      background: `linear-gradient(90deg, ${
+                                        ev.color ?? "#02257D"
+                                      } 0 50%, ${workOrderStatusMarkerColor(woStatus, statusColors)} 50% 100%)`,
+                                    };
+                                  })()}
                                   aria-label={ev.name}
                                 />
                               ))}
@@ -1073,7 +1106,9 @@ export function CalendarMonthView({
                   </div>
                   <div className="space-y-1">
                     {visibleEvents.map((ev) => {
-                      const hasWorkOrder = workOrderMarkerKeys.has(`${ev.id}|${dateYmd}`);
+                      const workOrderStatus = workOrderMarkerStatusByKey.get(
+                        `${ev.id}|${dateYmd}`
+                      );
                       return (
                       <button
                         key={`${ev.id}-${i}`}
@@ -1103,11 +1138,17 @@ export function CalendarMonthView({
                         title={ev.name}
                       >
                         <span className="truncate">{ev.name}</span>
-                        {hasWorkOrder ? (
+                        {workOrderStatus ? (
                           <span
-                            className="ml-auto inline-flex h-2 w-2 shrink-0 rounded-full bg-emerald-300 ring-1 ring-white/70"
-                            title="Tiene tarea creada para este día"
-                            aria-label="Tiene tarea creada para este día"
+                            className="ml-auto inline-flex h-2 w-2 shrink-0 rounded-full ring-1 ring-white/70"
+                            style={{
+                              backgroundColor: workOrderStatusMarkerColor(
+                                workOrderStatus,
+                                statusColors
+                              ),
+                            }}
+                            title={workOrderStatusMarkerLabel(workOrderStatus)}
+                            aria-label={workOrderStatusMarkerLabel(workOrderStatus)}
                           />
                         ) : null}
                       </button>
@@ -1396,9 +1437,8 @@ export function CalendarMonthView({
                                 : "—"}
                             </p>
                             <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusBadgeClass(
-                                wo.status
-                              )}`}
+                              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                              style={workOrderStatusBadgeStyle(wo.status, statusColors)}
                             >
                               {statusLabel(wo.status)}
                             </span>
@@ -1476,8 +1516,18 @@ export function CalendarMonthView({
               <div className="mt-3 flex w-full flex-wrap items-center justify-between gap-2">
                 <button
                   type="button"
-                  disabled={creatingWorkOrder}
+                  disabled={
+                    creatingWorkOrder ||
+                    loadingLinkedWorkOrders ||
+                    panelEventHasWorkOrder
+                  }
+                  title={
+                    panelEventHasWorkOrder
+                      ? "Ya existe una tarea para este evento en este día"
+                      : undefined
+                  }
                   onClick={() => {
+                    if (panelEventHasWorkOrder) return;
                     setCreateWorkOrderError(null);
                     setSelectedAssigneeIds([...panelEvent.assigneeIds]);
                     setAssigneePromptOpen(true);
@@ -1520,9 +1570,19 @@ export function CalendarMonthView({
                   <button
                     type="button"
                     className="rounded-sm bg-primary-600 px-2 py-1 text-[11px] font-semibold uppercase text-white hover:bg-primary-700 disabled:opacity-50"
-                    disabled={creatingWorkOrder || selectedAssigneeIds.length === 0}
+                    disabled={
+                      creatingWorkOrder ||
+                      selectedAssigneeIds.length === 0 ||
+                      panelEventHasWorkOrder
+                    }
                     onClick={async () => {
-                      if (!panelEvent || selectedAssigneeIds.length === 0) return;
+                      if (
+                        !panelEvent ||
+                        selectedAssigneeIds.length === 0 ||
+                        panelEventHasWorkOrder
+                      ) {
+                        return;
+                      }
                       setCreateWorkOrderError(null);
                       setCreatingWorkOrder(true);
                       try {
@@ -1546,6 +1606,11 @@ export function CalendarMonthView({
                           );
                           return;
                         }
+                        setWorkOrderMarkerStatusByKey((prev) => {
+                          const next = new Map(prev);
+                          next.set(`${panelEvent.id}|${panelEvent.dateYmd}`, "pending");
+                          return next;
+                        });
                         setSelectedEvent(null);
                         setAssigneePromptOpen(false);
                         router.push(`/tareas/${data.id}`);

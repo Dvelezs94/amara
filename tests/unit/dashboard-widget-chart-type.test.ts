@@ -8,6 +8,7 @@ describe("parseChartTypeFromRequest", () => {
   it("accepts allowed values", () => {
     expect(parseChartTypeFromRequest("bar")).toBe("bar");
     expect(parseChartTypeFromRequest("pie")).toBe("pie");
+    expect(parseChartTypeFromRequest("stacked")).toBe("stacked");
   });
   it("defaults invalid to line", () => {
     expect(parseChartTypeFromRequest(null)).toBe("line");
@@ -32,5 +33,10 @@ describe("clampWidgetChartType", () => {
   });
   it("categorical multi: forces bar", () => {
     expect(clampWidgetChartType("pie", "dropdown", 3)).toBe("bar");
+  });
+  it("categorical single: defaults to stacked daily", () => {
+    expect(clampWidgetChartType(null, "dropdown", 1)).toBe("stacked");
+    expect(clampWidgetChartType("pie", "dropdown", 1)).toBe("pie");
+    expect(clampWidgetChartType("stacked", "dropdown", 1)).toBe("stacked");
   });
 });

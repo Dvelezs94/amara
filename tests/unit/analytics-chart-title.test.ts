@@ -8,6 +8,9 @@ describe("analytics-chart-title", () => {
   it("infers presets from field type and label count", () => {
     expect(inferAnalyticsChartTitlePreset("number", 1)).toBe("number-time");
     expect(inferAnalyticsChartTitlePreset("dropdown", 2)).toBe("categorical-multi");
+    expect(inferAnalyticsChartTitlePreset("dropdown", 1, "stacked")).toBe(
+      "categorical-daily"
+    );
     expect(inferAnalyticsChartTitlePreset("checkbox", 1)).toBe("checkbox-single");
   });
 
@@ -17,6 +20,9 @@ describe("analytics-chart-title", () => {
     );
     expect(buildDefaultAnalyticsChartTitle(["a", "b"], "categorical-multi")).toBe(
       "a, b — comparación por categoría"
+    );
+    expect(buildDefaultAnalyticsChartTitle(["Puerta"], "categorical-daily")).toBe(
+      "Puerta — por día"
     );
   });
 });

@@ -1,9 +1,11 @@
-export type DashboardWidgetChartType = "line" | "bar" | "pie";
+export type DashboardWidgetChartType = "line" | "bar" | "pie" | "stacked";
 
-const ALLOWED: DashboardWidgetChartType[] = ["line", "bar", "pie"];
+const ALLOWED: DashboardWidgetChartType[] = ["line", "bar", "pie", "stacked"];
 
 export function parseChartTypeFromRequest(value: unknown): DashboardWidgetChartType {
-  if (value === "line" || value === "bar" || value === "pie") return value;
+  if (value === "line" || value === "bar" || value === "pie" || value === "stacked") {
+    return value;
+  }
   return "line";
 }
 
@@ -31,8 +33,8 @@ export function clampWidgetChartType(
   }
   if (fieldType === "dropdown" || fieldType === "text") {
     if (labelCount > 1) return "bar";
-    if (valid === "bar" || valid === "pie") return valid;
-    return "bar";
+    if (valid === "bar" || valid === "pie" || valid === "stacked") return valid;
+    return "stacked";
   }
   return "line";
 }
