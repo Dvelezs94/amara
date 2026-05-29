@@ -3,20 +3,45 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+const PAGE_SIZE = 5;
+
+type DeletedRow = { id: string; name: string; deletedAt: string | null };
+
 export function DeletedSchedulesSection({
   initial,
+  initialHasMore = false,
 }: {
-  initial: { id: string; name: string; deletedAt: string | null }[];
+  initial: DeletedRow[];
+  initialHasMore?: boolean;
 }) {
   const router = useRouter();
   const [items, setItems] = useState(initial);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
   useEffect(() => {
     setItems(initial);
-  }, [initial]);
+    setHasMore(initialHasMore);
+  }, [initial, initialHasMore]);
 
   if (items.length === 0) return null;
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(
+        `/api/maintenance-schedules/deleted?limit=${PAGE_SIZE}&offset=${items.length}`
+      );
+      const data = await res.json().catch(() => ({}));
+      const next: DeletedRow[] = Array.isArray(data?.items) ? data.items : [];
+      setItems((prev) => [...prev, ...next]);
+      setHasMore(Boolean(data?.hasMore));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
@@ -36,7 +61,11 @@ export function DeletedSchedulesSection({
               <p className="truncate text-sm font-medium text-zinc-900">{row.name}</p>
               {row.deletedAt ? (
                 <p className="text-[11px] text-zinc-400">
-                  Eliminada {new Date(row.deletedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}
+                  Eliminada{" "}
+                  {new Date(row.deletedAt).toLocaleString("es-MX", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
                 </p>
               ) : null}
             </div>
@@ -64,6 +93,16 @@ export function DeletedSchedulesSection({
           </li>
         ))}
       </ul>
+      {hasMore ? (
+        <button
+          type="button"
+          disabled={loadingMore}
+          onClick={() => void loadMore()}
+          className="mt-3 w-full rounded-lg border border-zinc-200 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {loadingMore ? "Cargando…" : "Cargar más"}
+        </button>
+      ) : null}
     </section>
   );
 }

@@ -34,6 +34,7 @@ export default async function CalendarioPage() {
     .where(isNull(maintenanceSchedules.deletedAt))
     .orderBy(asc(maintenanceSchedules.nextRunAt), asc(maintenanceSchedules.name));
 
+  const DELETED_PAGE_SIZE = 5;
   const deletedSchedules = await db
     .select({
       id: maintenanceSchedules.id,
@@ -43,7 +44,9 @@ export default async function CalendarioPage() {
     .from(maintenanceSchedules)
     .where(isNotNull(maintenanceSchedules.deletedAt))
     .orderBy(desc(maintenanceSchedules.deletedAt))
-    .limit(25);
+    .limit(DELETED_PAGE_SIZE + 1);
+  const deletedInitial = deletedSchedules.slice(0, DELETED_PAGE_SIZE);
+  const deletedInitialHasMore = deletedSchedules.length > DELETED_PAGE_SIZE;
 
   const assetOptions = await db
     .select({
@@ -112,11 +115,12 @@ export default async function CalendarioPage() {
       />
 
       <DeletedSchedulesSection
-        initial={deletedSchedules.map((d) => ({
+        initial={deletedInitial.map((d) => ({
           id: d.id,
           name: d.name,
           deletedAt: d.deletedAt ? d.deletedAt.toISOString() : null,
         }))}
+        initialHasMore={deletedInitialHasMore}
       />
     </div>
   );
