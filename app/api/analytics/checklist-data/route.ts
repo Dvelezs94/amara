@@ -4,8 +4,9 @@ import { db } from "@/lib/db";
 import { workOrders } from "@/lib/db/schema";
 import { workOrderChecklist } from "@/lib/db/schema";
 import { checklistTemplates } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { checklistAnalyticsDateBounds } from "@/lib/dashboard-date-range";
+import { workOrderCountsForChecklistAnalytics } from "@/lib/work-order-analytics";
 
 /**
  * GET ?templateId=xxx&from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -47,13 +48,26 @@ export async function GET(req: Request) {
   }
 
   const completedWOs = await db
-    .select({ id: workOrders.id, title: workOrders.title, completedAt: workOrders.completedAt })
+    .select({
+      id: workOrders.id,
+      title: workOrders.title,
+      status: workOrders.status,
+      completedAt: workOrders.completedAt,
+    })
     .from(workOrders)
-    .where(and(eq(workOrders.status, "completed"), inArray(workOrders.id, woIds)));
+    .where(
+      and(
+        eq(workOrders.status, "completed"),
+        isNotNull(workOrders.completedAt),
+        inArray(workOrders.id, woIds)
+      )
+    );
 
-  let filtered = completedWOs;
+  let filtered = completedWOs.filter((wo) =>
+    workOrderCountsForChecklistAnalytics(wo.status, wo.completedAt)
+  );
   if (rangeStart || rangeEnd) {
-    filtered = completedWOs.filter((wo) => {
+    filtered = filtered.filter((wo) => {
       if (!wo.completedAt) return false;
       const d = new Date(wo.completedAt).getTime();
       if (rangeStart && d < rangeStart.getTime()) return false;
@@ -91,6 +105,7 @@ export async function GET(req: Request) {
     .map((wo) => ({
       id: wo.id,
       title: wo.title,
+      status: wo.status,
       completedAt: wo.completedAt,
       checklistItems: (byWo.get(wo.id) ?? [])
         .sort((a, b) => a.sortOrder - b.sortOrder)

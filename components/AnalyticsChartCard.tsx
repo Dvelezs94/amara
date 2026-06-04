@@ -50,6 +50,7 @@ type ChecklistItem = {
 };
 type WorkOrderData = {
   id: string;
+  status?: string;
   completedAt: string | null;
   checklistItems: ChecklistItem[];
 };

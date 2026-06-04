@@ -223,8 +223,22 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json().catch(() => ({}));
+  if (body.status === "open") body.status = "pending";
+  const allowedStatus = new Set([
+    "pending",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ]);
 
-  if (wo.status === "completed") {
+  const leavingCompleted =
+    wo.status === "completed" &&
+    body.status !== undefined &&
+    typeof body.status === "string" &&
+    body.status !== "completed" &&
+    allowedStatus.has(body.status);
+
+  if (wo.status === "completed" && !leavingCompleted) {
     const keys = Object.keys(body);
     const allowed = new Set(["manualDowntimeMinutes", "countsMachineDowntime"]);
     if (session.role === "admin") allowed.add("completedAt");
@@ -406,7 +420,11 @@ export async function PATCH(
       }
     }
   }
-  if (body.status === "completed") updates.completedAt = new Date();
+  if (body.status === "completed") {
+    updates.completedAt = new Date();
+  } else if (body.status !== undefined) {
+    updates.completedAt = null;
+  }
   if (
     body.status === "in_progress" &&
     wo.status !== "in_progress" &&

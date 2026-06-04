@@ -2,6 +2,8 @@
  * Build datasets for analytics when several checklist fields share the same `fieldType`.
  */
 
+import { workOrderCountsForChecklistAnalytics } from "@/lib/work-order-analytics";
+
 export type ChecklistRow = {
   label: string;
   type: string;
@@ -10,9 +12,15 @@ export type ChecklistRow = {
 };
 
 export type WoChecklistRow = {
+  status?: string | null;
   completedAt: string | null;
   checklistItems: ChecklistRow[];
 };
+
+function analyticsEligibleWo(wo: WoChecklistRow): boolean {
+  const status = wo.status ?? "completed";
+  return workOrderCountsForChecklistAnalytics(status, wo.completedAt);
+}
 
 export function normalizeWidgetFieldLabels(
   fieldLabel: string,
@@ -103,7 +111,7 @@ export function buildCategoricalDailyTimeData(
   const categorySet = new Set<string>();
 
   for (const wo of workOrders) {
-    if (!wo.completedAt) continue;
+    if (!analyticsEligibleWo(wo)) continue;
     const item = wo.checklistItems.find((x) => x.label === label);
     if (!item) continue;
     const day = formatYmdInTimeZone(new Date(wo.completedAt), timeZone);
@@ -144,6 +152,7 @@ export function buildMultiNumberTimeData(
   const series = labels.map((name, i) => ({ key: seriesKeyAt(i), name }));
   const rows: Record<string, string | number | null>[] = [];
   for (const wo of workOrders) {
+    if (!analyticsEligibleWo(wo)) continue;
     const ts = wo.completedAt ? new Date(wo.completedAt).getTime() : NaN;
     if (!Number.isFinite(ts)) continue;
     const row: Record<string, string | number | null> = {
@@ -183,6 +192,7 @@ export function buildMultiCheckboxBars(
     let sí = 0;
     let no = 0;
     for (const wo of workOrders) {
+      if (!analyticsEligibleWo(wo)) continue;
       const item = wo.checklistItems.find((x) => x.label === label);
       if (!item) continue;
       if (item.value === true) sí++;
@@ -202,6 +212,7 @@ export function buildMultiCategoricalUnion(
   const union = new Set<string>();
   for (const label of labels) {
     for (const wo of workOrders) {
+      if (!analyticsEligibleWo(wo)) continue;
       const item = wo.checklistItems.find((x) => x.label === label);
       const raw = item?.value != null ? String(item.value).trim() : "";
       union.add(raw === "" ? "(vacío)" : raw);
@@ -213,6 +224,7 @@ export function buildMultiCategoricalUnion(
     labels.forEach((label, i) => {
       let n = 0;
       for (const wo of workOrders) {
+        if (!analyticsEligibleWo(wo)) continue;
         const item = wo.checklistItems.find((x) => x.label === label);
         const raw = item?.value != null ? String(item.value).trim() : "";
         const cmp = raw === "" ? "(vacío)" : raw;
