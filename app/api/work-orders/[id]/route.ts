@@ -322,13 +322,6 @@ export async function PATCH(
     });
     return NextResponse.json({ ok: true });
   }
-  if (body.status === "open") body.status = "pending";
-  const allowedStatus = new Set([
-    "pending",
-    "in_progress",
-    "completed",
-    "cancelled",
-  ]);
   if (
     body.status !== undefined &&
     typeof body.status === "string" &&

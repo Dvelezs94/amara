@@ -111,7 +111,7 @@ export function buildCategoricalDailyTimeData(
   const categorySet = new Set<string>();
 
   for (const wo of workOrders) {
-    if (!analyticsEligibleWo(wo)) continue;
+    if (!analyticsEligibleWo(wo) || wo.completedAt == null) continue;
     const item = wo.checklistItems.find((x) => x.label === label);
     if (!item) continue;
     const day = formatYmdInTimeZone(new Date(wo.completedAt), timeZone);
