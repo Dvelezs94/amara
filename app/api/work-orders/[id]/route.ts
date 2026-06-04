@@ -277,11 +277,7 @@ export async function PATCH(
           { status: 400 }
         );
       }
-      const validationError = validateWorkOrderCompletedAt(
-        parsed,
-        wo.startedAt,
-        wo.createdAt
-      );
+      const validationError = validateWorkOrderCompletedAt(parsed);
       if (validationError) {
         return NextResponse.json({ error: validationError }, { status: 400 });
       }

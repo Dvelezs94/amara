@@ -454,11 +454,7 @@ export function WorkOrderDetail({
       setCompletedAtDraft(current);
       return;
     }
-    const validationError = validateWorkOrderCompletedAt(
-      parsed,
-      initial.startedAt,
-      initial.createdAt
-    );
+    const validationError = validateWorkOrderCompletedAt(parsed);
     if (validationError) {
       setCompletedAtError(validationError);
       setCompletedAtDraft(current);

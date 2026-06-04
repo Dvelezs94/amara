@@ -21,29 +21,9 @@ describe("datetime-local helpers", () => {
     expect(parseDatetimeLocalValue("not-a-date")).toBeNull();
   });
 
-  it("validates completedAt against startedAt and createdAt", () => {
-    const created = new Date("2026-04-20T10:00:00Z");
-    const started = new Date("2026-04-22T10:00:00Z");
+  it("allows any valid completedAt for admin backdating", () => {
     expect(
-      validateWorkOrderCompletedAt(
-        new Date("2026-04-21T12:00:00Z"),
-        started,
-        created
-      )
-    ).toContain("inicio");
-    expect(
-      validateWorkOrderCompletedAt(
-        new Date("2026-04-19T12:00:00Z"),
-        null,
-        created
-      )
-    ).toContain("creación");
-    expect(
-      validateWorkOrderCompletedAt(
-        new Date("2026-04-23T12:00:00Z"),
-        started,
-        created
-      )
+      validateWorkOrderCompletedAt(new Date("2020-01-01T12:00:00Z"))
     ).toBeNull();
   });
 });

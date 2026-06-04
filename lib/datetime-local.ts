@@ -88,20 +88,7 @@ export function parseDatetimeLocalValue(
   return Number.isNaN(result.getTime()) ? null : result;
 }
 
-export function validateWorkOrderCompletedAt(
-  completedAt: Date,
-  startedAt: string | Date | null | undefined,
-  createdAt: string | Date
-): string | null {
-  if (startedAt != null) {
-    const start = new Date(startedAt);
-    if (!Number.isNaN(start.getTime()) && completedAt.getTime() < start.getTime()) {
-      return "La fecha de completado no puede ser anterior al inicio de la tarea";
-    }
-  }
-  const created = new Date(createdAt);
-  if (!Number.isNaN(created.getTime()) && completedAt.getTime() < created.getTime()) {
-    return "La fecha de completado no puede ser anterior a la creación de la tarea";
-  }
+/** Admins may set any valid completedAt (e.g. backdate for analytics). */
+export function validateWorkOrderCompletedAt(_completedAt: Date): string | null {
   return null;
 }
