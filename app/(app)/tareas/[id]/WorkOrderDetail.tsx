@@ -17,7 +17,9 @@ import {
   Pencil,
   ArrowLeft,
   FileText,
+  Trash2,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { UserAvatar } from "@/components/UserAvatar";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
@@ -135,6 +137,7 @@ export function WorkOrderDetail({
   canEditAssignee = false,
   canEditCompletedAt = false,
   canEditChecklistWhenLocked = false,
+  canDeleteWorkOrder = false,
 }: {
   initial: {
     id: string;
@@ -171,8 +174,12 @@ export function WorkOrderDetail({
   canEditAssignee?: boolean;
   canEditCompletedAt?: boolean;
   canEditChecklistWhenLocked?: boolean;
+  canDeleteWorkOrder?: boolean;
 }) {
   const router = useRouter();
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { colors: statusColors } = useWorkOrderStatusColors();
   function toRenderablePhotoUrl(raw: string): string {
     const trimmed = raw.trim();
@@ -789,6 +796,28 @@ export function WorkOrderDetail({
     }
   }
 
+  async function onConfirmDeleteWorkOrder() {
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/work-orders/${initial.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError(
+          typeof data.error === "string" ? data.error : "No se pudo eliminar la tarea."
+        );
+        setDeleteLoading(false);
+        return;
+      }
+      setDeleteConfirmOpen(false);
+      router.push("/tareas");
+      router.refresh();
+    } catch {
+      setDeleteError("No se pudo eliminar la tarea.");
+      setDeleteLoading(false);
+    }
+  }
+
   const pr = priorityDetail[initial.priority] ?? {
     Icon: Equal,
     className: "text-zinc-400",
@@ -843,6 +872,38 @@ export function WorkOrderDetail({
               <Pencil className="h-4 w-4" />
             </Link>
           )}
+          {canDeleteWorkOrder ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteConfirmOpen(true);
+                }}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-red-50 hover:text-red-700 tap-target"
+                aria-label="Eliminar tarea"
+                title="Eliminar tarea"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <ConfirmDialog
+                open={deleteConfirmOpen}
+                title="Eliminar tarea"
+                message={
+                  deleteError ??
+                  (isCompleted
+                    ? `¿Eliminar la tarea completada «${initial.title}»? Se borrarán también comentarios, adjuntos y datos del checklist. Esta acción no se puede deshacer.`
+                    : `¿Eliminar la tarea «${initial.title}»? Esta acción no se puede deshacer.`)
+                }
+                confirmLabel="Eliminar"
+                onConfirm={() => void onConfirmDeleteWorkOrder()}
+                onCancel={() => {
+                  if (!deleteLoading) setDeleteConfirmOpen(false);
+                }}
+                loading={deleteLoading}
+              />
+            </>
+          ) : null}
         </div>
       </div>
 

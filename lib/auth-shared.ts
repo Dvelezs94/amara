@@ -21,3 +21,8 @@ export type SessionUser = {
 export function canEditLockedWorkOrderChecklist(role: UserRole): boolean {
   return role === "admin" || role === "calidad";
 }
+
+/** Only admins may permanently delete work orders (any status). */
+export function canDeleteWorkOrder(role: UserRole | undefined): boolean {
+  return role === "admin";
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AVAILABLE_USER_ROLES,
+  canDeleteWorkOrder,
   canEditLockedWorkOrderChecklist,
 } from "@/lib/auth-shared";
 
@@ -18,5 +19,14 @@ describe("canEditLockedWorkOrderChecklist", () => {
     expect(canEditLockedWorkOrderChecklist("admin")).toBe(true);
     expect(canEditLockedWorkOrderChecklist("calidad")).toBe(true);
     expect(canEditLockedWorkOrderChecklist("tecnico")).toBe(false);
+  });
+});
+
+describe("canDeleteWorkOrder", () => {
+  it("allows admin only", () => {
+    expect(canDeleteWorkOrder("admin")).toBe(true);
+    expect(canDeleteWorkOrder("tecnico")).toBe(false);
+    expect(canDeleteWorkOrder("calidad")).toBe(false);
+    expect(canDeleteWorkOrder(undefined)).toBe(false);
   });
 });

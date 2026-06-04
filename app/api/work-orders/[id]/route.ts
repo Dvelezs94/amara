@@ -15,6 +15,7 @@ import { createNotification } from "@/lib/notifications";
 import { clampManualDowntimeMinutes } from "@/lib/machine-downtime";
 import { checklistItemBlocksWorkOrderCompletion } from "@/lib/checklist-completion";
 import { validateWorkOrderCompletedAt } from "@/lib/datetime-local";
+import { canDeleteWorkOrder } from "@/lib/auth-shared";
 
 async function assetAllowsDowntimeTracking(assetId: string | null): Promise<boolean> {
   if (!assetId) return false;
@@ -549,6 +550,9 @@ export async function DELETE(
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!canDeleteWorkOrder(session.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
   const wo = await db.query.workOrders.findFirst({
