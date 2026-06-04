@@ -59,6 +59,8 @@ const boardColumns: { key: BoardStatus; title: string }[] = [
   { key: "completed", title: "Terminadas" },
 ];
 
+const COMPLETED_PAGE_SIZE = 10;
+
 /** Jira-style priority: icon shape + color by level */
 const priorityVisual: Record<
   string,
@@ -198,6 +200,8 @@ export function WorkOrderList() {
   } | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [completedVisibleCount, setCompletedVisibleCount] =
+    useState(COMPLETED_PAGE_SIZE);
   /** Re-render active tasks ~every minute so transcurrido stays fresh */
   const [durationTick, setDurationTick] = useState(0);
 
@@ -240,6 +244,10 @@ export function WorkOrderList() {
       cancelled = true;
     };
   }, [selectedAssigneeId, isSearching]);
+
+  useEffect(() => {
+    setCompletedVisibleCount(COMPLETED_PAGE_SIZE);
+  }, [selectedAssigneeId, isSearching, q]);
 
   const filteredItems = useMemo(() => {
     if (!q) return items;
@@ -452,6 +460,14 @@ export function WorkOrderList() {
           const columnItems = filteredItems
             .filter((wo) => wo.status === column.key)
             .sort((a, b) => {
+              if (column.key === "completed") {
+                const ac = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+                const bc = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+                if (ac !== bc) return bc - ac;
+                return (
+                  new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                );
+              }
               const ao = a.boardSortOrder ?? 0;
               const bo = b.boardSortOrder ?? 0;
               if (ao !== bo) return ao - bo;
@@ -459,6 +475,12 @@ export function WorkOrderList() {
                 new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
               );
             });
+          const isCompletedColumn = column.key === "completed";
+          const completedHasMore =
+            isCompletedColumn && columnItems.length > completedVisibleCount;
+          const displayItems = isCompletedColumn
+            ? columnItems.slice(0, completedVisibleCount)
+            : columnItems;
           const isDropActive = dropTarget === column.key;
           return (
             <section
@@ -510,7 +532,9 @@ export function WorkOrderList() {
                     id
                   );
                   if (current.status === column.key) {
-                    if (!canReorderColumn) return;
+                    if (!canReorderColumn || (isCompletedColumn && completedHasMore)) {
+                      return;
+                    }
                     const ordered = columnItems.map((w) => w.id);
                     const from = ordered.indexOf(id);
                     if (from === -1) return;
@@ -526,7 +550,7 @@ export function WorkOrderList() {
                   }
                 }}
               >
-                {columnItems.map((wo, i) => {
+                {displayItems.map((wo, i) => {
                   void durationTick;
                   const overdue = isDueDatePast(wo.dueDate);
                   const dueLineClass = overdue ? "text-red-600" : "text-zinc-400";
@@ -577,7 +601,10 @@ export function WorkOrderList() {
                       role="link"
                       tabIndex={savingId === wo.id ? -1 : 0}
                       aria-label={cardAriaLabel}
-                      draggable={savingId !== wo.id}
+                      draggable={
+                        savingId !== wo.id &&
+                        !(isCompletedColumn && completedHasMore)
+                      }
                       onDragStart={(e) => {
                         setDraggingId(wo.id);
                         e.dataTransfer.setData("text/plain", wo.id);
@@ -722,9 +749,20 @@ export function WorkOrderList() {
                   );
                 })}
                 {insertIndicator?.column === column.key &&
-                insertIndicator.index === columnItems.length &&
+                insertIndicator.index === displayItems.length &&
                 draggingId != null ? (
                   <div className="h-0.5 rounded-full bg-primary-500" aria-hidden />
+                ) : null}
+                {completedHasMore ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCompletedVisibleCount((n) => n + COMPLETED_PAGE_SIZE)
+                    }
+                    className="mt-1 w-full rounded-lg border border-zinc-200 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Cargar más
+                  </button>
                 ) : null}
                 {columnItems.length === 0 ? (
                   <>
