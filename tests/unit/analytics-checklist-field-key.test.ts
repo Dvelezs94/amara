@@ -34,10 +34,10 @@ describe("buildAnalyticsFieldDescriptors", () => {
     const workOrders = [
       {
         checklistItems: [
-          { id: "s1", label: "Sección 1", type: "section", parentItemId: null },
-          { id: "f1", label: "Boca (°C)", type: "custom_field", parentItemId: "s1" },
-          { id: "s2", label: "Sección 2", type: "section", parentItemId: null },
-          { id: "f2", label: "Boca (°C)", type: "custom_field", parentItemId: "s2" },
+          { id: "s1", label: "Sección 1", type: "section", parentItemId: null, sortOrder: 0 },
+          { id: "f1", label: "Boca (°C)", type: "custom_field", parentItemId: "s1", sortOrder: 0 },
+          { id: "s2", label: "Sección 2", type: "section", parentItemId: null, sortOrder: 1 },
+          { id: "f2", label: "Boca (°C)", type: "custom_field", parentItemId: "s2", sortOrder: 0 },
         ],
       },
     ];
@@ -47,6 +47,21 @@ describe("buildAnalyticsFieldDescriptors", () => {
       "Sección 1 › Boca (°C)",
       "Sección 2 › Boca (°C)",
     ]);
+  });
+
+  it("orders fields in checklist depth-first order", () => {
+    const workOrders = [
+      {
+        checklistItems: [
+          { id: "s1", label: "Zona A", type: "section", parentItemId: null, sortOrder: 0 },
+          { id: "f1", label: "Primero", type: "custom_field", parentItemId: "s1", sortOrder: 0 },
+          { id: "f2", label: "Segundo", type: "custom_field", parentItemId: "s1", sortOrder: 1 },
+          { id: "f3", label: "Último", type: "custom_field", parentItemId: null, sortOrder: 1 },
+        ],
+      },
+    ];
+    const fields = buildAnalyticsFieldDescriptors(workOrders);
+    expect(fields.map((f) => f.label)).toEqual(["Primero", "Segundo", "Último"]);
   });
 });
 

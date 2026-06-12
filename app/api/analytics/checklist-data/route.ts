@@ -113,6 +113,7 @@ export async function GET(req: Request) {
         .map((i) => ({
           id: i.id,
           parentItemId: i.parentItemId ?? null,
+          sortOrder: i.sortOrder,
           label: i.label,
           type: i.type,
           fieldType: i.fieldType,

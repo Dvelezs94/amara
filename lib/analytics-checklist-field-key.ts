@@ -2,11 +2,14 @@
  * Stable keys for checklist analytics fields, disambiguated by section path.
  */
 
+import { flattenChecklistTreeForDisplay } from "@/lib/checklist-item-tree";
+
 export type AnalyticsChecklistTreeItem = {
   id: string;
   label: string;
   type: string;
   parentItemId?: string | null;
+  sortOrder?: number;
 };
 
 export type AnalyticsFieldDescriptor = {
@@ -65,18 +68,25 @@ export function buildAnalyticsFieldDescriptors(
   workOrders: { checklistItems: AnalyticsChecklistTreeItem[] }[]
 ): AnalyticsFieldDescriptor[] {
   const seen = new Map<string, AnalyticsFieldDescriptor>();
-  for (const wo of workOrders) {
-    for (const it of wo.checklistItems) {
+  const order: string[] = [];
+
+  const addFromItems = (items: readonly AnalyticsChecklistTreeItem[]) => {
+    const flat = flattenChecklistTreeForDisplay(items);
+    for (const it of flat) {
       if (it.type !== "custom_field" || !it.label?.trim()) continue;
-      const descriptor = buildAnalyticsFieldDescriptor(it, wo.checklistItems);
+      const descriptor = buildAnalyticsFieldDescriptor(it, items);
       if (!seen.has(descriptor.key)) {
         seen.set(descriptor.key, descriptor);
+        order.push(descriptor.key);
       }
     }
+  };
+
+  for (const wo of workOrders) {
+    addFromItems(wo.checklistItems);
   }
-  return Array.from(seen.values()).sort((a, b) =>
-    a.displayLabel.localeCompare(b.displayLabel, "es")
-  );
+
+  return order.map((key) => seen.get(key)!);
 }
 
 /** Match a stored field key (or legacy plain label) to a checklist row. */
