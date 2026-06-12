@@ -35,6 +35,11 @@ import {
 import { LayoutDashboard, X } from "lucide-react";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
+  displayLabelForFieldKey,
+  findChecklistItemByFieldKey,
+  type AnalyticsFieldDescriptor,
+} from "@/lib/analytics-checklist-field-key";
+import {
   buildCategoricalDailyTimeData,
   buildMultiCategoricalUnion,
   buildMultiCheckboxBars,
@@ -45,6 +50,8 @@ import type { DashboardWidgetChartType } from "@/lib/dashboard-widget-chart-type
 
 type Template = { id: string; name: string };
 type ChecklistItem = {
+  id: string;
+  parentItemId?: string | null;
   label: string;
   type: string;
   fieldType: string | null;
@@ -61,7 +68,7 @@ type ApiResponse = {
   templateId: string;
   templateName: string;
   workOrders: WorkOrderData[];
-  fields: string[];
+  fields: AnalyticsFieldDescriptor[];
 };
 
 const COLORS = ["#02257D", "#F14C03", "#9E9F9F", "#000000", "#3355AA", "#E85A0A"];
@@ -69,7 +76,7 @@ const COLORS = ["#02257D", "#F14C03", "#9E9F9F", "#000000", "#3355AA", "#E85A0A"
 export function AnalyticsCharts() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateId, setTemplateId] = useState("");
-  const [selectedFieldLabels, setSelectedFieldLabels] = useState<string[]>([]);
+  const [selectedFieldKeys, setSelectedFieldKeys] = useState<string[]>([]);
   const [fieldTypeHint, setFieldTypeHint] = useState<string | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -83,10 +90,10 @@ export function AnalyticsCharts() {
 
   const thresholdsStorageKey = useMemo(
     () =>
-      templateId && selectedFieldLabels.length > 0
-        ? analyticsThresholdsStorageKey(templateId, selectedFieldLabels)
+      templateId && selectedFieldKeys.length > 0
+        ? analyticsThresholdsStorageKey(templateId, selectedFieldKeys)
         : null,
-    [templateId, selectedFieldLabels.join("|")]
+    [templateId, selectedFieldKeys.join("|")]
   );
 
   useEffect(() => {
@@ -129,7 +136,7 @@ export function AnalyticsCharts() {
   useEffect(() => {
     if (!templateId) {
       setData(null);
-      setSelectedFieldLabels([]);
+      setSelectedFieldKeys([]);
       return;
     }
     setLoading(true);
@@ -140,9 +147,10 @@ export function AnalyticsCharts() {
       .then((r) => r.json())
       .then((d) => {
         setData(d);
-        setSelectedFieldLabels((prev) => {
-          const fields: string[] = Array.isArray(d.fields) ? d.fields : [];
-          return prev.filter((x) => fields.includes(x));
+        setSelectedFieldKeys((prev) => {
+          const fields: AnalyticsFieldDescriptor[] = Array.isArray(d.fields) ? d.fields : [];
+          const keys = new Set(fields.map((f) => f.key));
+          return prev.filter((x) => keys.has(x));
         });
       })
       .catch(() => setData(null))
@@ -151,31 +159,34 @@ export function AnalyticsCharts() {
 
   const workOrders = data?.workOrders ?? [];
 
+  const selectedDisplayLabels = useMemo(
+    () => selectedFieldKeys.map((key) => displayLabelForFieldKey(workOrders, key)),
+    [workOrders, selectedFieldKeys]
+  );
+
   const fieldType = useMemo(
     () =>
-      selectedFieldLabels.length > 0
-        ? commonFieldType(workOrders, selectedFieldLabels)
-        : null,
-    [workOrders, selectedFieldLabels]
+      selectedFieldKeys.length > 0 ? commonFieldType(workOrders, selectedFieldKeys) : null,
+    [workOrders, selectedFieldKeys]
   );
 
   const chartTitleStorageKey = useMemo(
     () =>
-      templateId && selectedFieldLabels.length > 0
-        ? analyticsChartTitleStorageKey(templateId, selectedFieldLabels)
+      templateId && selectedFieldKeys.length > 0
+        ? analyticsChartTitleStorageKey(templateId, selectedFieldKeys)
         : null,
-    [templateId, selectedFieldLabels.join("|")]
+    [templateId, selectedFieldKeys.join("|")]
   );
 
   const defaultChartTitle = useMemo(() => {
     const preset = inferAnalyticsChartTitlePreset(
       fieldType,
-      selectedFieldLabels.length,
+      selectedFieldKeys.length,
       chartType
     );
     if (!preset) return "";
-    return buildDefaultAnalyticsChartTitle(selectedFieldLabels, preset);
-  }, [fieldType, selectedFieldLabels, chartType]);
+    return buildDefaultAnalyticsChartTitle(selectedDisplayLabels, preset);
+  }, [fieldType, selectedFieldKeys.length, selectedDisplayLabels, chartType]);
 
   useEffect(() => {
     if (!chartTitleStorageKey || !defaultChartTitle) {
@@ -188,41 +199,43 @@ export function AnalyticsCharts() {
   const selectedFieldItems = useMemo(
     () =>
       workOrders.flatMap((wo) =>
-        (wo.checklistItems ?? []).filter((i) => selectedFieldLabels.includes(i.label))
+        selectedFieldKeys
+          .map((key) => findChecklistItemByFieldKey(wo.checklistItems ?? [], key))
+          .filter((item): item is ChecklistItem => item != null)
       ),
-    [workOrders, selectedFieldLabels]
+    [workOrders, selectedFieldKeys]
   );
 
   const multiNumber = useMemo(() => {
-    if (fieldType !== "number" || selectedFieldLabels.length === 0) return null;
-    return buildMultiNumberTimeData(workOrders, selectedFieldLabels, APP_TIME_ZONE);
-  }, [fieldType, workOrders, selectedFieldLabels]);
+    if (fieldType !== "number" || selectedFieldKeys.length === 0) return null;
+    return buildMultiNumberTimeData(workOrders, selectedFieldKeys, APP_TIME_ZONE);
+  }, [fieldType, workOrders, selectedFieldKeys]);
 
   const categoricalDaily = useMemo(() => {
     if (
       (fieldType !== "dropdown" && fieldType !== "text") ||
-      selectedFieldLabels.length !== 1
+      selectedFieldKeys.length !== 1
     ) {
       return null;
     }
     return buildCategoricalDailyTimeData(
       workOrders,
-      selectedFieldLabels[0]!,
+      selectedFieldKeys[0]!,
       APP_TIME_ZONE
     );
-  }, [fieldType, workOrders, selectedFieldLabels]);
+  }, [fieldType, workOrders, selectedFieldKeys]);
 
   const singleCategoricalChartData = useMemo(() => {
     if (
       (fieldType !== "dropdown" && fieldType !== "text") ||
-      selectedFieldLabels.length !== 1
+      selectedFieldKeys.length !== 1
     ) {
       return [];
     }
-    const label = selectedFieldLabels[0]!;
+    const fieldKey = selectedFieldKeys[0]!;
     const counts = new Map<string, number>();
     for (const wo of workOrders) {
-      const item = wo.checklistItems.find((i) => i.label === label);
+      const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
       if (!item) continue;
       const v = item.value != null ? String(item.value) : "(empty)";
       counts.set(v, (counts.get(v) ?? 0) + 1);
@@ -231,25 +244,25 @@ export function AnalyticsCharts() {
       name: name === "(empty)" ? "(vacío)" : name,
       value,
     }));
-  }, [fieldType, workOrders, selectedFieldLabels]);
+  }, [fieldType, workOrders, selectedFieldKeys]);
 
   const multiCategorical = useMemo(() => {
     if (
       (fieldType !== "dropdown" && fieldType !== "text") ||
-      selectedFieldLabels.length <= 1
+      selectedFieldKeys.length <= 1
     ) {
       return null;
     }
-    return buildMultiCategoricalUnion(workOrders, selectedFieldLabels);
-  }, [fieldType, workOrders, selectedFieldLabels]);
+    return buildMultiCategoricalUnion(workOrders, selectedFieldKeys);
+  }, [fieldType, workOrders, selectedFieldKeys]);
 
   const singleCheckboxChartData = useMemo(() => {
-    if (fieldType !== "checkbox" || selectedFieldLabels.length !== 1) return [];
-    const label = selectedFieldLabels[0]!;
+    if (fieldType !== "checkbox" || selectedFieldKeys.length !== 1) return [];
+    const fieldKey = selectedFieldKeys[0]!;
     let yes = 0;
     let no = 0;
     for (const wo of workOrders) {
-      const item = wo.checklistItems.find((i) => i.label === label);
+      const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
       if (!item) continue;
       if (item.value === true) yes++;
       else no++;
@@ -258,26 +271,26 @@ export function AnalyticsCharts() {
       { name: "Sí", value: yes },
       { name: "No", value: no },
     ];
-  }, [fieldType, workOrders, selectedFieldLabels]);
+  }, [fieldType, workOrders, selectedFieldKeys]);
 
   const multiCheckboxBars = useMemo(() => {
-    if (fieldType !== "checkbox" || selectedFieldLabels.length <= 1) return [];
-    return buildMultiCheckboxBars(workOrders, selectedFieldLabels);
-  }, [fieldType, workOrders, selectedFieldLabels]);
+    if (fieldType !== "checkbox" || selectedFieldKeys.length <= 1) return [];
+    return buildMultiCheckboxBars(workOrders, selectedFieldKeys);
+  }, [fieldType, workOrders, selectedFieldKeys]);
 
-  function toggleFieldLabel(f: string) {
-    if (selectedFieldLabels.includes(f)) {
+  function toggleFieldKey(fieldKey: string) {
+    if (selectedFieldKeys.includes(fieldKey)) {
       setFieldTypeHint(null);
-      setSelectedFieldLabels((p) => p.filter((x) => x !== f));
+      setSelectedFieldKeys((p) => p.filter((x) => x !== fieldKey));
       return;
     }
-    const next = [...selectedFieldLabels, f];
-    if (selectedFieldLabels.length > 0 && commonFieldType(workOrders, next) === null) {
+    const next = [...selectedFieldKeys, fieldKey];
+    if (selectedFieldKeys.length > 0 && commonFieldType(workOrders, next) === null) {
       setFieldTypeHint("Solo puedes combinar campos del mismo tipo.");
       return;
     }
     setFieldTypeHint(null);
-    setSelectedFieldLabels(next);
+    setSelectedFieldKeys(next);
   }
 
   useEffect(() => {
@@ -287,20 +300,22 @@ export function AnalyticsCharts() {
       return;
     }
     if (fieldType === "checkbox") {
-      setChartType(selectedFieldLabels.length > 1 ? "bar" : "pie");
+      setChartType(selectedFieldKeys.length > 1 ? "bar" : "pie");
       return;
     }
     if (fieldType === "dropdown" || fieldType === "text") {
-      setChartType(selectedFieldLabels.length > 1 ? "bar" : "stacked");
+      setChartType(selectedFieldKeys.length > 1 ? "bar" : "stacked");
     }
-  }, [fieldType, selectedFieldLabels.join("|")]);
+  }, [fieldType, selectedFieldKeys.join("|")]);
 
   const fieldsSelectionSummary = useMemo(() => {
-    if (selectedFieldLabels.length === 0) return "Sin campos";
-    if (selectedFieldLabels.length === 1) return selectedFieldLabels[0]!;
-    if (selectedFieldLabels.length === 2) return `${selectedFieldLabels[0]!} · ${selectedFieldLabels[1]!}`;
-    return `${selectedFieldLabels.length} campos seleccionados`;
-  }, [selectedFieldLabels]);
+    if (selectedDisplayLabels.length === 0) return "Sin campos";
+    if (selectedDisplayLabels.length === 1) return selectedDisplayLabels[0]!;
+    if (selectedDisplayLabels.length === 2) {
+      return `${selectedDisplayLabels[0]!} · ${selectedDisplayLabels[1]!}`;
+    }
+    return `${selectedDisplayLabels.length} campos seleccionados`;
+  }, [selectedDisplayLabels]);
 
   return (
     <div className="space-y-6">
@@ -334,7 +349,7 @@ export function AnalyticsCharts() {
               className="flex w-full min-w-0 flex-col gap-0.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-left text-sm text-zinc-900 shadow-sm hover:bg-zinc-50"
             >
               <span className="font-medium text-primary-700">Elegir campos…</span>
-              <span className="truncate text-xs text-zinc-500" title={selectedFieldLabels.join(", ")}>
+              <span className="truncate text-xs text-zinc-500" title={selectedDisplayLabels.join(", ")}>
                 {fieldsSelectionSummary}
               </span>
             </button>
@@ -381,13 +396,13 @@ export function AnalyticsCharts() {
           This checklist has no custom fields; add text, number, date, dropdown, or checkbox fields to see graphs.
         </div>
       )}
-      {templateId && (data?.workOrders?.length ?? 0) > 0 && (data?.fields?.length ?? 0) > 0 && selectedFieldLabels.length === 0 && !loading && (
+      {templateId && (data?.workOrders?.length ?? 0) > 0 && (data?.fields?.length ?? 0) > 0 && selectedFieldKeys.length === 0 && !loading && (
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-8 text-center text-zinc-500">
           Selecciona al menos un campo para ver el gráfico.
         </div>
       )}
 
-      {templateId && selectedFieldLabels.length > 0 && data && (
+      {templateId && selectedFieldKeys.length > 0 && data && (
         <div className="flex flex-wrap items-center gap-2">
           {(fieldType === "number" || fieldType === "checkbox" || fieldType === "dropdown" || fieldType === "text") && (
             <select
@@ -402,7 +417,7 @@ export function AnalyticsCharts() {
                   <option value="line">Línea</option>
                   <option value="bar">Barras</option>
                 </>
-              ) : selectedFieldLabels.length > 1 ? (
+              ) : selectedFieldKeys.length > 1 ? (
                 <option value="bar">Barras</option>
               ) : (
                 <>
@@ -425,8 +440,8 @@ export function AnalyticsCharts() {
                   body: JSON.stringify({
                     templateId,
                     templateName: data.templateName ?? "",
-                    fieldLabel: selectedFieldLabels[0],
-                    fieldLabels: selectedFieldLabels,
+                    fieldLabel: selectedFieldKeys[0],
+                    fieldLabels: selectedFieldKeys,
                     dateFrom: from || null,
                     dateTo: to || null,
                     chartType: fieldType === "number" ? (chartType === "pie" ? "line" : chartType) : chartType,
@@ -460,7 +475,7 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {selectedFieldLabels.length > 0 &&
+      {selectedFieldKeys.length > 0 &&
         fieldType === "number" &&
         multiNumber &&
         multiNumber.data.length > 0 && (
@@ -492,7 +507,7 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {selectedFieldLabels.length > 0 &&
+      {selectedFieldKeys.length > 0 &&
         (fieldType === "dropdown" || fieldType === "text") &&
         multiCategorical &&
         multiCategorical.data.length > 0 && (
@@ -527,9 +542,9 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {selectedFieldLabels.length > 0 &&
+      {selectedFieldKeys.length > 0 &&
         (fieldType === "dropdown" || fieldType === "text") &&
-        selectedFieldLabels.length === 1 &&
+        selectedFieldKeys.length === 1 &&
         chartType === "stacked" &&
         categoricalDaily &&
         categoricalDaily.data.length > 0 && (
@@ -551,9 +566,9 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {selectedFieldLabels.length > 0 &&
+      {selectedFieldKeys.length > 0 &&
         (fieldType === "dropdown" || fieldType === "text") &&
-        selectedFieldLabels.length === 1 &&
+        selectedFieldKeys.length === 1 &&
         chartType !== "stacked" &&
         singleCategoricalChartData.length > 0 && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
@@ -600,9 +615,9 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {selectedFieldLabels.length > 0 &&
+      {selectedFieldKeys.length > 0 &&
         fieldType === "checkbox" &&
-        selectedFieldLabels.length > 1 &&
+        selectedFieldKeys.length > 1 &&
         multiCheckboxBars.some((r) => r.sí + r.no > 0) && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <EditableChartTitle
@@ -628,9 +643,9 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {selectedFieldLabels.length > 0 &&
+      {selectedFieldKeys.length > 0 &&
         fieldType === "checkbox" &&
-        selectedFieldLabels.length === 1 &&
+        selectedFieldKeys.length === 1 &&
         (singleCheckboxChartData[0]?.value > 0 || singleCheckboxChartData[1]?.value > 0) && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <EditableChartTitle
@@ -676,7 +691,7 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {selectedFieldLabels.length > 0 && fieldType === "date" && (
+      {selectedFieldKeys.length > 0 && fieldType === "date" && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <EditableChartTitle
             value={chartTitle}
@@ -740,15 +755,20 @@ export function AnalyticsCharts() {
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
               <ul className="space-y-0.5">
                 {data.fields.map((f) => (
-                  <li key={f}>
+                  <li key={f.key}>
                     <label className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50">
                       <input
                         type="checkbox"
-                        checked={selectedFieldLabels.includes(f)}
-                        onChange={() => toggleFieldLabel(f)}
+                        checked={selectedFieldKeys.includes(f.key)}
+                        onChange={() => toggleFieldKey(f.key)}
                         className="mt-0.5 shrink-0 rounded border-zinc-400"
                       />
-                      <span className="min-w-0 break-words">{f}</span>
+                      <span className="min-w-0 break-words">
+                        <span>{f.label}</span>
+                        {f.sectionLabel ? (
+                          <span className="mt-0.5 block text-xs text-zinc-500">{f.sectionLabel}</span>
+                        ) : null}
+                      </span>
                     </label>
                   </li>
                 ))}

@@ -28,6 +28,11 @@ import {
 } from "@/lib/chart-thresholds";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
+  displayLabelForFieldKey,
+  findChecklistItemByFieldKey,
+  type AnalyticsFieldDescriptor,
+} from "@/lib/analytics-checklist-field-key";
+import {
   buildCategoricalDailyTimeData,
   buildMultiCategoricalUnion,
   buildMultiCheckboxBars,
@@ -43,6 +48,8 @@ import {
 const COLORS = ["#02257D", "#F14C03", "#9E9F9F", "#000000", "#3355AA", "#E85A0A"];
 
 type ChecklistItem = {
+  id: string;
+  parentItemId?: string | null;
   label: string;
   type: string;
   fieldType: string | null;
@@ -58,7 +65,7 @@ type ApiResponse = {
   templateId: string;
   templateName: string;
   workOrders: WorkOrderData[];
-  fields: string[];
+  fields: AnalyticsFieldDescriptor[];
 };
 
 const MIN_REFRESH_MS = 5_000;
@@ -161,10 +168,17 @@ export function AnalyticsChartCard({
     [workOrders, selectedLabels]
   );
 
+  const selectedDisplayLabels = useMemo(
+    () => selectedLabels.map((key) => displayLabelForFieldKey(workOrders, key)),
+    [workOrders, selectedLabels]
+  );
+
   const selectedFieldItems = useMemo(
     () =>
       workOrders.flatMap((wo) =>
-        (wo.checklistItems ?? []).filter((i) => selectedLabels.includes(i.label))
+        selectedLabels
+          .map((key) => findChecklistItemByFieldKey(wo.checklistItems ?? [], key))
+          .filter((item): item is ChecklistItem => item != null)
       ),
     [workOrders, selectedLabels]
   );
@@ -185,10 +199,10 @@ export function AnalyticsChartCard({
     if ((fieldType !== "dropdown" && fieldType !== "text") || selectedLabels.length !== 1) {
       return [];
     }
-    const label = selectedLabels[0]!;
+    const fieldKey = selectedLabels[0]!;
     const counts = new Map<string, number>();
     for (const wo of workOrders) {
-      const item = wo.checklistItems.find((i) => i.label === label);
+      const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
       if (!item) continue;
       const v = item.value != null ? String(item.value) : "(empty)";
       counts.set(v, (counts.get(v) ?? 0) + 1);
@@ -208,11 +222,11 @@ export function AnalyticsChartCard({
 
   const singleCheckboxChartData = useMemo(() => {
     if (fieldType !== "checkbox" || selectedLabels.length !== 1) return [];
-    const label = selectedLabels[0]!;
+    const fieldKey = selectedLabels[0]!;
     let yes = 0;
     let no = 0;
     for (const wo of workOrders) {
-      const item = wo.checklistItems.find((i) => i.label === label);
+      const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
       if (!item) continue;
       if (item.value === true) yes++;
       else no++;
@@ -254,7 +268,7 @@ export function AnalyticsChartCard({
     setThresholds(parseChartThresholds(initialThresholds ?? []));
   }, [widgetId, JSON.stringify(initialThresholds ?? [])]);
 
-  const labelsTitle = selectedLabels.join(", ");
+  const labelsTitle = selectedDisplayLabels.join(", ");
   const displayTitle = `${templateName} — ${labelsTitle}`;
 
   const defaultChartTitle = useMemo(() => {
@@ -264,8 +278,8 @@ export function AnalyticsChartCard({
       chartType
     );
     if (!preset) return displayTitle;
-    return buildDefaultAnalyticsChartTitle(selectedLabels, preset);
-  }, [fieldType, selectedLabels, chartType, displayTitle]);
+    return buildDefaultAnalyticsChartTitle(selectedDisplayLabels, preset);
+  }, [fieldType, selectedLabels.length, selectedDisplayLabels, chartType, displayTitle]);
 
   const [chartTitle, setChartTitle] = useState(defaultChartTitle);
 

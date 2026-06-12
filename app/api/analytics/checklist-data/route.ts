@@ -5,6 +5,7 @@ import { workOrders } from "@/lib/db/schema";
 import { workOrderChecklist } from "@/lib/db/schema";
 import { checklistTemplates } from "@/lib/db/schema";
 import { eq, and, inArray, isNotNull } from "drizzle-orm";
+import { buildAnalyticsFieldDescriptors } from "@/lib/analytics-checklist-field-key";
 import { checklistAnalyticsDateBounds } from "@/lib/dashboard-date-range";
 import { workOrderCountsForChecklistAnalytics } from "@/lib/work-order-analytics";
 
@@ -111,6 +112,7 @@ export async function GET(req: Request) {
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map((i) => ({
           id: i.id,
+          parentItemId: i.parentItemId ?? null,
           label: i.label,
           type: i.type,
           fieldType: i.fieldType,
@@ -123,17 +125,12 @@ export async function GET(req: Request) {
         new Date(b.completedAt ?? 0).getTime() - new Date(a.completedAt ?? 0).getTime()
     );
 
-  const fieldLabels = new Set<string>();
-  for (const wo of workOrdersData) {
-    for (const it of wo.checklistItems) {
-      if (it.type === "custom_field" && it.label) fieldLabels.add(it.label);
-    }
-  }
+  const fields = buildAnalyticsFieldDescriptors(workOrdersData);
 
   return NextResponse.json({
     templateId,
     templateName: template.name,
     workOrders: workOrdersData,
-    fields: Array.from(fieldLabels),
+    fields,
   });
 }

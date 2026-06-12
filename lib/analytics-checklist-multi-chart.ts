@@ -2,11 +2,14 @@
  * Build datasets for analytics when several checklist fields share the same `fieldType`.
  */
 
+import {
+  displayLabelForFieldKey,
+  findChecklistItemByFieldKey,
+  type AnalyticsChecklistTreeItem,
+} from "@/lib/analytics-checklist-field-key";
 import { workOrderCountsForChecklistAnalytics } from "@/lib/work-order-analytics";
 
-export type ChecklistRow = {
-  label: string;
-  type: string;
+export type ChecklistRow = AnalyticsChecklistTreeItem & {
   fieldType: string | null;
   value: unknown;
 };
@@ -33,26 +36,24 @@ export function normalizeWidgetFieldLabels(
   return one ? [one] : [];
 }
 
-export function fieldTypeForLabel(
+export function fieldTypeForKey(
   workOrders: WoChecklistRow[],
-  label: string
+  fieldKey: string
 ): string | null {
   for (const wo of workOrders) {
-    const it = wo.checklistItems.find(
-      (i) => i.label === label && i.type === "custom_field"
-    );
+    const it = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
     if (it?.fieldType) return it.fieldType;
   }
   return null;
 }
 
-/** Returns shared type if all selected labels resolve to the same `fieldType`; otherwise null. */
+/** Returns shared type if all selected field keys resolve to the same `fieldType`; otherwise null. */
 export function commonFieldType(
   workOrders: WoChecklistRow[],
-  labels: string[]
+  fieldKeys: string[]
 ): string | null {
-  if (!labels.length) return null;
-  const types = labels.map((l) => fieldTypeForLabel(workOrders, l));
+  if (!fieldKeys.length) return null;
+  const types = fieldKeys.map((k) => fieldTypeForKey(workOrders, k));
   const first = types.find((t) => t != null);
   if (!first) return null;
   for (const t of types) {
@@ -104,7 +105,7 @@ function normalizeCategoricalValue(value: unknown): string {
  */
 export function buildCategoricalDailyTimeData(
   workOrders: WoChecklistRow[],
-  label: string,
+  fieldKey: string,
   timeZone: string
 ): { data: Record<string, string | number>[]; series: { key: string; name: string }[] } {
   const dayMap = new Map<string, Map<string, number>>();
@@ -112,7 +113,7 @@ export function buildCategoricalDailyTimeData(
 
   for (const wo of workOrders) {
     if (!analyticsEligibleWo(wo) || wo.completedAt == null) continue;
-    const item = wo.checklistItems.find((x) => x.label === label);
+    const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
     if (!item) continue;
     const day = formatYmdInTimeZone(new Date(wo.completedAt), timeZone);
     const cat = normalizeCategoricalValue(item.value);
@@ -146,10 +147,13 @@ export function buildCategoricalDailyTimeData(
 
 export function buildMultiNumberTimeData(
   workOrders: WoChecklistRow[],
-  labels: string[],
+  fieldKeys: string[],
   timeZone: string
 ): { data: Record<string, string | number | null>[]; series: { key: string; name: string }[] } {
-  const series = labels.map((name, i) => ({ key: seriesKeyAt(i), name }));
+  const series = fieldKeys.map((key, i) => ({
+    key: seriesKeyAt(i),
+    name: displayLabelForFieldKey(workOrders, key),
+  }));
   const rows: Record<string, string | number | null>[] = [];
   for (const wo of workOrders) {
     if (!analyticsEligibleWo(wo)) continue;
@@ -166,8 +170,8 @@ export function buildMultiNumberTimeData(
       }),
     };
     let any = false;
-    labels.forEach((label, i) => {
-      const item = wo.checklistItems.find((x) => x.label === label);
+    fieldKeys.forEach((fieldKey, i) => {
+      const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
       const val = item?.value != null ? Number(item.value) : null;
       const k = seriesKeyAt(i);
       if (val != null && !Number.isNaN(val)) {
@@ -186,19 +190,20 @@ export function buildMultiNumberTimeData(
 /** One grouped cluster per field: sí vs no counts. */
 export function buildMultiCheckboxBars(
   workOrders: WoChecklistRow[],
-  labels: string[]
+  fieldKeys: string[]
 ): { name: string; sí: number; no: number }[] {
-  return labels.map((label) => {
+  return fieldKeys.map((fieldKey) => {
     let sí = 0;
     let no = 0;
     for (const wo of workOrders) {
       if (!analyticsEligibleWo(wo)) continue;
-      const item = wo.checklistItems.find((x) => x.label === label);
+      const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
       if (!item) continue;
       if (item.value === true) sí++;
       else no++;
     }
-    const short = label.length > 28 ? `${label.slice(0, 26)}…` : label;
+    const display = displayLabelForFieldKey(workOrders, fieldKey);
+    const short = display.length > 28 ? `${display.slice(0, 26)}…` : display;
     return { name: short, sí, no };
   });
 }
@@ -206,14 +211,17 @@ export function buildMultiCheckboxBars(
 /** Union of category labels across fields; one bar group per category with one bar per field. */
 export function buildMultiCategoricalUnion(
   workOrders: WoChecklistRow[],
-  labels: string[]
+  fieldKeys: string[]
 ): { data: Record<string, string | number>[]; series: { key: string; name: string }[] } {
-  const series = labels.map((name, i) => ({ key: `c${i}`, name }));
+  const series = fieldKeys.map((key, i) => ({
+    key: `c${i}`,
+    name: displayLabelForFieldKey(workOrders, key),
+  }));
   const union = new Set<string>();
-  for (const label of labels) {
+  for (const fieldKey of fieldKeys) {
     for (const wo of workOrders) {
       if (!analyticsEligibleWo(wo)) continue;
-      const item = wo.checklistItems.find((x) => x.label === label);
+      const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
       const raw = item?.value != null ? String(item.value).trim() : "";
       union.add(raw === "" ? "(vacío)" : raw);
     }
@@ -221,11 +229,11 @@ export function buildMultiCategoricalUnion(
   const names = Array.from(union).sort((a, b) => a.localeCompare(b, "es"));
   const data = names.map((name) => {
     const row: Record<string, string | number> = { name };
-    labels.forEach((label, i) => {
+    fieldKeys.forEach((fieldKey, i) => {
       let n = 0;
       for (const wo of workOrders) {
         if (!analyticsEligibleWo(wo)) continue;
-        const item = wo.checklistItems.find((x) => x.label === label);
+        const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
         const raw = item?.value != null ? String(item.value).trim() : "";
         const cmp = raw === "" ? "(vacío)" : raw;
         if (cmp === name) n++;

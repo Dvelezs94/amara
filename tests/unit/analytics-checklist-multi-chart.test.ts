@@ -10,10 +10,18 @@ import {
 
 const wo = (
   completedAt: string,
-  items: { label: string; fieldType: string; value: unknown }[]
+  items: {
+    id?: string;
+    parentItemId?: string | null;
+    label: string;
+    fieldType: string;
+    value: unknown;
+  }[]
 ) => ({
   completedAt,
-  checklistItems: items.map((x) => ({
+  checklistItems: items.map((x, index) => ({
+    id: x.id ?? `item-${index}`,
+    parentItemId: x.parentItemId ?? null,
     label: x.label,
     type: "custom_field" as const,
     fieldType: x.fieldType,
