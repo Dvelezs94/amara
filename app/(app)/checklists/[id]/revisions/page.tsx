@@ -109,6 +109,7 @@ export default async function ChecklistRevisionsHubPage({
           createdAt: rev.createdAt.toISOString(),
         }))}
         sessionId={session.id}
+        sessionRole={session.role}
         canAuthor={canAuthor}
         canReview={canReview}
       />

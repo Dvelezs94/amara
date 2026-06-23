@@ -13,6 +13,7 @@ import {
   mapChecklistItemsToInsertRows,
   parseChecklistTemplateItemsFromClientJson,
 } from "@/lib/checklist-items-from-payload";
+import { canDeleteChecklistRevision } from "@/lib/checklist-revision-delete";
 
 export async function PATCH(
   req: Request,
@@ -96,6 +97,56 @@ export async function PATCH(
       revisionNumber: revision.revisionNumber,
       revisionName: revision.name,
       comment: body.comment ? String(body.comment).trim() : null,
+    },
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string; revisionId: string }> }
+) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id: templateId, revisionId } = await params;
+  const revision = await db.query.checklistTemplateRevisions.findFirst({
+    where: and(
+      eq(checklistTemplateRevisions.id, revisionId),
+      eq(checklistTemplateRevisions.checklistTemplateId, templateId)
+    ),
+  });
+  if (!revision) {
+    return NextResponse.json({ error: "Revisión no encontrada" }, { status: 404 });
+  }
+
+  if (
+    !canDeleteChecklistRevision(session.role, session.id, {
+      id: revision.id,
+      status: revision.status,
+      proposedByUserId: revision.proposedByUserId,
+    })
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await db
+    .delete(checklistTemplateRevisions)
+    .where(eq(checklistTemplateRevisions.id, revisionId));
+
+  await recordAuditLog({
+    entityType: "checklist_template",
+    entityId: templateId,
+    action: "revision_deleted",
+    userId: session.id,
+    metadata: {
+      revisionId,
+      revisionNumber: revision.revisionNumber,
+      revisionName: revision.name,
+      status: revision.status,
     },
   });
 
