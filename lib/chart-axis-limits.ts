@@ -64,9 +64,10 @@ export function saveAxisLimitsToStorage(key: string, limits: ChartAxisLimits): v
   }
 }
 
-function finiteNums(values: Iterable<unknown>): number[] {
+function finiteNums(values: readonly unknown[]): number[] {
   const out: number[] = [];
-  for (const v of values) {
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
     if (typeof v === "number" && Number.isFinite(v)) out.push(v);
   }
   return out;
