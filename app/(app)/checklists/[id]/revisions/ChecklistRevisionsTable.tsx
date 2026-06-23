@@ -82,7 +82,6 @@ export function ChecklistRevisionsTable({
         <table className="min-w-full divide-y divide-zinc-200 text-sm">
           <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
             <tr>
-              <th className="px-4 py-3">#</th>
               <th className="px-4 py-3">Revisión</th>
               <th className="px-4 py-3">Estado</th>
               <th className="px-4 py-3">Autor</th>
@@ -93,7 +92,7 @@ export function ChecklistRevisionsTable({
           <tbody className="divide-y divide-zinc-100">
             {revisions.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
                   No hay revisiones en este filtro.
                 </td>
               </tr>
@@ -105,9 +104,6 @@ export function ChecklistRevisionsTable({
                 const canDelete = canDeleteChecklistRevision(sessionRole, sessionId, rev);
                 return (
                   <tr key={rev.id} className="hover:bg-zinc-50/80">
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-zinc-700">
-                      #{rev.revisionNumber}
-                    </td>
                     <td className="px-4 py-3 font-medium text-zinc-900">{rev.name}</td>
                     <td className="px-4 py-3">
                       <span
