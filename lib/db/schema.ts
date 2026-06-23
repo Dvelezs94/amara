@@ -334,6 +334,18 @@ export const dashboardWidgets = pgTable("dashboard_widgets", {
     .default(sql`'[]'::jsonb`),
   /** Título personalizado del gráfico; null = título por defecto según campos. */
   chartTitle: text("chart_title"),
+  /** Manual/auto min-max for chart axes (analytics widgets). */
+  axisLimits: jsonb("axis_limits")
+    .$type<{
+      yAuto: boolean;
+      yMin: number | null;
+      yMax: number | null;
+      xAuto: boolean;
+      xMin: number | null;
+      xMax: number | null;
+    }>()
+    .notNull()
+    .default(sql`'{"yAuto":true,"yMin":null,"yMax":null,"xAuto":true,"xMin":null,"xMax":null}'::jsonb`),
   dateFrom: text("date_from"), // YYYY-MM-DD or null
   dateTo: text("date_to"),
   sortOrder: integer("sort_order").notNull().default(0),

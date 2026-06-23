@@ -20,6 +20,13 @@ import {
   valueExceedsAnyThreshold,
   type ChartThreshold,
 } from "@/lib/chart-thresholds";
+import {
+  computeAutoXDomainFromTimestamps,
+  resolveXAxisDomain,
+  resolveYAxisDomain,
+  type ChartAxisLimits,
+} from "@/lib/chart-axis-limits";
+import { APP_TIME_ZONE } from "@/lib/timezone";
 
 const DEFAULT_COLORS = ["#02257D", "#F14C03", "#9E9F9F", "#000000", "#3355AA", "#E85A0A"];
 
@@ -30,20 +37,39 @@ export function NumberTimeSeriesChart({
   series,
   chartType,
   thresholds,
+  axisLimits,
   colors = DEFAULT_COLORS,
   tickFontSize = 11,
   margin = { top: 8, right: 12, left: 8, bottom: 8 },
+  timeZone = APP_TIME_ZONE,
 }: {
   data: Record<string, string | number | null>[];
   series: SeriesDef[];
   chartType: "line" | "bar";
   thresholds: ChartThreshold[];
+  axisLimits?: ChartAxisLimits;
   colors?: string[];
   tickFontSize?: number;
   margin?: { top: number; right: number; left: number; bottom: number };
+  timeZone?: string;
 }) {
   const seriesKeys = series.map((s) => s.key);
-  const yDomain = computeNumericChartDomain(data, seriesKeys, thresholds);
+  const autoY = computeNumericChartDomain(data, seriesKeys, thresholds);
+  const yDomain = resolveYAxisDomain(axisLimits ?? { yAuto: true, yMin: null, yMax: null, xAuto: true, xMin: null, xMax: null }, autoY);
+  const autoX = computeAutoXDomainFromTimestamps(data);
+  const xDomain = resolveXAxisDomain(
+    axisLimits ?? { yAuto: true, yMin: null, yMax: null, xAuto: true, xMin: null, xMax: null },
+    autoX
+  );
+
+  const formatTs = (ts: number) =>
+    new Date(ts).toLocaleString("es-MX", {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+    });
 
   const thresholdLines = thresholds.map((t, i) => {
     const lineColor = resolveThresholdColor(t);
@@ -70,7 +96,14 @@ export function NumberTimeSeriesChart({
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={margin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-          <XAxis dataKey="date" tick={{ fontSize: tickFontSize }} minTickGap={20} />
+          <XAxis
+            type="number"
+            dataKey="ts"
+            domain={xDomain}
+            tick={{ fontSize: tickFontSize }}
+            tickFormatter={formatTs}
+            minTickGap={20}
+          />
           <YAxis tick={{ fontSize: tickFontSize }} domain={yDomain} />
           <Tooltip />
           <Legend />
@@ -93,7 +126,14 @@ export function NumberTimeSeriesChart({
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={margin}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-        <XAxis dataKey="date" tick={{ fontSize: tickFontSize }} minTickGap={20} />
+        <XAxis
+          type="number"
+          dataKey="ts"
+          domain={xDomain}
+          tick={{ fontSize: tickFontSize }}
+          tickFormatter={formatTs}
+          minTickGap={20}
+        />
         <YAxis tick={{ fontSize: tickFontSize }} domain={yDomain} />
         <Tooltip />
         <Legend />

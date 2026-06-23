@@ -6,6 +6,7 @@ import { eq, desc, asc } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { parseChartTypeFromRequest } from "@/lib/dashboard-widget-chart-type";
 import { parseChartThresholds } from "@/lib/chart-thresholds";
+import { parseChartAxisLimits } from "@/lib/chart-axis-limits";
 
 export async function GET() {
   const session = await getSession();
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
     dateTo,
     chartType: rawChartType,
     thresholds: rawThresholds,
+    axisLimits: rawAxisLimits,
     chartTitle: rawChartTitle,
   } = body as {
     templateId?: unknown;
@@ -44,6 +46,7 @@ export async function POST(req: Request) {
     dateTo?: unknown;
     chartType?: unknown;
     thresholds?: unknown;
+    axisLimits?: unknown;
     chartTitle?: unknown;
   };
   const fromArray = Array.isArray(rawFieldLabels)
@@ -64,6 +67,7 @@ export async function POST(req: Request) {
   const primaryLabel = fieldLabels[0]!;
   const chartType = parseChartTypeFromRequest(rawChartType);
   const thresholds = parseChartThresholds(rawThresholds);
+  const axisLimits = parseChartAxisLimits(rawAxisLimits);
   const chartTitle =
     rawChartTitle != null && String(rawChartTitle).trim()
       ? String(rawChartTitle).trim().slice(0, 200)
@@ -86,6 +90,7 @@ export async function POST(req: Request) {
     fieldLabels,
     chartType,
     thresholds,
+    axisLimits,
     chartTitle,
     dateFrom: dateFrom != null ? String(dateFrom).slice(0, 10) : null,
     dateTo: dateTo != null ? String(dateTo).slice(0, 10) : null,

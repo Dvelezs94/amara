@@ -16,10 +16,19 @@ export type AnalyticsFieldDescriptor = {
   /** Unique key used for selection, storage, and chart matching. */
   key: string;
   label: string;
+  /** Ancestor section labels from root to immediate parent. */
+  sectionPath: string[];
   /** Section breadcrumb (ancestor section labels), or null when root-level. */
   sectionLabel: string | null;
   /** Human-readable label for UI and chart legends. */
   displayLabel: string;
+};
+
+export type AnalyticsFieldGroup = {
+  id: string;
+  title: string;
+  fields: AnalyticsFieldDescriptor[];
+  children: AnalyticsFieldGroup[];
 };
 
 const FIELD_KEY_SEP = " › ";
@@ -59,9 +68,61 @@ export function buildAnalyticsFieldDescriptor(
   return {
     key,
     label,
+    sectionPath: [...sectionPath],
     sectionLabel: sectionPath.length > 0 ? sectionPath.join(" / ") : null,
-    displayLabel: key,
+    displayLabel: label,
   };
+}
+
+/** Nest fields under their checklist sections (supports nested sections). */
+export function groupAnalyticsFieldsBySection(
+  fields: readonly AnalyticsFieldDescriptor[]
+): AnalyticsFieldGroup[] {
+  const topGroups: AnalyticsFieldGroup[] = [];
+  const looseFields: AnalyticsFieldDescriptor[] = [];
+
+  const findOrCreateChild = (
+    siblings: AnalyticsFieldGroup[],
+    title: string,
+    id: string
+  ): AnalyticsFieldGroup => {
+    const existing = siblings.find((g) => g.id === id);
+    if (existing) return existing;
+    const created: AnalyticsFieldGroup = { id, title, fields: [], children: [] };
+    siblings.push(created);
+    return created;
+  };
+
+  for (const field of fields) {
+    const path = field.sectionPath;
+    if (path.length === 0) {
+      looseFields.push(field);
+      continue;
+    }
+    let siblings = topGroups;
+    let idPrefix = "";
+    for (let i = 0; i < path.length; i++) {
+      const segment = path[i]!.trim() || "Sección";
+      idPrefix = idPrefix ? `${idPrefix} › ${segment}` : segment;
+      const group = findOrCreateChild(siblings, segment, idPrefix);
+      if (i === path.length - 1) {
+        group.fields.push(field);
+      } else {
+        siblings = group.children;
+      }
+    }
+  }
+
+  if (looseFields.length > 0) {
+    topGroups.push({
+      id: "__general__",
+      title: "General",
+      fields: looseFields,
+      children: [],
+    });
+  }
+
+  return topGroups;
 }
 
 export function buildAnalyticsFieldDescriptors(
@@ -119,9 +180,9 @@ export function displayLabelForFieldKey(
 ): string {
   for (const wo of workOrders) {
     const item = findChecklistItemByFieldKey(wo.checklistItems, fieldKey);
-    if (item) {
-      return buildAnalyticsFieldDescriptor(item, wo.checklistItems).displayLabel;
-    }
+    if (item) return item.label.trim();
   }
+  const sepIdx = fieldKey.lastIndexOf(FIELD_KEY_SEP);
+  if (sepIdx >= 0) return fieldKey.slice(sepIdx + FIELD_KEY_SEP.length).trim();
   return fieldKey;
 }

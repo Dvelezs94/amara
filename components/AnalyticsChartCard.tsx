@@ -2,11 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   PieChart,
@@ -17,6 +12,8 @@ import {
 import { NumberTimeSeriesChart } from "@/components/NumberTimeSeriesChart";
 import { CategoricalDailyStackedChart } from "@/components/CategoricalDailyStackedChart";
 import { ChartThresholdEditor } from "@/components/ChartThresholdEditor";
+import { ChartAxisLimitsEditor } from "@/components/ChartAxisLimitsEditor";
+import { AnalyticsCountBarChart } from "@/components/AnalyticsCountBarChart";
 import { EditableChartTitle } from "@/components/EditableChartTitle";
 import {
   buildDefaultAnalyticsChartTitle,
@@ -26,6 +23,10 @@ import {
   parseChartThresholds,
   type ChartThreshold,
 } from "@/lib/chart-thresholds";
+import {
+  parseChartAxisLimits,
+  type ChartAxisLimits,
+} from "@/lib/chart-axis-limits";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
   displayLabelForFieldKey,
@@ -74,6 +75,7 @@ export function AnalyticsChartCard({
   widgetId,
   initialChartType,
   initialThresholds,
+  initialAxisLimits,
   templateId,
   templateName,
   fieldLabel,
@@ -95,11 +97,14 @@ export function AnalyticsChartCard({
     chartTitle?: string | null;
     chartType?: DashboardWidgetChartType;
     thresholds?: ChartThreshold[];
+    axisLimits?: ChartAxisLimits;
   }) => void;
   /** Preferencia guardada (`dashboard_widgets.chart_type`). */
   initialChartType?: string | null;
   /** Umbrales guardados (`dashboard_widgets.thresholds`). */
   initialThresholds?: ChartThreshold[] | null;
+  /** Límites de ejes (`dashboard_widgets.axis_limits`). */
+  initialAxisLimits?: ChartAxisLimits | null;
   templateId: string;
   templateName: string;
   fieldLabel: string;
@@ -124,6 +129,9 @@ export function AnalyticsChartCard({
   const [chartType, setChartType] = useState<DashboardWidgetChartType>("line");
   const [thresholds, setThresholds] = useState<ChartThreshold[]>(() =>
     parseChartThresholds(initialThresholds ?? [])
+  );
+  const [axisLimits, setAxisLimits] = useState<ChartAxisLimits>(() =>
+    parseChartAxisLimits(initialAxisLimits)
   );
   const chartHeightClass =
     size === "lg" ? "h-80 md:h-96" : size === "sm" ? "h-44 md:h-52" : "h-56 md:h-64";
@@ -246,6 +254,7 @@ export function AnalyticsChartCard({
     (patch: {
       chartType?: DashboardWidgetChartType;
       thresholds?: ChartThreshold[];
+      axisLimits?: ChartAxisLimits;
       chartTitle?: string | null;
     }) => {
       if (!widgetId) return;
@@ -267,6 +276,10 @@ export function AnalyticsChartCard({
   useEffect(() => {
     setThresholds(parseChartThresholds(initialThresholds ?? []));
   }, [widgetId, JSON.stringify(initialThresholds ?? [])]);
+
+  useEffect(() => {
+    setAxisLimits(parseChartAxisLimits(initialAxisLimits));
+  }, [widgetId, JSON.stringify(initialAxisLimits ?? null)]);
 
   const labelsTitle = selectedDisplayLabels.join(", ");
   const displayTitle = `${templateName} — ${labelsTitle}`;
@@ -386,6 +399,19 @@ export function AnalyticsChartCard({
       />
     ) : null;
 
+  const axisLimitsEditor = (showXAxis: boolean) =>
+    editMode && fieldType !== "date" && (fieldType !== "checkbox" || chartType === "bar") && (fieldType !== "dropdown" && fieldType !== "text" || chartType !== "pie") ? (
+      <ChartAxisLimitsEditor
+        compact
+        limits={axisLimits}
+        showXAxis={showXAxis}
+        onChange={(next) => {
+          setAxisLimits(next);
+          persistWidgetSettings({ axisLimits: next });
+        }}
+      />
+    ) : null;
+
   if (loading) {
     return (
       <div className={`rounded-xl border border-zinc-200 bg-white p-4 ${emptyHeightClass} flex items-center justify-center text-zinc-500`}>
@@ -421,12 +447,14 @@ export function AnalyticsChartCard({
           <p className="mb-1 truncate text-[10px] text-zinc-400">{displayTitle}</p>
         )}
         {thresholdEditor}
+        {axisLimitsEditor(true)}
         <div className={`${chartHeightClass} ${editMode ? "mt-3" : "mt-0"}`}>
           <NumberTimeSeriesChart
             data={multiNumber.data}
             series={multiNumber.series}
             chartType={numericChartType}
             thresholds={thresholds}
+            axisLimits={axisLimits}
             colors={COLORS}
             tickFontSize={11}
           />
@@ -441,25 +469,19 @@ export function AnalyticsChartCard({
         <div className="mb-2 flex items-center justify-between gap-2">{titleControl}</div>
         {editMode ? editHint : null}
         {editMode ? metaLine : null}
+        {axisLimitsEditor(false)}
         <div className={chartHeightClass}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={multiCategorical.data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend />
-              {multiCategorical.series.map((s, i) => (
-                <Bar
-                  key={s.key}
-                  dataKey={s.key}
-                  fill={COLORS[i % COLORS.length]}
-                  name={s.name}
-                  radius={[2, 2, 0, 0]}
-                />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
+          <AnalyticsCountBarChart
+            data={multiCategorical.data}
+            xDataKey="name"
+            axisLimits={axisLimits}
+            tickFontSize={11}
+            bars={multiCategorical.series.map((s, i) => ({
+              dataKey: s.key,
+              fill: COLORS[i % COLORS.length]!,
+              name: s.name,
+            }))}
+          />
         </div>
       </div>
     );
@@ -479,10 +501,12 @@ export function AnalyticsChartCard({
         </div>
         {editMode ? editHint : null}
         {editMode ? metaLine : null}
+        {axisLimitsEditor(false)}
         <div className={chartHeightClass}>
           <CategoricalDailyStackedChart
             data={categoricalDaily.data}
             series={categoricalDaily.series}
+            axisLimits={axisLimits}
             colors={COLORS}
             tickFontSize={11}
           />
@@ -500,6 +524,7 @@ export function AnalyticsChartCard({
         </div>
         {editMode ? editHint : null}
         {editMode ? metaLine : null}
+        {chartType !== "pie" ? axisLimitsEditor(false) : null}
         <div className={chartHeightClass}>
           {chartType === "pie" ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -522,15 +547,14 @@ export function AnalyticsChartCard({
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={singleCategoricalChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="value" fill="#F14C03" name="Cantidad" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <AnalyticsCountBarChart
+              data={singleCategoricalChartData}
+              xDataKey="name"
+              axisLimits={axisLimits}
+              showLegend={false}
+              tickFontSize={11}
+              bars={[{ dataKey: "value", fill: "#F14C03", name: "Cantidad", radius: [4, 4, 0, 0] }]}
+            />
           )}
         </div>
       </div>
@@ -547,18 +571,18 @@ export function AnalyticsChartCard({
         <div className="mb-2 flex items-center justify-between gap-2">{titleControl}</div>
         {editMode ? editHint : null}
         {editMode ? metaLine : null}
+        {axisLimitsEditor(false)}
         <div className={chartHeightClass}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={multiCheckboxBars} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="sí" fill="#02257D" name="Sí" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="no" fill="#9E9F9F" name="No" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <AnalyticsCountBarChart
+            data={multiCheckboxBars}
+            xDataKey="name"
+            axisLimits={axisLimits}
+            tickFontSize={11}
+            bars={[
+              { dataKey: "sí", fill: "#02257D", name: "Sí", radius: [4, 4, 0, 0] },
+              { dataKey: "no", fill: "#9E9F9F", name: "No", radius: [4, 4, 0, 0] },
+            ]}
+          />
         </div>
       </div>
     );
@@ -577,17 +601,17 @@ export function AnalyticsChartCard({
         </div>
         {editMode ? editHint : null}
         {editMode ? metaLine : null}
+        {chartType === "bar" ? axisLimitsEditor(false) : null}
         <div className={chartHeightClass}>
           {chartType === "bar" ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={singleCheckboxChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="value" fill="#F14C03" name="Cantidad" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <AnalyticsCountBarChart
+              data={singleCheckboxChartData}
+              xDataKey="name"
+              axisLimits={axisLimits}
+              showLegend={false}
+              tickFontSize={11}
+              bars={[{ dataKey: "value", fill: "#F14C03", name: "Cantidad", radius: [4, 4, 0, 0] }]}
+            />
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>

@@ -3,21 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
   Legend,
+  ResponsiveContainer,
+  Tooltip,
 } from "recharts";
 import { NumberTimeSeriesChart } from "@/components/NumberTimeSeriesChart";
 import { CategoricalDailyStackedChart } from "@/components/CategoricalDailyStackedChart";
 import { ChartThresholdEditor } from "@/components/ChartThresholdEditor";
+import { ChartAxisLimitsEditor } from "@/components/ChartAxisLimitsEditor";
+import { AnalyticsCountBarChart } from "@/components/AnalyticsCountBarChart";
 import { EditableChartTitle } from "@/components/EditableChartTitle";
 import {
   analyticsChartTitleStorageKey,
@@ -27,12 +24,20 @@ import {
   saveChartTitleToStorage,
 } from "@/lib/analytics-chart-title";
 import {
+  analyticsAxisLimitsStorageKey,
+  DEFAULT_CHART_AXIS_LIMITS,
+  loadAxisLimitsFromStorage,
+  saveAxisLimitsToStorage,
+  type ChartAxisLimits,
+} from "@/lib/chart-axis-limits";
+import {
   analyticsThresholdsStorageKey,
   loadThresholdsFromStorage,
   saveThresholdsToStorage,
   type ChartThreshold,
 } from "@/lib/chart-thresholds";
-import { LayoutDashboard, X } from "lucide-react";
+import { LayoutDashboard } from "lucide-react";
+import { AnalyticsFieldsPicker } from "@/components/AnalyticsFieldsPicker";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
   displayLabelForFieldKey,
@@ -86,7 +91,16 @@ export function AnalyticsCharts() {
   const [addToDashboardStatus, setAddToDashboardStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [fieldsModalOpen, setFieldsModalOpen] = useState(false);
   const [thresholds, setThresholds] = useState<ChartThreshold[]>([]);
+  const [axisLimits, setAxisLimits] = useState<ChartAxisLimits>(DEFAULT_CHART_AXIS_LIMITS);
   const [chartTitle, setChartTitle] = useState("");
+
+  const axisLimitsStorageKey = useMemo(
+    () =>
+      templateId && selectedFieldKeys.length > 0
+        ? analyticsAxisLimitsStorageKey(templateId, selectedFieldKeys)
+        : null,
+    [templateId, selectedFieldKeys.join("|")]
+  );
 
   const thresholdsStorageKey = useMemo(
     () =>
@@ -103,6 +117,19 @@ export function AnalyticsCharts() {
     }
     setThresholds(loadThresholdsFromStorage(thresholdsStorageKey));
   }, [thresholdsStorageKey]);
+
+  useEffect(() => {
+    if (!axisLimitsStorageKey) {
+      setAxisLimits(DEFAULT_CHART_AXIS_LIMITS);
+      return;
+    }
+    setAxisLimits(loadAxisLimitsFromStorage(axisLimitsStorageKey));
+  }, [axisLimitsStorageKey]);
+
+  function updateAxisLimits(next: ChartAxisLimits) {
+    setAxisLimits(next);
+    if (axisLimitsStorageKey) saveAxisLimitsToStorage(axisLimitsStorageKey, next);
+  }
 
   useEffect(() => {
     setFieldsModalOpen(false);
@@ -446,6 +473,7 @@ export function AnalyticsCharts() {
                     dateTo: to || null,
                     chartType: fieldType === "number" ? (chartType === "pie" ? "line" : chartType) : chartType,
                     thresholds: fieldType === "number" ? thresholds : [],
+                    axisLimits,
                     chartTitle: chartTitle.trim() || null,
                   }),
                 });
@@ -494,12 +522,14 @@ export function AnalyticsCharts() {
               if (thresholdsStorageKey) saveThresholdsToStorage(thresholdsStorageKey, next);
             }}
           />
+          <ChartAxisLimitsEditor limits={axisLimits} onChange={updateAxisLimits} showXAxis />
           <div className="h-64 md:h-80 mt-3">
             <NumberTimeSeriesChart
               data={multiNumber.data}
               series={multiNumber.series}
               chartType={chartType === "bar" ? "bar" : "line"}
               thresholds={thresholds}
+              axisLimits={axisLimits}
               colors={COLORS}
               tickFontSize={12}
             />
@@ -519,25 +549,18 @@ export function AnalyticsCharts() {
               if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
             }}
           />
+          <ChartAxisLimitsEditor limits={axisLimits} onChange={updateAxisLimits} showXAxis={false} />
           <div className="h-64 md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={multiCategorical.data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
-                {multiCategorical.series.map((s, i) => (
-                  <Bar
-                    key={s.key}
-                    dataKey={s.key}
-                    fill={COLORS[i % COLORS.length]}
-                    name={s.name}
-                    radius={[2, 2, 0, 0]}
-                  />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+            <AnalyticsCountBarChart
+              data={multiCategorical.data}
+              xDataKey="name"
+              axisLimits={axisLimits}
+              bars={multiCategorical.series.map((s, i) => ({
+                dataKey: s.key,
+                fill: COLORS[i % COLORS.length]!,
+                name: s.name,
+              }))}
+            />
           </div>
         </div>
       )}
@@ -556,10 +579,12 @@ export function AnalyticsCharts() {
               if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
             }}
           />
+          <ChartAxisLimitsEditor limits={axisLimits} onChange={updateAxisLimits} showXAxis={false} />
           <div className="h-64 md:h-80 mt-3">
             <CategoricalDailyStackedChart
               data={categoricalDaily.data}
               series={categoricalDaily.series}
+              axisLimits={axisLimits}
               colors={COLORS}
             />
           </div>
@@ -579,6 +604,9 @@ export function AnalyticsCharts() {
               if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
             }}
           />
+          {chartType !== "pie" ? (
+            <ChartAxisLimitsEditor limits={axisLimits} onChange={updateAxisLimits} showXAxis={false} />
+          ) : null}
           <div className="h-64 md:h-80">
             {chartType === "pie" ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -601,15 +629,14 @@ export function AnalyticsCharts() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={singleCategoricalChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#F14C03" name="Cantidad" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <AnalyticsCountBarChart
+                data={singleCategoricalChartData}
+                xDataKey="name"
+                axisLimits={axisLimits}
+                showLegend={false}
+                bars={[{ dataKey: "value", fill: "#F14C03", name: "Cantidad", radius: [4, 4, 0, 0] }]}
+                tickFontSize={12}
+              />
             )}
           </div>
         </div>
@@ -627,18 +654,18 @@ export function AnalyticsCharts() {
               if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
             }}
           />
+          <ChartAxisLimitsEditor limits={axisLimits} onChange={updateAxisLimits} showXAxis={false} />
           <div className="h-64 md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={multiCheckboxBars} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="sí" fill="#02257D" name="Sí" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="no" fill="#9E9F9F" name="No" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <AnalyticsCountBarChart
+              data={multiCheckboxBars}
+              xDataKey="name"
+              axisLimits={axisLimits}
+              tickFontSize={12}
+              bars={[
+                { dataKey: "sí", fill: "#02257D", name: "Sí", radius: [4, 4, 0, 0] },
+                { dataKey: "no", fill: "#9E9F9F", name: "No", radius: [4, 4, 0, 0] },
+              ]}
+            />
           </div>
         </div>
       )}
@@ -655,17 +682,19 @@ export function AnalyticsCharts() {
               if (chartTitleStorageKey) saveChartTitleToStorage(chartTitleStorageKey, next);
             }}
           />
+          {chartType === "bar" ? (
+            <ChartAxisLimitsEditor limits={axisLimits} onChange={updateAxisLimits} showXAxis={false} />
+          ) : null}
           <div className="h-64 md:h-80">
             {chartType === "bar" ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={singleCheckboxChartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#F14C03" name="Cantidad" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <AnalyticsCountBarChart
+                data={singleCheckboxChartData}
+                xDataKey="name"
+                axisLimits={axisLimits}
+                showLegend={false}
+                tickFontSize={12}
+                bars={[{ dataKey: "value", fill: "#F14C03", name: "Cantidad", radius: [4, 4, 0, 0] }]}
+              />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -717,75 +746,14 @@ export function AnalyticsCharts() {
         </div>
       )}
 
-      {fieldsModalOpen && data && data.fields.length > 0 ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-0 md:items-center md:p-4"
-          role="presentation"
-          onClick={() => setFieldsModalOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="analytics-fields-modal-title"
-            className="flex max-h-[min(88dvh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-zinc-200 border-b-0 bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:max-h-[min(85vh,640px)] md:rounded-xl md:border-b md:shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
-              <h2 id="analytics-fields-modal-title" className="text-sm font-semibold text-zinc-900">
-                Campos del checklist
-              </h2>
-              <button
-                type="button"
-                onClick={() => setFieldsModalOpen(false)}
-                aria-label="Cerrar"
-                className="rounded-sm border border-zinc-300 p-1 text-zinc-700 hover:bg-zinc-100"
-              >
-                <X className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-            <p className="shrink-0 border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs text-zinc-600">
-              Marca uno o más campos del mismo tipo para graficarlos juntos. Hay {data.fields.length}{" "}
-              campos en esta plantilla.
-            </p>
-            {fieldTypeHint ? (
-              <p className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-900">
-                {fieldTypeHint}
-              </p>
-            ) : null}
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-              <ul className="space-y-0.5">
-                {data.fields.map((f) => (
-                  <li key={f.key}>
-                    <label className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50">
-                      <input
-                        type="checkbox"
-                        checked={selectedFieldKeys.includes(f.key)}
-                        onChange={() => toggleFieldKey(f.key)}
-                        className="mt-0.5 shrink-0 rounded border-zinc-400"
-                      />
-                      <span className="min-w-0 break-words">
-                        <span>{f.label}</span>
-                        {f.sectionLabel ? (
-                          <span className="mt-0.5 block text-xs text-zinc-500">{f.sectionLabel}</span>
-                        ) : null}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="flex shrink-0 justify-end border-t border-zinc-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pb-3">
-              <button
-                type="button"
-                onClick={() => setFieldsModalOpen(false)}
-                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-              >
-                Listo
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <AnalyticsFieldsPicker
+        open={fieldsModalOpen && Boolean(data && data.fields.length > 0)}
+        fields={data?.fields ?? []}
+        selectedFieldKeys={selectedFieldKeys}
+        fieldTypeHint={fieldTypeHint}
+        onToggleField={toggleFieldKey}
+        onClose={() => setFieldsModalOpen(false)}
+      />
     </div>
   );
 }

@@ -1,6 +1,11 @@
 "use client";
 
 import {
+  computeAutoYDomain,
+  resolveYAxisDomain,
+  type ChartAxisLimits,
+} from "@/lib/chart-axis-limits";
+import {
   BarChart,
   Bar,
   XAxis,
@@ -18,14 +23,23 @@ type SeriesDef = { key: string; name: string };
 export function CategoricalDailyStackedChart({
   data,
   series,
+  axisLimits,
   colors = DEFAULT_COLORS,
   tickFontSize = 11,
 }: {
   data: Record<string, string | number>[];
   series: SeriesDef[];
+  axisLimits?: ChartAxisLimits;
   colors?: string[];
   tickFontSize?: number;
 }) {
+  const valueKeys = series.map((s) => s.key);
+  const autoY = computeAutoYDomain(data, valueKeys);
+  const yDomain = resolveYAxisDomain(
+    axisLimits ?? { yAuto: true, yMin: null, yMax: null, xAuto: true, xMin: null, xMax: null },
+    autoY
+  );
+
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -36,7 +50,7 @@ export function CategoricalDailyStackedChart({
           minTickGap={12}
           interval="preserveStartEnd"
         />
-        <YAxis allowDecimals={false} tick={{ fontSize: tickFontSize }} />
+        <YAxis allowDecimals={false} tick={{ fontSize: tickFontSize }} domain={yDomain} />
         <Tooltip />
         <Legend wrapperStyle={{ fontSize: tickFontSize }} />
         {series.map((s, i) => (

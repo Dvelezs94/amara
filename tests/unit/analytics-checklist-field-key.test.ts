@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   analyticsFieldKey,
+  buildAnalyticsFieldDescriptor,
   buildAnalyticsFieldDescriptors,
+  displayLabelForFieldKey,
   findChecklistItemByFieldKey,
+  groupAnalyticsFieldsBySection,
   resolveSectionPath,
 } from "@/lib/analytics-checklist-field-key";
 
@@ -26,6 +29,72 @@ describe("analyticsFieldKey", () => {
 
   it("uses bare label for root fields", () => {
     expect(analyticsFieldKey([], "Campo libre")).toBe("Campo libre");
+  });
+});
+
+describe("buildAnalyticsFieldDescriptor", () => {
+  it("keeps section in key but uses field label for display", () => {
+    const items = [
+      { id: "s1", label: "Instrucciones largas de la sección", type: "section", parentItemId: null },
+      { id: "f1", label: "Boca (°C)", type: "custom_field", parentItemId: "s1" },
+    ];
+    const descriptor = buildAnalyticsFieldDescriptor(items[1]!, items);
+    expect(descriptor.key).toBe("Instrucciones largas de la sección › Boca (°C)");
+    expect(descriptor.displayLabel).toBe("Boca (°C)");
+    expect(descriptor.sectionPath).toEqual(["Instrucciones largas de la sección"]);
+  });
+});
+
+describe("groupAnalyticsFieldsBySection", () => {
+  const field = (
+    label: string,
+    sectionPath: string[]
+  ): import("@/lib/analytics-checklist-field-key").AnalyticsFieldDescriptor => ({
+    key: sectionPath.length
+      ? `${sectionPath.join(" / ")} › ${label}`
+      : label,
+    label,
+    sectionPath,
+    sectionLabel: sectionPath.length ? sectionPath.join(" / ") : null,
+    displayLabel: label,
+  });
+
+  it("nests fields under section headers with subsections", () => {
+    const fields = [
+      field("Boca (°C)", ["HORNO", "Tarea: Verificar temperaturas"]),
+      field("Cuerpo (°C)", ["HORNO", "Tarea: Verificar temperaturas"]),
+      field("Aceite (°C)", ["SISTEMA DE GIRO", "Tarea: Verificar temperatura"]),
+    ];
+    const groups = groupAnalyticsFieldsBySection(fields);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.title).toBe("HORNO");
+    expect(groups[0]!.children).toHaveLength(1);
+    expect(groups[0]!.children[0]!.title).toContain("Tarea:");
+    expect(groups[0]!.children[0]!.fields.map((f) => f.label)).toEqual([
+      "Boca (°C)",
+      "Cuerpo (°C)",
+    ]);
+  });
+
+  it("puts root-level fields in General", () => {
+    const groups = groupAnalyticsFieldsBySection([field("Libre", [])]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.title).toBe("General");
+    expect(groups[0]!.fields[0]!.label).toBe("Libre");
+  });
+});
+
+describe("displayLabelForFieldKey", () => {
+  it("returns only the variable name", () => {
+    const workOrders = [
+      {
+        checklistItems: [
+          { id: "s1", label: "Sección larga", type: "section", parentItemId: null },
+          { id: "f1", label: "Cuerpo (°C)", type: "custom_field", parentItemId: "s1" },
+        ],
+      },
+    ];
+    expect(displayLabelForFieldKey(workOrders, "Sección larga › Cuerpo (°C)")).toBe("Cuerpo (°C)");
   });
 });
 

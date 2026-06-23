@@ -39,6 +39,14 @@ type Widget = {
   fieldLabels?: string[];
   chartType?: "line" | "bar" | "pie" | string;
   thresholds?: { id: string; value: number; label?: string; color?: string }[];
+  axisLimits?: {
+    yAuto: boolean;
+    yMin: number | null;
+    yMax: number | null;
+    xAuto: boolean;
+    xMin: number | null;
+    xMax: number | null;
+  };
   chartTitle?: string | null;
   dateFrom: string | null;
   dateTo: string | null;
@@ -632,6 +640,7 @@ export default function DashboardPage() {
                   editMode={editingWidgetId === w.id}
                   initialChartType={w.chartType}
                   initialThresholds={w.thresholds}
+                  initialAxisLimits={w.axisLimits}
                   templateId={w.templateId}
                   templateName={w.templateName}
                   fieldLabel={w.fieldLabel}

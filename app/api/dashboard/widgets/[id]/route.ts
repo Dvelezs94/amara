@@ -5,6 +5,7 @@ import { dashboardWidgets } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { parseChartTypeFromRequest } from "@/lib/dashboard-widget-chart-type";
 import { parseChartThresholds } from "@/lib/chart-thresholds";
+import { parseChartAxisLimits } from "@/lib/chart-axis-limits";
 
 export async function PATCH(
   req: Request,
@@ -18,6 +19,7 @@ export async function PATCH(
   const body = await req.json().catch(() => ({})) as {
     chartType?: unknown;
     thresholds?: unknown;
+    axisLimits?: unknown;
     chartTitle?: unknown;
   };
   const updates: Partial<typeof dashboardWidgets.$inferInsert> = {};
@@ -26,6 +28,9 @@ export async function PATCH(
   }
   if (body.thresholds !== undefined) {
     updates.thresholds = parseChartThresholds(body.thresholds);
+  }
+  if (body.axisLimits !== undefined) {
+    updates.axisLimits = parseChartAxisLimits(body.axisLimits);
   }
   if (body.chartTitle !== undefined) {
     const trimmed =
@@ -45,6 +50,7 @@ export async function PATCH(
       id: dashboardWidgets.id,
       chartType: dashboardWidgets.chartType,
       thresholds: dashboardWidgets.thresholds,
+      axisLimits: dashboardWidgets.axisLimits,
       chartTitle: dashboardWidgets.chartTitle,
     });
   if (updated.length === 0) {
@@ -54,6 +60,7 @@ export async function PATCH(
     ok: true,
     chartType: updated[0]!.chartType,
     thresholds: updated[0]!.thresholds,
+    axisLimits: updated[0]!.axisLimits,
     chartTitle: updated[0]!.chartTitle,
   });
 }
