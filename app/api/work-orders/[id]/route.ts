@@ -16,6 +16,7 @@ import { clampManualDowntimeMinutes } from "@/lib/machine-downtime";
 import { checklistItemBlocksWorkOrderCompletion } from "@/lib/checklist-completion";
 import { validateWorkOrderCompletedAt } from "@/lib/datetime-local";
 import { canDeleteWorkOrder } from "@/lib/auth-shared";
+import { workOrderAssignedToUserIds } from "@/lib/work-order-assignee";
 
 async function assetAllowsDowntimeTracking(assetId: string | null): Promise<boolean> {
   if (!assetId) return false;
@@ -338,6 +339,25 @@ export async function PATCH(
       { error: "Solo administradores pueden cambiar el asignado" },
       { status: 403 }
     );
+  }
+  if (
+    body.status === "in_progress" &&
+    wo.status !== "in_progress" &&
+    session.role !== "admin"
+  ) {
+    const startAssignees = await loadWorkOrderAssignees(id, wo.assigneeId);
+    if (
+      !workOrderAssignedToUserIds(
+        startAssignees.map((a) => a.id),
+        wo.assigneeId,
+        session.id
+      )
+    ) {
+      return NextResponse.json(
+        { error: "Solo el técnico asignado puede iniciar esta tarea." },
+        { status: 403 }
+      );
+    }
   }
   const updates: Partial<typeof workOrders.$inferInsert> = {
     updatedAt: new Date(),

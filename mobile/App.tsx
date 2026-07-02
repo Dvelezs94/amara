@@ -768,7 +768,10 @@ function TaskCardAssigneeAvatar({
   return null;
 }
 
-function workOrderInvolvesUser(w: WorkOrderListItem, userId: string): boolean {
+function workOrderInvolvesUser(
+  w: Pick<WorkOrderListItem, "assigneeId" | "assigneeIds">,
+  userId: string
+): boolean {
   const ids = w.assigneeIds;
   if (ids && ids.length > 0) return ids.includes(userId);
   return w.assigneeId === userId;
@@ -1712,6 +1715,16 @@ function AppContent() {
     setDetailError(null);
     const detailSnapshot =
       selectedWorkOrderId === id && selectedWorkOrder != null ? selectedWorkOrder : null;
+    if (next === "in_progress" && me != null) {
+      const woForStart =
+        detailSnapshot ?? workOrders.find((w) => w.id === id) ?? null;
+      if (woForStart != null && !workOrderInvolvesUser(woForStart, me.id)) {
+        const msg = "Solo el técnico asignado puede iniciar esta tarea.";
+        setOrdersError(msg);
+        if (selectedWorkOrderId === id) setDetailError(msg);
+        return;
+      }
+    }
     try {
       if (next === "completed") {
         await flushChecklistNumberDrafts(id);
@@ -2344,11 +2357,17 @@ function AppContent() {
     }));
   }, [checklistSectionExpandKey]);
 
+  const detailCanStartSelectedWorkOrder =
+    me != null &&
+    selectedWorkOrder != null &&
+    workOrderInvolvesUser(selectedWorkOrder, me.id);
+
   const detailSlideDockVisible =
     selectedWorkOrder != null &&
     !detailLoading &&
     !detailError &&
-    (selectedWorkOrder.status === "pending" || selectedWorkOrder.status === "in_progress");
+    (selectedWorkOrder.status === "in_progress" ||
+      (selectedWorkOrder.status === "pending" && detailCanStartSelectedWorkOrder));
 
   const detailSlideCompleteNeedsHint =
     selectedWorkOrder != null &&
@@ -2903,10 +2922,16 @@ function AppContent() {
                         </View>
                         <View style={styles.detailCardBody}>
                           {selectedWorkOrder.status === "pending" ? (
-                            <Text style={styles.checklistHint}>
-                              Cambia el estado a <Text style={styles.checklistHintStrong}>En progreso</Text> para
-                              editar el checklist.
-                            </Text>
+                            detailCanStartSelectedWorkOrder ? (
+                              <Text style={styles.checklistHint}>
+                                Cambia el estado a <Text style={styles.checklistHintStrong}>En progreso</Text> para
+                                editar el checklist.
+                              </Text>
+                            ) : (
+                              <Text style={styles.checklistHint}>
+                                Solo el técnico asignado puede iniciar esta tarea.
+                              </Text>
+                            )
                           ) : null}
                           <View style={styles.checklistGroupsStack}>
                           {displayChecklistGroups.map((group, groupIdx) => {
