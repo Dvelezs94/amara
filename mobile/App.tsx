@@ -390,9 +390,6 @@ function resolveAvatarBackgroundColor(
 
 type WorkOrderKind = "routine" | "on_demand";
 
-/** Main task list: one status bucket at a time. */
-type TaskListTab = "active" | "completed";
-
 type TaskListKindFilter = "all" | WorkOrderKind;
 
 /** Mirrors `lib/work-order-kind.ts` on the web app */
@@ -442,8 +439,14 @@ function WorkOrderStatusBadge({ status }: { status: WoStatus }) {
   );
 }
 
-const COMPLETED_INITIAL_VISIBLE = 5;
-const COMPLETED_LOAD_MORE_STEP = 5;
+function SectionLoadingState({ label }: { label: string }) {
+  return (
+    <View style={styles.sectionLoadingState}>
+      <ActivityIndicator color={theme.primary} size="large" />
+      <Text style={styles.sectionLoadingText}>{label}</Text>
+    </View>
+  );
+}
 
 const RELATIVE_DUE_MAX_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -1221,7 +1224,6 @@ function AppContent() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [taskListTab, setTaskListTab] = useState<TaskListTab>("active");
   const [taskFilterModalVisible, setTaskFilterModalVisible] = useState(false);
   const taskFilterSheetTranslateY = useRef(
     new Animated.Value(Dimensions.get("window").height)
@@ -1229,7 +1231,6 @@ function AppContent() {
   const taskFilterBackdropOpacity = useRef(new Animated.Value(0)).current;
   const [filterAssigneeId, setFilterAssigneeId] = useState<string | null>(null);
   const [filterKind, setFilterKind] = useState<TaskListKindFilter>("all");
-  const [completedVisibleCount, setCompletedVisibleCount] = useState(COMPLETED_INITIAL_VISIBLE);
 
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrderDetail | null>(null);
@@ -1289,6 +1290,7 @@ function AppContent() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -1395,26 +1397,6 @@ function AppContent() {
     return list;
   }, [activeTasks]);
 
-  const completedTasks = useMemo(() => {
-    const list = workOrdersFiltered.filter((w) => w.status === "completed");
-    function sortTime(w: WorkOrderListItem): number {
-      if (w.completedAt) {
-        const t = new Date(w.completedAt).getTime();
-        if (!Number.isNaN(t)) return t;
-      }
-      if (w.createdAt) {
-        const t = new Date(w.createdAt).getTime();
-        if (!Number.isNaN(t)) return t;
-      }
-      return 0;
-    }
-    return [...list].sort((a, b) => sortTime(b) - sortTime(a));
-  }, [workOrdersFiltered]);
-  const completedTasksVisible = useMemo(
-    () => completedTasks.slice(0, completedVisibleCount),
-    [completedTasks, completedVisibleCount]
-  );
-
   /** Badge: non-default assignee (incl. "Todos") or type filter. Default = current user only. */
   const taskFiltersActive =
     filterKind !== "all" || (me != null && filterAssigneeId !== me.id);
@@ -1431,11 +1413,9 @@ function AppContent() {
           status: normalizeWoStatus(w.status),
         }))
       );
-      setCompletedVisibleCount(COMPLETED_INITIAL_VISIBLE);
     } catch (error) {
       setOrdersError(error instanceof Error ? error.message : "No se pudo cargar las tareas.");
       setWorkOrders([]);
-      setCompletedVisibleCount(COMPLETED_INITIAL_VISIBLE);
     } finally {
       setOrdersLoading(false);
     }
@@ -1527,6 +1507,7 @@ function AppContent() {
   }
 
   async function loadMe() {
+    setProfileLoading(true);
     setProfileError(null);
     try {
       const data = await apiFetch<CurrentUser>("/api/users/me");
@@ -1534,6 +1515,8 @@ function AppContent() {
     } catch (error) {
       setProfileError(error instanceof Error ? error.message : "No se pudo cargar el perfil.");
       setMe(null);
+    } finally {
+      setProfileLoading(false);
     }
   }
 
@@ -1626,7 +1609,6 @@ function AppContent() {
       setMe(null);
       setFilterAssigneeId(null);
       setFilterKind("all");
-      setTaskListTab("active");
       setTaskFilterModalVisible(false);
       setNotifications([]);
       setUnreadCount(0);
@@ -2234,10 +2216,6 @@ function AppContent() {
     assigneeFilterDefaultAppliedRef.current = true;
     setFilterAssigneeId(me.id);
   }, [isLoggedIn, me?.id]);
-
-  useEffect(() => {
-    setCompletedVisibleCount(COMPLETED_INITIAL_VISIBLE);
-  }, [isLoggedIn, taskListTab, filterAssigneeId, filterKind]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -3843,40 +3821,6 @@ function AppContent() {
             ) : (
               <View style={styles.canvasShell}>
                 <View style={styles.taskListToolbar}>
-                  <View style={styles.taskTabRow}>
-                    <Pressable
-                      style={[styles.taskTab, taskListTab === "active" && styles.taskTabActive]}
-                      onPress={() => setTaskListTab("active")}
-                    >
-                      <Text
-                        style={[styles.taskTabText, taskListTab === "active" && styles.taskTabTextActive]}
-                        numberOfLines={1}
-                      >
-                        Activas
-                      </Text>
-                      <Text
-                        style={[styles.taskTabCount, taskListTab === "active" && styles.taskTabCountActive]}
-                      >
-                        {activeTasksSorted.length}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.taskTab, taskListTab === "completed" && styles.taskTabActive]}
-                      onPress={() => setTaskListTab("completed")}
-                    >
-                      <Text
-                        style={[styles.taskTabText, taskListTab === "completed" && styles.taskTabTextActive]}
-                        numberOfLines={1}
-                      >
-                        Completadas
-                      </Text>
-                      <Text
-                        style={[styles.taskTabCount, taskListTab === "completed" && styles.taskTabCountActive]}
-                      >
-                        {completedTasks.length}
-                      </Text>
-                    </Pressable>
-                  </View>
                   <Pressable
                     style={styles.taskFilterIconBtn}
                     onPress={() => setTaskFilterModalVisible(true)}
@@ -3887,8 +3831,10 @@ function AppContent() {
                     {taskFiltersActive ? <View style={styles.taskFilterBadgeDot} /> : null}
                   </Pressable>
                 </View>
-                {ordersLoading ? <Text style={styles.cardMeta}>Cargando tareas...</Text> : null}
                 {ordersError ? <Text style={styles.errorText}>{ordersError}</Text> : null}
+                {ordersLoading && !workOrdersRefreshing ? (
+                  <SectionLoadingState label="Cargando tareas..." />
+                ) : (
                 <ScrollView
                   style={styles.dashboardScroll}
                   contentContainerStyle={styles.dashboardScrollContent}
@@ -3903,103 +3849,43 @@ function AppContent() {
                     />
                   }
                 >
-                  {taskListTab === "active" ? (
-                    <>
-                      <View style={styles.dashboardSectionHeader}>
-                        <Text style={styles.dashboardSectionKicker}>TAREAS ACTIVAS</Text>
-                        <Text style={styles.dashboardSectionCount}>{activeTasksSorted.length}</Text>
-                      </View>
-                      {activeTasksSorted.length === 0 ? (
-                        <Text style={styles.dashboardEmpty}>
-                          No hay tareas pendientes ni en progreso.
-                        </Text>
-                      ) : (
-                        activeTasksSorted.map((item) => (
-                          <Pressable
-                            key={item.id}
-                            style={[
-                              styles.surfaceCard,
-                              styles.activeRowCard,
-                              { borderLeftColor: activeTaskRowBorderColor(item.status) },
-                            ]}
-                            onPress={() => openWorkOrder(item.id)}
-                          >
-                            <View style={styles.activeRowInner}>
-                              <View style={styles.activeRowTextCol}>
-                                <View style={styles.activeRowTitleRow}>
-                                  <Text style={styles.activeRowTitle} numberOfLines={1}>
-                                    {item.title}
-                                  </Text>
-                                  <WorkOrderStatusBadge status={item.status} />
-                                </View>
-                                <Text style={styles.activeRowMeta} numberOfLines={1}>
-                                  {activeTaskListMeta(item)}
-                                </Text>
-                              </View>
-                              <View style={styles.taskCardAvatarPriorityRow}>
-                                <TaskCardAssigneesRow item={item} />
-                                <WorkOrderPriorityIconRN priority={item.priority} />
-                              </View>
-                            </View>
-                          </Pressable>
-                        ))
-                      )}
-                    </>
-                  ) : null}
-
-                  {taskListTab === "completed" ? (
-                    <>
-                  <View style={[styles.dashboardSectionHeader, styles.dashboardSectionHeaderSpaced]}>
-                    <Text style={styles.dashboardSectionKicker}>TERMINADAS</Text>
-                    <Text style={styles.dashboardSectionCount}>{completedTasks.length}</Text>
-                  </View>
-                  {completedTasks.length === 0 ? (
-                    <Text style={styles.dashboardEmpty}>Sin tareas terminadas en esta vista.</Text>
+                  {activeTasksSorted.length === 0 ? (
+                    <Text style={styles.dashboardEmpty}>
+                      No hay tareas pendientes ni en progreso.
+                    </Text>
                   ) : (
-                    <>
-                      {completedTasksVisible.map((item) => (
-                        <Pressable
-                          key={item.id}
-                          style={[
-                            styles.surfaceCard,
-                            styles.completedRowCard,
-                            styles.completedRowCardTinted,
-                          ]}
-                          onPress={() => openWorkOrder(item.id)}
-                        >
-                          <View style={styles.completedRowInner}>
-                            <View style={styles.completedRowTextCol}>
-                              <Text style={styles.completedRowTitle} numberOfLines={1}>
+                    activeTasksSorted.map((item) => (
+                      <Pressable
+                        key={item.id}
+                        style={[
+                          styles.surfaceCard,
+                          styles.activeRowCard,
+                          { borderLeftColor: activeTaskRowBorderColor(item.status) },
+                        ]}
+                        onPress={() => openWorkOrder(item.id)}
+                      >
+                        <View style={styles.activeRowInner}>
+                          <View style={styles.activeRowTextCol}>
+                            <View style={styles.activeRowTitleRow}>
+                              <Text style={styles.activeRowTitle} numberOfLines={1}>
                                 {item.title}
                               </Text>
-                              <Text style={styles.completedRowMeta}>
-                                {item.folio != null ? `Folio ${item.folio}` : item.id.slice(0, 8)}
-                              </Text>
+                              <WorkOrderStatusBadge status={item.status} />
                             </View>
-                            <View style={styles.taskCardAvatarPriorityRow}>
-                              <TaskCardAssigneesRow item={item} />
-                              <WorkOrderPriorityIconRN priority={item.priority} />
-                            </View>
+                            <Text style={styles.activeRowMeta} numberOfLines={1}>
+                              {activeTaskListMeta(item)}
+                            </Text>
                           </View>
-                        </Pressable>
-                      ))}
-                      {completedTasks.length > completedVisibleCount ? (
-                        <Pressable
-                          style={styles.loadMoreButton}
-                          onPress={() =>
-                            setCompletedVisibleCount((count) =>
-                              Math.min(count + COMPLETED_LOAD_MORE_STEP, completedTasks.length)
-                            )
-                          }
-                        >
-                          <Text style={styles.loadMoreButtonText}>Cargar más</Text>
-                        </Pressable>
-                      ) : null}
-                    </>
+                          <View style={styles.taskCardAvatarPriorityRow}>
+                            <TaskCardAssigneesRow item={item} />
+                            <WorkOrderPriorityIconRN priority={item.priority} />
+                          </View>
+                        </View>
+                      </Pressable>
+                    ))
                   )}
-                    </>
-                  ) : null}
                 </ScrollView>
+                )}
                 <Modal
                   visible={taskFilterModalVisible}
                   transparent
@@ -4157,8 +4043,10 @@ function AppContent() {
                 placeholderTextColor={theme.zinc400}
                 style={styles.input}
               />
-              {kbLoading ? <Text style={styles.cardMeta}>Cargando biblioteca...</Text> : null}
               {kbError ? <Text style={styles.errorText}>{kbError}</Text> : null}
+              {kbLoading && !knowledgeRefreshing ? (
+                <SectionLoadingState label="Cargando biblioteca..." />
+              ) : (
               <FlatList
                 data={filteredKnowledge}
                 keyExtractor={(item) => item.id}
@@ -4204,6 +4092,7 @@ function AppContent() {
                   );
                 }}
               />
+              )}
             </View>
           ) : activeSection === "notifications" ? (
             <View style={styles.kbContainer}>
@@ -4215,10 +4104,10 @@ function AppContent() {
                   </Pressable>
                 ) : null}
               </View>
-              {notificationsLoading ? (
-                <Text style={styles.cardMeta}>Cargando notificaciones...</Text>
-              ) : null}
               {notificationsError ? <Text style={styles.errorText}>{notificationsError}</Text> : null}
+              {notificationsLoading && !notificationsRefreshing ? (
+                <SectionLoadingState label="Cargando notificaciones..." />
+              ) : (
               <FlatList
                 data={notifications}
                 keyExtractor={(item) => item.id}
@@ -4254,7 +4143,10 @@ function AppContent() {
                   </Pressable>
                 )}
               />
+              )}
             </View>
+          ) : profileLoading && !me ? (
+            <SectionLoadingState label="Cargando perfil..." />
           ) : (
             <ScrollView
               contentContainerStyle={styles.profileContainer}
@@ -4524,6 +4416,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loginHydrationText: { color: theme.zinc600, fontSize: 14, fontWeight: "500" },
+  sectionLoadingState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingVertical: 48,
+  },
+  sectionLoadingText: { color: theme.zinc600, fontSize: 14, fontWeight: "500" },
   topHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -5653,49 +5553,8 @@ const styles = StyleSheet.create({
   taskListToolbar: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 4,
-  },
-  taskTabRow: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "stretch",
-    gap: 6,
-    minWidth: 0,
-  },
-  taskTab: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.zinc200,
-    backgroundColor: theme.white,
-  },
-  taskTabActive: {
-    backgroundColor: theme.primary50,
-    borderColor: theme.primary,
-  },
-  taskTabText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.zinc600,
-    textAlign: "center",
-  },
-  taskTabTextActive: {
-    color: theme.primary,
-  },
-  taskTabCount: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: theme.zinc400,
-    marginTop: 2,
-  },
-  taskTabCountActive: {
-    color: theme.primary,
+    justifyContent: "flex-end",
+    marginBottom: 8,
   },
   ongoingTasksNotice: {
     flexDirection: "row",
