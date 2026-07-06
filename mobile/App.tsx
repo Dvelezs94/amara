@@ -17,7 +17,6 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -389,8 +388,6 @@ function resolveAvatarBackgroundColor(
 }
 
 type WorkOrderKind = "routine" | "on_demand";
-
-type TaskListKindFilter = "all" | WorkOrderKind;
 
 /** Mirrors `lib/work-order-kind.ts` on the web app */
 function parseWorkOrderKind(raw: unknown): WorkOrderKind {
@@ -925,8 +922,6 @@ const TASK_SLIDE_DOCK_SAFE_MIN = 16;
 const TASK_SLIDE_DOCK_BELOW_RAIL = 14;
 /** Two-line hint + `taskSlideDockHint` margin below. */
 const TASK_SLIDE_DOCK_HINT_SCROLL_EXTRA = 56;
-/** Pause row above slide-to-complete when task is in progress. */
-const TASK_SLIDE_DOCK_PAUSE_EXTRA = 50;
 
 type SlideToConfirmProps = {
   label: string;
@@ -1224,13 +1219,7 @@ function AppContent() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [taskFilterModalVisible, setTaskFilterModalVisible] = useState(false);
-  const taskFilterSheetTranslateY = useRef(
-    new Animated.Value(Dimensions.get("window").height)
-  ).current;
-  const taskFilterBackdropOpacity = useRef(new Animated.Value(0)).current;
   const [filterAssigneeId, setFilterAssigneeId] = useState<string | null>(null);
-  const [filterKind, setFilterKind] = useState<TaskListKindFilter>("all");
 
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrderDetail | null>(null);
@@ -1309,48 +1298,6 @@ function AppContent() {
     return source.split(/\s+/)[0] ?? "Técnico";
   }, [me?.name, username]);
 
-  const closeTaskFilterModal = useCallback(() => {
-    const h = Dimensions.get("window").height;
-    Animated.parallel([
-      Animated.timing(taskFilterSheetTranslateY, {
-        toValue: h,
-        duration: 260,
-        useNativeDriver: true,
-      }),
-      Animated.timing(taskFilterBackdropOpacity, {
-        toValue: 0,
-        duration: 260,
-        useNativeDriver: true,
-      }),
-    ]).start((r) => {
-      if (r.finished) setTaskFilterModalVisible(false);
-    });
-  }, [taskFilterSheetTranslateY, taskFilterBackdropOpacity]);
-
-  useLayoutEffect(() => {
-    const h = Dimensions.get("window").height;
-    if (!taskFilterModalVisible) {
-      taskFilterSheetTranslateY.setValue(h);
-      taskFilterBackdropOpacity.setValue(0);
-      return;
-    }
-    taskFilterSheetTranslateY.setValue(h);
-    taskFilterBackdropOpacity.setValue(0);
-    Animated.parallel([
-      Animated.spring(taskFilterSheetTranslateY, {
-        toValue: 0,
-        friction: 12,
-        tension: 68,
-        useNativeDriver: true,
-      }),
-      Animated.timing(taskFilterBackdropOpacity, {
-        toValue: 0.45,
-        duration: 280,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [taskFilterModalVisible, taskFilterSheetTranslateY, taskFilterBackdropOpacity]);
-
   const filteredKnowledge = useMemo(() => {
     const q = kbQuery.trim().toLowerCase();
     if (!q) return knowledge;
@@ -1366,11 +1313,8 @@ function AppContent() {
     if (filterAssigneeId != null) {
       list = list.filter((w) => workOrderInvolvesUser(w, filterAssigneeId));
     }
-    if (filterKind !== "all") {
-      list = list.filter((w) => parseWorkOrderKind(w.kind) === filterKind);
-    }
     return list;
-  }, [workOrders, filterAssigneeId, filterKind]);
+  }, [workOrders, filterAssigneeId]);
 
   const activeTasks = useMemo(
     () =>
@@ -1396,10 +1340,6 @@ function AppContent() {
     });
     return list;
   }, [activeTasks]);
-
-  /** Badge: non-default assignee (incl. "Todos") or type filter. Default = current user only. */
-  const taskFiltersActive =
-    filterKind !== "all" || (me != null && filterAssigneeId !== me.id);
 
   async function loadWorkOrders() {
     setOrdersLoading(true);
@@ -1608,8 +1548,6 @@ function AppContent() {
       assigneeFilterDefaultAppliedRef.current = false;
       setMe(null);
       setFilterAssigneeId(null);
-      setFilterKind("all");
-      setTaskFilterModalVisible(false);
       setNotifications([]);
       setUnreadCount(0);
       setOrdersError(null);
@@ -2537,9 +2475,6 @@ function AppContent() {
                             Math.max(insets.bottom, TASK_SLIDE_DOCK_SAFE_MIN) +
                             (detailSlideCompleteNeedsHint
                               ? TASK_SLIDE_DOCK_HINT_SCROLL_EXTRA
-                              : 0) +
-                            (selectedWorkOrder.status === "in_progress"
-                              ? TASK_SLIDE_DOCK_PAUSE_EXTRA
                               : 0),
                         }
                       : null,
@@ -2586,7 +2521,22 @@ function AppContent() {
                   <Text style={styles.errorText}>{detailError}</Text>
                 ) : selectedWorkOrder ? (
                   <>
-                    <Text style={styles.detailPageTitle}>{selectedWorkOrder.title}</Text>
+                    <View style={styles.detailPageTitleRow}>
+                      <Text style={[styles.detailPageTitle, styles.detailPageTitleFlex]} numberOfLines={3}>
+                        {selectedWorkOrder.title}
+                      </Text>
+                      {selectedWorkOrder.status === "in_progress" ? (
+                        <Pressable
+                          style={styles.detailPagePauseBtn}
+                          onPress={() => void updateStatus("pending")}
+                          accessibilityRole="button"
+                          accessibilityLabel="Pausar tarea"
+                        >
+                          <Ionicons name="pause" size={18} color={theme.zinc700} />
+                          <Text style={styles.detailPagePauseBtnText}>Pausar</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
 
                     <View style={styles.detailCard}>
                       <Pressable
@@ -3558,26 +3508,13 @@ function AppContent() {
                         onConfirm={() => void updateStatus("in_progress")}
                       />
                     ) : (
-                      <>
-                        {selectedWorkOrder.status === "in_progress" ? (
-                          <Pressable
-                            style={styles.taskSlideDockPauseBtn}
-                            onPress={() => void updateStatus("pending")}
-                            accessibilityRole="button"
-                            accessibilityLabel="Pausar tarea"
-                          >
-                            <Ionicons name="pause" size={18} color={theme.zinc700} />
-                            <Text style={styles.taskSlideDockPauseBtnText}>Pausar</Text>
-                          </Pressable>
-                        ) : null}
-                        <SlideToConfirm
-                          resetKey={`${selectedWorkOrder.id}-done-${isChecklistFullyComplete(selectedWorkOrder.checklist) ? "1" : "0"}`}
-                          label="Desliza para completar"
-                          variant="success"
-                          disabled={detailSlideCompleteDisabled}
-                          onConfirm={() => void updateStatus("completed")}
-                        />
-                      </>
+                      <SlideToConfirm
+                        resetKey={`${selectedWorkOrder.id}-done-${isChecklistFullyComplete(selectedWorkOrder.checklist) ? "1" : "0"}`}
+                        label="Desliza para completar"
+                        variant="success"
+                        disabled={detailSlideCompleteDisabled}
+                        onConfirm={() => void updateStatus("completed")}
+                      />
                     )}
                   </View>
                 ) : null}
@@ -3820,17 +3757,49 @@ function AppContent() {
               </View>
             ) : (
               <View style={styles.canvasShell}>
-                <View style={styles.taskListToolbar}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.assigneeFilterSlider}
+                  keyboardShouldPersistTaps="handled"
+                >
                   <Pressable
-                    style={styles.taskFilterIconBtn}
-                    onPress={() => setTaskFilterModalVisible(true)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Filtros"
+                    style={[
+                      styles.userFilterChip,
+                      filterAssigneeId === null && styles.userFilterChipActive,
+                    ]}
+                    onPress={() => setFilterAssigneeId(null)}
                   >
-                    <Ionicons name="options-outline" size={22} color={theme.zinc700} />
-                    {taskFiltersActive ? <View style={styles.taskFilterBadgeDot} /> : null}
+                    <Text
+                      style={[
+                        styles.userFilterChipText,
+                        filterAssigneeId === null && styles.userFilterChipTextActive,
+                      ]}
+                    >
+                      Todos
+                    </Text>
                   </Pressable>
-                </View>
+                  {users.map((user) => (
+                    <Pressable
+                      key={user.id}
+                      style={[
+                        styles.userFilterChip,
+                        filterAssigneeId === user.id && styles.userFilterChipActive,
+                      ]}
+                      onPress={() => setFilterAssigneeId(user.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.userFilterChipText,
+                          filterAssigneeId === user.id && styles.userFilterChipTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {user.name}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
                 {ordersError ? <Text style={styles.errorText}>{ordersError}</Text> : null}
                 {ordersLoading && !workOrdersRefreshing ? (
                   <SectionLoadingState label="Cargando tareas..." />
@@ -3886,152 +3855,6 @@ function AppContent() {
                   )}
                 </ScrollView>
                 )}
-                <Modal
-                  visible={taskFilterModalVisible}
-                  transparent
-                  animationType="none"
-                  onRequestClose={closeTaskFilterModal}
-                >
-                  <View style={styles.taskFilterModalRoot}>
-                    <Animated.View
-                      pointerEvents="box-none"
-                      style={[
-                        styles.taskFilterModalBackdropWrap,
-                        { opacity: taskFilterBackdropOpacity },
-                      ]}
-                    >
-                      <Pressable
-                        style={StyleSheet.absoluteFillObject}
-                        onPress={closeTaskFilterModal}
-                        accessibilityLabel="Cerrar filtros"
-                      />
-                    </Animated.View>
-                    <Animated.View
-                      style={[
-                        styles.taskFilterModalSheet,
-                        { paddingBottom: Math.max(insets.bottom, 20) },
-                        { transform: [{ translateY: taskFilterSheetTranslateY }] },
-                      ]}
-                    >
-                      <Text style={styles.taskFilterModalTitle}>Filtros</Text>
-                      <Text style={styles.taskFilterModalSection}>Asignado</Text>
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.taskFilterModalChipsRow}
-                      >
-                        <Pressable
-                          style={[
-                            styles.userFilterChip,
-                            filterAssigneeId === null && styles.userFilterChipActive,
-                          ]}
-                          onPress={() => setFilterAssigneeId(null)}
-                        >
-                          <Text
-                            style={[
-                              styles.userFilterChipText,
-                              filterAssigneeId === null && styles.userFilterChipTextActive,
-                            ]}
-                          >
-                            Todos
-                          </Text>
-                        </Pressable>
-                        {users.map((user) => (
-                          <Pressable
-                            key={user.id}
-                            style={[
-                              styles.userFilterChip,
-                              filterAssigneeId === user.id && styles.userFilterChipActive,
-                            ]}
-                            onPress={() => setFilterAssigneeId(user.id)}
-                          >
-                            <Text
-                              style={[
-                                styles.userFilterChipText,
-                                filterAssigneeId === user.id && styles.userFilterChipTextActive,
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {user.name}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
-                      <Text style={[styles.taskFilterModalSection, styles.taskFilterModalSectionSpaced]}>
-                        Tipo
-                      </Text>
-                      <View style={styles.taskFilterKindRow}>
-                        <Pressable
-                          style={[styles.userFilterChip, filterKind === "all" && styles.userFilterChipActive]}
-                          onPress={() => setFilterKind("all")}
-                        >
-                          <Text
-                            style={[
-                              styles.userFilterChipText,
-                              filterKind === "all" && styles.userFilterChipTextActive,
-                            ]}
-                          >
-                            Todos
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          style={[
-                            styles.userFilterChip,
-                            filterKind === "routine" && styles.userFilterChipActive,
-                          ]}
-                          onPress={() => setFilterKind("routine")}
-                        >
-                          <Text
-                            style={[
-                              styles.userFilterChipText,
-                              filterKind === "routine" && styles.userFilterChipTextActive,
-                            ]}
-                          >
-                            {workOrderKindLabel("routine")}
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          style={[
-                            styles.userFilterChip,
-                            filterKind === "on_demand" && styles.userFilterChipActive,
-                          ]}
-                          onPress={() => setFilterKind("on_demand")}
-                        >
-                          <Text
-                            style={[
-                              styles.userFilterChipText,
-                              filterKind === "on_demand" && styles.userFilterChipTextActive,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {workOrderKindLabel("on_demand")}
-                          </Text>
-                        </Pressable>
-                      </View>
-                      <View style={styles.taskFilterModalFooter}>
-                        {taskFiltersActive ? (
-                          <Pressable
-                            style={styles.taskFilterModalClearBtn}
-                            onPress={() => {
-                              setFilterAssigneeId(null);
-                              setFilterKind("all");
-                            }}
-                          >
-                            <Text style={styles.taskFilterModalClearBtnText}>Limpiar</Text>
-                          </Pressable>
-                        ) : (
-                          <View style={styles.taskFilterModalFooterSpacer} />
-                        )}
-                        <Pressable
-                          style={styles.taskFilterModalDoneBtn}
-                          onPress={closeTaskFilterModal}
-                        >
-                          <Text style={styles.taskFilterModalDoneBtnText}>Listo</Text>
-                        </Pressable>
-                      </View>
-                    </Animated.View>
-                  </View>
-                </Modal>
               </View>
             )
           ) : activeSection === "knowledgeBase" ? (
@@ -4671,6 +4494,32 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     marginBottom: 12,
   },
+  detailPageTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 12,
+  },
+  detailPageTitleFlex: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: 0,
+  },
+  detailPagePauseBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.zinc300,
+    backgroundColor: theme.white,
+    flexShrink: 0,
+    marginTop: 2,
+  },
+  detailPagePauseBtnText: { fontSize: 14, fontWeight: "700", color: theme.zinc700 },
   /** One rounded card per block (header + content share the same card — no inner “body” card). */
   detailCard: {
     backgroundColor: theme.white,
@@ -5550,11 +5399,11 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     gap: 6,
   },
-  taskListToolbar: {
+  assigneeFilterSlider: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
-    marginBottom: 8,
+    gap: 8,
+    paddingBottom: 8,
   },
   ongoingTasksNotice: {
     flexDirection: "row",
