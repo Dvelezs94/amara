@@ -3760,6 +3760,7 @@ function AppContent() {
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
+                  style={styles.assigneeFilterScroll}
                   contentContainerStyle={styles.assigneeFilterSlider}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -5399,11 +5400,18 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     gap: 6,
   },
+  assigneeFilterScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+    marginHorizontal: -16,
+  },
   assigneeFilterSlider: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingBottom: 8,
+    paddingHorizontal: 16,
+    flexGrow: 0,
   },
   ongoingTasksNotice: {
     flexDirection: "row",
@@ -5535,9 +5543,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.zinc300,
     backgroundColor: theme.white,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    alignSelf: "center",
+    flexShrink: 0,
   },
   userFilterChipActive: {
     backgroundColor: theme.primary,
