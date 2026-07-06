@@ -52,7 +52,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 ### Notable UI patterns
 
 - **`AppShell.tsx`** — Main chrome: desktop sidebar (orange active items, MSA branding), light gray main background (`zinc-200`), white cards, mobile bottom navigation with orange active state
-- **Work orders** — Kanban-style board in `app/(app)/tareas/WorkOrderList.tsx`; detail in `WorkOrderDetail.tsx`
+- **Work orders** — Kanban-style board in `app/(app)/tareas/WorkOrderList.tsx`; detail in `WorkOrderDetail.tsx`. When a task transitions to **completed**, the creator (`requesterId`) receives an in-app notification (“Tarea completada”) via `lib/work-order-completion-notifications.ts`.
 - **Checklist revisions** — Checklist edits create named proposed revisions (starting from baseline revision `0`). Revisions are reviewed in the right-side panel on checklist detail, and users with role **calidad** can approve/reject proposals.
 - **Checklist folders** — Optional hierarchy (`checklist_folders` + `checklist_templates.folder_id`). List UI supports creating/moving folders and moving templates between folders (admin/tecnico only for mutations). Apply migration `0008_checklist_folders.sql` / `npm run db:migrate`.
 - **Touch** — `.tap-target` in globals for minimum touch size on coarse pointers
@@ -75,6 +75,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
   - IDs: `lib/id.ts`
   - Roles: `lib/auth-shared.ts`
   - Checklists (plantillas, cierre de tarea): `lib/checklist-items-from-payload.ts`, `lib/checklist-completion.ts`
+  - Work-order completion notifications: `lib/work-order-completion-notifications.ts`
 - **CI / pre-merge:** Run **`npm test`** before considering work done (same bar as `npm run lint`).
 
 ---
@@ -93,6 +94,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 - Uses **`fetch`** with **`credentials: "include"`** so session cookies work against the Next.js backend
 - Login: `POST /api/auth/login`; logout: `POST /api/auth/logout-json`
 - Changing técnico API allowlists on the web may **break the app** until the mobile client or middleware list is updated
+- **Media attachments** — checklist photo fields and comment attachments support **camera + gallery** via `expo-image-picker` (`POST /api/work-orders/{id}/attachments`)
 
 ### Run
 

@@ -12,6 +12,12 @@ import { and, eq, desc, max } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
 import { loadWorkOrderAssignees, setWorkOrderAssigneeIds } from "@/lib/assignees";
 import { createNotification } from "@/lib/notifications";
+import {
+  assigneeIdsToNotifyOnWorkOrderPatch,
+  isWorkOrderTransitioningToCompleted,
+  shouldNotifyRequesterOnWorkOrderCompletion,
+  WORK_ORDER_COMPLETED_NOTIFICATION_TITLE,
+} from "@/lib/work-order-completion-notifications";
 import { clampManualDowntimeMinutes } from "@/lib/machine-downtime";
 import { checklistItemBlocksWorkOrderCompletion } from "@/lib/checklist-completion";
 import { validateWorkOrderCompletedAt } from "@/lib/datetime-local";
@@ -263,7 +269,7 @@ export async function PATCH(
       const m = clampManualDowntimeMinutes(body.manualDowntimeMinutes);
       if (m === null) {
         return NextResponse.json(
-          { error: "Paro manual inválido (use minutos enteros entre 0 y 525600)" },
+          { error: "Paro manual inv?lido (use minutos enteros entre 0 y 525600)" },
           { status: 400 }
         );
       }
@@ -271,12 +277,12 @@ export async function PATCH(
     }
     if (body.countsMachineDowntime !== undefined) {
       if (typeof body.countsMachineDowntime !== "boolean") {
-        return NextResponse.json({ error: "Valor inválido" }, { status: 400 });
+        return NextResponse.json({ error: "Valor inv?lido" }, { status: 400 });
       }
       const allows = await assetAllowsDowntimeTracking(wo.assetId);
       if (body.countsMachineDowntime === true && !allows) {
         return NextResponse.json(
-          { error: "Esta máquina no permite registrar paro de máquina." },
+          { error: "Esta m?quina no permite registrar paro de m?quina." },
           { status: 400 }
         );
       }
@@ -289,7 +295,7 @@ export async function PATCH(
           : null;
       if (!parsed || Number.isNaN(parsed.getTime())) {
         return NextResponse.json(
-          { error: "Fecha de completado inválida" },
+          { error: "Fecha de completado inv?lida" },
           { status: 400 }
         );
       }
@@ -329,7 +335,7 @@ export async function PATCH(
     typeof body.status === "string" &&
     !allowedStatus.has(body.status)
   ) {
-    return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
+    return NextResponse.json({ error: "Estado inv?lido" }, { status: 400 });
   }
   if (
     (body.assigneeId !== undefined || body.assigneeIds !== undefined) &&
@@ -354,7 +360,7 @@ export async function PATCH(
       )
     ) {
       return NextResponse.json(
-        { error: "Solo el técnico asignado puede iniciar esta tarea." },
+        { error: "Solo el t?cnico asignado puede iniciar esta tarea." },
         { status: 403 }
       );
     }
@@ -389,11 +395,11 @@ export async function PATCH(
   if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
   if (body.countsMachineDowntime !== undefined) {
     if (typeof body.countsMachineDowntime !== "boolean") {
-      return NextResponse.json({ error: "Valor inválido" }, { status: 400 });
+      return NextResponse.json({ error: "Valor inv?lido" }, { status: 400 });
     }
     if (body.countsMachineDowntime === true && !downtimeAllowedAt) {
       return NextResponse.json(
-        { error: "Esta máquina no permite registrar paro de máquina." },
+        { error: "Esta m?quina no permite registrar paro de m?quina." },
         { status: 400 }
       );
     }
@@ -406,7 +412,7 @@ export async function PATCH(
     const m = clampManualDowntimeMinutes(body.manualDowntimeMinutes);
     if (m === null) {
       return NextResponse.json(
-        { error: "Paro manual inválido (use minutos enteros entre 0 y 525600)" },
+        { error: "Paro manual inv?lido (use minutos enteros entre 0 y 525600)" },
         { status: 400 }
       );
     }
@@ -453,7 +459,7 @@ export async function PATCH(
   let nextAssigneeList: string[] | null = null;
   if (session.role === "admin" && body.assigneeIds !== undefined) {
     if (!Array.isArray(body.assigneeIds)) {
-      return NextResponse.json({ error: "assigneeIds inválido" }, { status: 400 });
+      return NextResponse.json({ error: "assigneeIds inv?lido" }, { status: 400 });
     }
     nextAssigneeList = Array.from(
       new Set(
@@ -515,18 +521,42 @@ export async function PATCH(
     body.dueDate !== undefined ||
     body.countsMachineDowntime !== undefined ||
     body.manualDowntimeMinutes !== undefined;
+  const isTransitioningToCompleted = isWorkOrderTransitioningToCompleted(
+    wo.status,
+    body.status
+  );
   if (!assigneeListUpdated && nonAssigneePatch) {
-    for (const a of prevAssignees) {
-      if (a.id !== session.id) {
-        await createNotification({
-          userId: a.id,
-          type: "work_order_update",
-          title: "Actualización en orden asignada",
-          body: wo.title,
-          workOrderId: id,
-        });
-      }
+    const assigneeNotifyIds = assigneeIdsToNotifyOnWorkOrderPatch({
+      assigneeIds: prevAssignees.map((a) => a.id),
+      patchUserId: session.id,
+      requesterId: wo.requesterId,
+      isTransitioningToCompleted,
+    });
+    for (const userId of assigneeNotifyIds) {
+      await createNotification({
+        userId,
+        type: "work_order_update",
+        title: "Actualizaci?n en orden asignada",
+        body: wo.title,
+        workOrderId: id,
+      });
     }
+  }
+  if (
+    shouldNotifyRequesterOnWorkOrderCompletion({
+      previousStatus: wo.status,
+      newStatus: body.status,
+      requesterId: wo.requesterId,
+      completedByUserId: session.id,
+    })
+  ) {
+    await createNotification({
+      userId: wo.requesterId!,
+      type: "work_order_update",
+      title: WORK_ORDER_COMPLETED_NOTIFICATION_TITLE,
+      body: wo.title,
+      workOrderId: id,
+    });
   }
 
   const woFinal = await db.query.workOrders.findFirst({
