@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { canDeleteChecklistRevision } from "@/lib/checklist-revision-delete";
+import { canAuthorEditChecklistRevision } from "@/lib/checklist-revision-save";
 import type { UserRole } from "@/lib/auth-shared";
 import type { RevisionListItem } from "@/lib/checklist-template-revisions-ui";
 
@@ -98,8 +99,11 @@ export function ChecklistRevisionsTable({
               </tr>
             ) : (
               visible.map((rev) => {
-                const isOwnDraft =
-                  rev.status === "draft" && sessionId && rev.proposedByUserId === sessionId;
+                const canEdit = canAuthorEditChecklistRevision({
+                  status: rev.status,
+                  proposedByUserId: rev.proposedByUserId,
+                  sessionId,
+                });
                 const isVirtual = rev.id === "revision-0-virtual";
                 const canDelete = canDeleteChecklistRevision(sessionRole, sessionId, rev);
                 return (
@@ -136,7 +140,7 @@ export function ChecklistRevisionsTable({
                             Ver plantilla
                           </Link>
                         )}
-                        {canAuthor && isOwnDraft && (
+                        {canAuthor && canEdit && (
                           <Link
                             href={`/checklists/${checklistId}/revisions/${rev.id}/edit`}
                             className="text-xs font-medium text-primary-600 hover:underline"

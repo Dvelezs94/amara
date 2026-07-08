@@ -403,7 +403,18 @@ export function ChecklistTemplateForm({
           (templateId ? `/checklists/${templateId}/revisions` : "/checklists");
         if (data.status === "proposed") {
           window.scrollTo({ top: 0, behavior: "smooth" });
-          router.push(`${hub}?notice=revision_submitted`);
+          if (requestedAction === "submit_review") {
+            router.push(`${hub}?notice=revision_submitted`);
+          } else {
+            const revisionId = String(data.revisionId ?? draftRevisionId ?? "").trim();
+            if (revisionId) {
+              router.push(
+                `/checklists/${templateId}/revisions/${revisionId}/edit?notice=revision_saved`
+              );
+            } else {
+              router.push(`${hub}?notice=revision_submitted`);
+            }
+          }
         } else if (data.status === "draft") {
           const revisionId = String(data.revisionId ?? draftRevisionId ?? "").trim();
           if (revisionId) {

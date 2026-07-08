@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getChecklistTemplateById } from "@/lib/checklist-templates";
+import { canAuthorEditChecklistRevision } from "@/lib/checklist-revision-save";
 import { db } from "@/lib/db";
 import { checklistTemplateRevisions, users } from "@/lib/db/schema";
 import { ChecklistRevisionInspect } from "../../ChecklistRevisionInspect";
@@ -48,10 +49,13 @@ export default async function ChecklistRevisionDetailPage({
   if (!revision) notFound();
 
   const canReview = session.role === "calidad";
-  const showEditDraftLink =
+  const showEditLink =
     session.role !== "calidad" &&
-    revision.status === "draft" &&
-    revision.proposedByUserId === session.id;
+    canAuthorEditChecklistRevision({
+      status: revision.status,
+      proposedByUserId: revision.proposedByUserId,
+      sessionId: session.id,
+    });
 
   return (
     <div className="space-y-4">
@@ -70,7 +74,8 @@ export default async function ChecklistRevisionDetailPage({
           }}
           checklistId={checklistId}
           canReview={canReview}
-          showEditDraftLink={showEditDraftLink}
+          showEditDraftLink={showEditLink}
+          editRevisionStatus={revision.status}
         />
       </div>
     </div>

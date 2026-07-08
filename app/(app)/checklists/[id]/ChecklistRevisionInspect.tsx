@@ -218,11 +218,13 @@ export function ChecklistRevisionInspect({
   checklistId,
   canReview,
   showEditDraftLink,
+  editRevisionStatus,
 }: {
   revision: SerializableRevision;
   checklistId: string;
   canReview: boolean;
   showEditDraftLink?: boolean;
+  editRevisionStatus?: string;
 }) {
   const router = useRouter();
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -298,7 +300,7 @@ export function ChecklistRevisionInspect({
               href={`/checklists/${checklistId}/revisions/${revision.id}/edit`}
               className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
             >
-              Editar borrador
+              {editRevisionStatus === "proposed" ? "Editar revisión" : "Editar borrador"}
             </Link>
           )}
           {canReview && revision.status === "proposed" && (

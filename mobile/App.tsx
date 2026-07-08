@@ -1147,9 +1147,6 @@ async function prepareFileForUpload(fileUri: string, filename: string): Promise<
   removeAfter: boolean;
 }> {
   const safeName = sanitizeUploadFilename(filename);
-  if (fileUri.startsWith("file://")) {
-    return { localUri: fileUri, removeAfter: false };
-  }
   const base = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
   if (!base) {
     throw new Error("No hay carpeta temporal para preparar la foto.");
@@ -1223,6 +1220,7 @@ function AppContent() {
 
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrderDetail | null>(null);
+  const selectedWorkOrderRef = useRef<WorkOrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [workOrdersRefreshing, setWorkOrdersRefreshing] = useState(false);
@@ -1853,13 +1851,15 @@ function AppContent() {
   }
 
   async function finalizeChecklistPhotoFromPicker(
+    workOrderId: string,
     itemId: string,
+    workOrderSnapshot: WorkOrderDetail,
     result: ImagePicker.ImagePickerResult
   ) {
     if (result.canceled || !result.assets?.[0]) return;
-    const wo = selectedWorkOrder;
-    if (!wo) return;
-    const existing = checklistPhotoUrls(wo.checklist.find((i) => i.id === itemId)?.value);
+    const existing = checklistPhotoUrls(
+      workOrderSnapshot.checklist.find((i) => i.id === itemId)?.value
+    );
     setChecklistPhotoUploadingId(itemId);
     setDetailError(null);
     try {
@@ -1872,20 +1872,42 @@ function AppContent() {
           const ext = mime.includes("png") ? ".png" : mime.includes("webp") ? ".webp" : ".jpg";
           filename = `evidencia-${Date.now()}${ext}`;
         }
-        const uploaded = await apiUploadWorkOrderFile(wo.id, asset.uri, filename, mime);
+        const uploaded = await apiUploadWorkOrderFile(workOrderId, asset.uri, filename, mime);
         uploadedUrls.push(uploaded.fileUrl);
       }
-      await updateChecklist(itemId, {
-        value: Array.from(new Set([...existing, ...uploadedUrls])),
+      const nextValue = Array.from(new Set([...existing, ...uploadedUrls]));
+      const liveWo = selectedWorkOrderRef.current;
+      if (liveWo?.id === workOrderId) {
+        setSelectedWorkOrder((wo) => {
+          if (!wo || wo.id !== workOrderId) return wo;
+          return {
+            ...wo,
+            checklist: wo.checklist.map((i) =>
+              i.id === itemId ? { ...i, value: nextValue } : i
+            ),
+          };
+        });
+      }
+      await apiFetch<{ ok: true }>(`/api/work-orders/${workOrderId}/checklist`, {
+        method: "PATCH",
+        body: JSON.stringify({ itemId, value: nextValue }),
       });
     } catch (error) {
+      if (selectedWorkOrderRef.current?.id === workOrderId) {
+        setSelectedWorkOrder(workOrderSnapshot);
+      }
       setDetailError(error instanceof Error ? error.message : "No se pudo subir la foto.");
     } finally {
       setChecklistPhotoUploadingId(null);
     }
   }
 
-  async function pickChecklistPhotoFromCamera(itemId: string) {
+  async function pickChecklistPhotoFromCamera(workOrderId: string, itemId: string) {
+    const workOrderSnapshot = selectedWorkOrderRef.current;
+    if (!workOrderSnapshot || workOrderSnapshot.id !== workOrderId) {
+      setDetailError("Vuelve a abrir la tarea e intenta de nuevo.");
+      return;
+    }
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Permiso", "Se necesita acceso a la camara para tomar la foto.");
@@ -1895,10 +1917,15 @@ function AppContent() {
       mediaTypes: ["images"],
       quality: 0.85,
     });
-    await finalizeChecklistPhotoFromPicker(itemId, result);
+    await finalizeChecklistPhotoFromPicker(workOrderId, itemId, workOrderSnapshot, result);
   }
 
-  async function pickChecklistPhotoFromLibrary(itemId: string) {
+  async function pickChecklistPhotoFromLibrary(workOrderId: string, itemId: string) {
+    const workOrderSnapshot = selectedWorkOrderRef.current;
+    if (!workOrderSnapshot || workOrderSnapshot.id !== workOrderId) {
+      setDetailError("Vuelve a abrir la tarea e intenta de nuevo.");
+      return;
+    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Permiso", "Se necesita acceso a la galeria para elegir una foto.");
@@ -1909,14 +1936,28 @@ function AppContent() {
       allowsMultipleSelection: true,
       quality: 0.85,
     });
-    await finalizeChecklistPhotoFromPicker(itemId, result);
+    await finalizeChecklistPhotoFromPicker(workOrderId, itemId, workOrderSnapshot, result);
   }
 
-  function openChecklistPhotoSourcePicker(itemId: string) {
+  function openChecklistPhotoSourcePicker(workOrderId: string, itemId: string) {
     Alert.alert("Evidencia", "Elige el origen de la foto", [
       { text: "Cancelar", style: "cancel" },
-      { text: "Camara", onPress: () => void pickChecklistPhotoFromCamera(itemId) },
-      { text: "Galeria", onPress: () => void pickChecklistPhotoFromLibrary(itemId) },
+      {
+        text: "Camara",
+        onPress: () => {
+          setTimeout(() => {
+            void pickChecklistPhotoFromCamera(workOrderId, itemId);
+          }, 250);
+        },
+      },
+      {
+        text: "Galeria",
+        onPress: () => {
+          setTimeout(() => {
+            void pickChecklistPhotoFromLibrary(workOrderId, itemId);
+          }, 100);
+        },
+      },
     ]);
   }
 
@@ -2206,6 +2247,10 @@ function AppContent() {
     setDetailDetailsExpanded(false);
     setChecklistPhotoPreviewUrls({});
   }, [selectedWorkOrderId]);
+
+  useEffect(() => {
+    selectedWorkOrderRef.current = selectedWorkOrder;
+  }, [selectedWorkOrder]);
 
   useEffect(() => {
     setDowntimeError(null);
@@ -3256,7 +3301,12 @@ function AppContent() {
                                         ) : null}
                                         <Pressable
                                           style={styles.checklistPhotoActionBtn}
-                                          onPress={() => openChecklistPhotoSourcePicker(item.id)}
+                                          onPress={() =>
+                                            openChecklistPhotoSourcePicker(
+                                              selectedWorkOrder.id,
+                                              item.id
+                                            )
+                                          }
                                         >
                                           <Ionicons name="camera-outline" size={20} color={theme.primary} />
                                           <Text style={styles.checklistPhotoActionText}>

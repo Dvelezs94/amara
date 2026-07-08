@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, max } from "drizzle-orm";
+import { and, desc, eq, inArray, max } from "drizzle-orm";
+import { resolveRevisionSaveStatus } from "@/lib/checklist-revision-save";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -130,25 +131,35 @@ export async function POST(
   }
 
   const now = new Date();
-  const status = submissionAction === "submit_review" ? "proposed" : "draft";
-  const existingDraft = await db.query.checklistTemplateRevisions.findFirst({
-    where: and(
-      eq(checklistTemplateRevisions.checklistTemplateId, templateId),
-      eq(checklistTemplateRevisions.proposedByUserId, session.id),
-      eq(checklistTemplateRevisions.status, "draft"),
-      draftRevisionId
-        ? eq(checklistTemplateRevisions.id, draftRevisionId)
-        : eq(checklistTemplateRevisions.checklistTemplateId, templateId)
-    ),
-    orderBy: [desc(checklistTemplateRevisions.createdAt)],
-  });
+  const existingRevision = draftRevisionId
+    ? await db.query.checklistTemplateRevisions.findFirst({
+        where: and(
+          eq(checklistTemplateRevisions.checklistTemplateId, templateId),
+          eq(checklistTemplateRevisions.id, draftRevisionId),
+          eq(checklistTemplateRevisions.proposedByUserId, session.id),
+          inArray(checklistTemplateRevisions.status, ["draft", "proposed"])
+        ),
+      })
+    : await db.query.checklistTemplateRevisions.findFirst({
+        where: and(
+          eq(checklistTemplateRevisions.checklistTemplateId, templateId),
+          eq(checklistTemplateRevisions.proposedByUserId, session.id),
+          eq(checklistTemplateRevisions.status, "draft")
+        ),
+        orderBy: [desc(checklistTemplateRevisions.createdAt)],
+      });
+  const existingStatus =
+    existingRevision?.status === "draft" || existingRevision?.status === "proposed"
+      ? existingRevision.status
+      : null;
+  const status = resolveRevisionSaveStatus(submissionAction, existingStatus);
   const normalizedName = revisionName.toLocaleLowerCase("es-MX");
   const existingRevisions = await db
     .select({ id: checklistTemplateRevisions.id, name: checklistTemplateRevisions.name })
     .from(checklistTemplateRevisions)
     .where(eq(checklistTemplateRevisions.checklistTemplateId, templateId));
   const duplicateName = existingRevisions.some((rev) => {
-    if (existingDraft && rev.id === existingDraft.id) return false;
+    if (existingRevision && rev.id === existingRevision.id) return false;
     return rev.name.trim().toLocaleLowerCase("es-MX") === normalizedName;
   });
   if (duplicateName) {
@@ -158,9 +169,9 @@ export async function POST(
     );
   }
 
-  let revisionNumber = existingDraft?.revisionNumber ?? null;
-  let revisionId = existingDraft?.id ?? null;
-  if (existingDraft) {
+  let revisionNumber = existingRevision?.revisionNumber ?? null;
+  let revisionId = existingRevision?.id ?? null;
+  if (existingRevision) {
     await db
       .update(checklistTemplateRevisions)
       .set({
@@ -175,7 +186,7 @@ export async function POST(
         },
         createdAt: now,
       })
-      .where(eq(checklistTemplateRevisions.id, existingDraft.id));
+      .where(eq(checklistTemplateRevisions.id, existingRevision.id));
   } else {
     const [{ value: maxRevision }] = await db
       .select({

@@ -1,6 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { canAuthorEditChecklistRevision } from "@/lib/checklist-revision-save";
 import { getChecklistTemplateById } from "@/lib/checklist-templates";
 import {
   buildInitialForDraft,
@@ -29,11 +30,19 @@ export default async function EditChecklistRevisionPage({
     where: and(
       eq(checklistTemplateRevisions.checklistTemplateId, params.id),
       eq(checklistTemplateRevisions.id, params.revisionId),
-      eq(checklistTemplateRevisions.status, "draft"),
-      eq(checklistTemplateRevisions.proposedByUserId, session.id)
+      inArray(checklistTemplateRevisions.status, ["draft", "proposed"])
     ),
   });
-  if (!revision) notFound();
+  if (
+    !revision ||
+    !canAuthorEditChecklistRevision({
+      status: revision.status,
+      proposedByUserId: revision.proposedByUserId,
+      sessionId: session.id,
+    })
+  ) {
+    notFound();
+  }
 
   const draftAfter = revision.snapshot?.after;
   const initialForEdit = buildInitialForDraft(draftAfter, template);
@@ -47,11 +56,21 @@ export default async function EditChecklistRevisionPage({
           Borrador guardado.
         </p>
       )}
+      {notice === "revision_saved" && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Cambios guardados. La revisión sigue en revisión por calidad.
+        </p>
+      )}
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900">Editar borrador</h1>
+        <h1 className="text-xl font-semibold text-zinc-900">
+          {revision.status === "proposed" ? "Editar revisión en curso" : "Editar borrador"}
+        </h1>
         <p className="mt-1 text-sm text-zinc-600">
           Revisión <span className="font-semibold text-zinc-800">{revision.name}</span> (#
-          {revision.revisionNumber}) · borrador no enviado
+          {revision.revisionNumber}) ·{" "}
+          {revision.status === "proposed"
+            ? "en revisión por calidad"
+            : "borrador no enviado"}
         </p>
       </div>
       <ChecklistTemplateForm
