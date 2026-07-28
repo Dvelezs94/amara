@@ -152,12 +152,12 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
     setOpenFolders((prev) => {
       let changed = false;
       const next = { ...prev };
-      for (const id of ids) {
+      Array.from(ids).forEach((id) => {
         if (next[id] !== true) {
           next[id] = true;
           changed = true;
         }
-      }
+      });
       return changed ? next : prev;
     });
   }, [search, searchResult.searching, searchResult.openFolderIds]);
