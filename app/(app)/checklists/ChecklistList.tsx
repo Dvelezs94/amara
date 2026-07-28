@@ -18,8 +18,10 @@ import {
 } from "lucide-react";
 import {
   folderDescendantIds,
+  filterChecklistsBySearch,
   type FolderRow,
 } from "@/lib/checklist-folder-helpers";
+import { useSetPageHeader } from "@/components/PageHeaderContext";
 
 type Folder = {
   id: string;
@@ -59,6 +61,7 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [folderDialog, setFolderDialog] = useState<{
     parentId: string | null;
@@ -69,6 +72,40 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
     name: string;
     parentFolderId: string | null;
   } | null>(null);
+
+  useSetPageHeader({
+    title: "Checklist",
+    filters: (
+      <input
+        type="search"
+        placeholder="Buscar plantillas o carpetas…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 placeholder:text-zinc-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 md:max-w-md"
+      />
+    ),
+    actions: canCreate ? (
+      <>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-2 text-sm font-medium text-zinc-800 tap-target hover:bg-zinc-50"
+          onClick={() => {
+            setNewFolderName("");
+            setFolderDialog({ parentId: null });
+          }}
+        >
+          <FolderPlus className="h-4 w-4" />
+          <span className="hidden sm:inline">Nueva carpeta</span>
+        </button>
+        <Link
+          href="/checklists/new"
+          className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white tap-target hover:bg-primary-700"
+        >
+          Nueva plantilla
+        </Link>
+      </>
+    ) : null,
+  });
 
   const reload = useCallback(async () => {
     const [fr, tr] = await Promise.all([
@@ -99,6 +136,31 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
       return next;
     });
   }, [folders]);
+
+  const searchResult = useMemo(
+    () => filterChecklistsBySearch(folders, templates, search),
+    [folders, templates, search]
+  );
+
+  const visibleTemplates = searchResult.templates;
+  const visibleFolderIds = searchResult.visibleFolderIds;
+
+  useEffect(() => {
+    if (!searchResult.searching) return;
+    const ids = searchResult.openFolderIds;
+    if (ids.size === 0) return;
+    setOpenFolders((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const id of ids) {
+        if (next[id] !== true) {
+          next[id] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [search, searchResult.searching, searchResult.openFolderIds]);
 
   const byId = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
 
@@ -248,10 +310,16 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
   }
 
   function renderFolderNode(folder: Folder, depth: number): ReactNode {
+    if (visibleFolderIds && !visibleFolderIds.has(folder.id)) return null;
+
     const children = sortFolders(
-      folders.filter((f) => f.parentFolderId === folder.id)
+      folders.filter(
+        (f) =>
+          f.parentFolderId === folder.id &&
+          (!visibleFolderIds || visibleFolderIds.has(f.id))
+      )
     );
-    const here = templates.filter((t) => t.folderId === folder.id);
+    const here = visibleTemplates.filter((t) => t.folderId === folder.id);
     const isOpen = openFolders[folder.id] !== false;
     const pad = Math.min(depth * 12, 48);
 
@@ -391,33 +459,6 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
       </div>
     );
 
-  const pageHeader = (
-    <div className="flex items-center justify-between flex-wrap gap-3">
-      <h1 className="text-xl font-semibold text-zinc-900">Plantillas de checklist</h1>
-      {canCreate && (
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-800 tap-target hover:bg-zinc-50"
-            onClick={() => {
-              setNewFolderName("");
-              setFolderDialog({ parentId: null });
-            }}
-          >
-            <FolderPlus className="h-4 w-4" />
-            Nueva carpeta
-          </button>
-          <Link
-            href="/checklists/new"
-            className="rounded-xl bg-primary-600 text-white py-2.5 px-4 text-sm font-medium tap-target"
-          >
-            Nueva plantilla
-          </Link>
-        </div>
-      )}
-    </div>
-  );
-
   const folderModal =
     folderDialog && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -474,7 +515,6 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
   if (loading) {
     return (
       <div className="space-y-4">
-        {pageHeader}
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
             <div
@@ -488,14 +528,23 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
     );
   }
 
-  const roots = sortFolders(folders.filter((f) => !f.parentFolderId));
-  const loose = templates.filter((t) => !t.folderId);
+  const roots = sortFolders(
+    folders.filter(
+      (f) =>
+        !f.parentFolderId &&
+        (!visibleFolderIds || visibleFolderIds.has(f.id))
+    )
+  );
+  const loose = visibleTemplates.filter((t) => !t.folderId);
   const hasAnything = templates.length > 0 || folders.length > 0;
+  const hasSearchHits =
+    !searchResult.searching ||
+    visibleTemplates.length > 0 ||
+    (visibleFolderIds != null && visibleFolderIds.size > 0);
 
   if (!hasAnything) {
     return (
       <div className="space-y-4">
-        {pageHeader}
         <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center">
           <p className="text-zinc-500">Aún no hay plantillas de checklist.</p>
           <p className="text-sm text-zinc-400 mt-1">
@@ -510,19 +559,25 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
 
   return (
     <div className="space-y-4">
-      {pageHeader}
-
-      <div className="space-y-4">
-        {roots.map((r) => renderFolderNode(r, 0))}
-      </div>
-
-      {loose.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-zinc-600">
-            {folders.length > 0 ? "Sin carpeta" : "Plantillas"}
-          </p>
-          {renderTemplatesBlock(loose)}
+      {!hasSearchHits ? (
+        <div className="rounded-xl border border-dashed border-zinc-300 bg-white/70 p-8 text-center">
+          <p className="text-zinc-500">No hay resultados para la búsqueda.</p>
         </div>
+      ) : (
+        <>
+          <div className="space-y-4">
+            {roots.map((r) => renderFolderNode(r, 0))}
+          </div>
+
+          {loose.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-zinc-600">
+                {folders.length > 0 ? "Sin carpeta" : "Plantillas"}
+              </p>
+              {renderTemplatesBlock(loose)}
+            </div>
+          )}
+        </>
       )}
 
       {folderModal}

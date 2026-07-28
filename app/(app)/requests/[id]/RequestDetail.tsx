@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { APP_TIME_ZONE } from "@/lib/timezone";
+import { useSetPageHeader } from "@/components/PageHeaderContext";
 
 function formatDate(s: string | Date) {
   return new Date(s).toLocaleString("es-MX", { timeZone: APP_TIME_ZONE });
@@ -36,6 +37,8 @@ function priorityLabel(priority: RequestData["priority"]) {
 export function RequestDetail({ request }: { request: RequestData }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+
+  useSetPageHeader({ title: "Solicitud" });
 
   async function convert() {
     setLoading(true);
@@ -72,9 +75,8 @@ export function RequestDetail({ request }: { request: RequestData }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900">Solicitud</h1>
         <span
-          className={`inline-block mt-2 rounded-full px-2.5 py-0.5 text-sm font-medium ${
+          className={`inline-block rounded-full px-2.5 py-0.5 text-sm font-medium ${
             statusColors[request.status] ?? "bg-zinc-100 text-zinc-600"
           }`}
         >

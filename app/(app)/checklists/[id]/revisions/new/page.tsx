@@ -19,14 +19,11 @@ export default async function NewChecklistRevisionPage({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-zinc-900">Nueva revisión</h1>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-          Indica un nombre de revisión y modifica la plantilla respecto a la versión publicada. Puedes
-          guardar como borrador tantas veces como necesites; al enviar a revisión, calidad decidirá si se
-          fusiona con la plantilla publicada.
-        </p>
-      </div>
+      <p className="max-w-2xl text-sm text-zinc-600">
+        Indica un nombre de revisión y modifica la plantilla respecto a la versión publicada. Puedes
+        guardar como borrador tantas veces como necesites; al enviar a revisión, calidad decidirá si se
+        fusiona con la plantilla publicada.
+      </p>
       <ChecklistTemplateForm
         templateId={params.id}
         initial={template}

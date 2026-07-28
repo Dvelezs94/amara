@@ -11,6 +11,8 @@ export function CalendarCreateEventModal({
   assets,
   users,
   checklistTemplates,
+  calendars = [],
+  defaultCalendarId = null,
   open,
   onOpenChange,
   initialStartDate,
@@ -19,6 +21,8 @@ export function CalendarCreateEventModal({
   assets: SelectOption[];
   users: SelectOption[];
   checklistTemplates: SelectOption[];
+  calendars?: SelectOption[];
+  defaultCalendarId?: string | null;
   open?: boolean;
   onOpenChange?: (next: boolean) => void;
   initialStartDate?: string;
@@ -86,6 +90,8 @@ export function CalendarCreateEventModal({
                 assets={assets}
                 users={users}
                 checklistTemplates={checklistTemplates}
+                calendars={calendars}
+                defaultCalendarId={defaultCalendarId}
                 initialStartDate={initialStartDate}
                 onCreated={() => setOpen(false)}
               />

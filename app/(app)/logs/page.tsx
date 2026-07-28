@@ -36,19 +36,11 @@ export default async function LogsPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-zinc-900">
-            Logs de plataforma
-          </h1>
-          <p className="text-sm text-zinc-500">
-            Usuarios, órdenes, activos, checklist, calendario de mantenimiento y
-            más.
-          </p>
-        </div>
-      </header>
+      <p className="text-sm text-zinc-500">
+        Usuarios, órdenes, activos, checklist, calendario de mantenimiento y más.
+      </p>
 
-      <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
         <div className="grid grid-cols-12 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-500">
           <div className="col-span-3">Fecha</div>
           <div className="col-span-2">Usuario</div>

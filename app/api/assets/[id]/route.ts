@@ -1,10 +1,26 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { assets } from "@/lib/db/schema";
-import { workOrders } from "@/lib/db/schema";
+import { assetGroups, assets, workOrders } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
+
+async function resolveGroupId(
+  raw: unknown
+): Promise<{ ok: true; groupId: string | null } | { ok: false; error: string }> {
+  if (raw === null || raw === "") {
+    return { ok: true, groupId: null };
+  }
+  const groupId = String(raw).trim();
+  if (!groupId) return { ok: true, groupId: null };
+  const group = await db.query.assetGroups.findFirst({
+    where: eq(assetGroups.id, groupId),
+  });
+  if (!group) {
+    return { ok: false, error: "Área no encontrada" };
+  }
+  return { ok: true, groupId };
+}
 
 export async function GET(
   _req: Request,
@@ -55,6 +71,7 @@ export async function PATCH(
     name?: string;
     assetId?: string;
     tracksMachineDowntime?: boolean;
+    groupId?: string | null;
     updatedAt?: Date;
   } = {};
   if (body.name !== undefined) updates.name = String(body.name).trim();
@@ -64,6 +81,13 @@ export async function PATCH(
       return NextResponse.json({ error: "tracksMachineDowntime inválido" }, { status: 400 });
     }
     updates.tracksMachineDowntime = body.tracksMachineDowntime;
+  }
+  if (body.groupId !== undefined) {
+    const groupResult = await resolveGroupId(body.groupId);
+    if (!groupResult.ok) {
+      return NextResponse.json({ error: groupResult.error }, { status: 400 });
+    }
+    updates.groupId = groupResult.groupId;
   }
 
   if (updates.name !== undefined && !updates.name) {
@@ -75,7 +99,8 @@ export async function PATCH(
   const hasPatch =
     updates.name !== undefined ||
     updates.assetId !== undefined ||
-    updates.tracksMachineDowntime !== undefined;
+    updates.tracksMachineDowntime !== undefined ||
+    updates.groupId !== undefined;
   if (!hasPatch) {
     return NextResponse.json({ ok: true });
   }
@@ -88,11 +113,19 @@ export async function PATCH(
     action: "updated",
     userId: session.id,
     metadata: {
-      before: { name: asset.name, assetId: asset.assetId, tracksMachineDowntime: asset.tracksMachineDowntime },
+      before: {
+        name: asset.name,
+        assetId: asset.assetId,
+        tracksMachineDowntime: asset.tracksMachineDowntime,
+        groupId: asset.groupId ?? null,
+      },
       after: {
         name: updates.name ?? asset.name,
         assetId: updates.assetId ?? asset.assetId,
-        tracksMachineDowntime: updates.tracksMachineDowntime ?? asset.tracksMachineDowntime,
+        tracksMachineDowntime:
+          updates.tracksMachineDowntime ?? asset.tracksMachineDowntime,
+        groupId:
+          updates.groupId !== undefined ? updates.groupId : asset.groupId ?? null,
       },
     },
   });

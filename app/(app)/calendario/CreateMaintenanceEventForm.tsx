@@ -3,6 +3,7 @@
 import { AssigneeMultiSelect } from "@/components/AssigneeMultiSelect";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_CALENDAR_ID } from "@/lib/calendar-helpers";
 
 import {
   MAINTENANCE_EVENT_COLORS,
@@ -16,16 +17,25 @@ export function CreateMaintenanceEventForm({
   assets,
   users,
   checklistTemplates,
+  calendars = [],
+  defaultCalendarId = null,
   onCreated,
   initialStartDate,
 }: {
   assets: SelectOption[];
   users: SelectOption[];
   checklistTemplates: SelectOption[];
+  calendars?: SelectOption[];
+  defaultCalendarId?: string | null;
   onCreated?: () => void;
   initialStartDate?: string;
 }) {
   const router = useRouter();
+  const resolvedDefault =
+    defaultCalendarId ||
+    calendars.find((c) => c.id === DEFAULT_CALENDAR_ID)?.id ||
+    calendars[0]?.id ||
+    DEFAULT_CALENDAR_ID;
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState(
     initialStartDate ?? new Date().toISOString().slice(0, 10)
@@ -38,6 +48,7 @@ export function CreateMaintenanceEventForm({
   });
   const [until, setUntil] = useState("");
   const [assetId, setAssetId] = useState("");
+  const [calendarId, setCalendarId] = useState(resolvedDefault);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [checklistTemplateId, setChecklistTemplateId] = useState("");
   const [color, setColor] = useState("#02257D");
@@ -68,6 +79,10 @@ export function CreateMaintenanceEventForm({
     setStartDate(initialStartDate);
   }, [initialStartDate]);
 
+  useEffect(() => {
+    setCalendarId(resolvedDefault);
+  }, [resolvedDefault]);
+
   function toggleWeekday(v: number) {
     setWeekdays((prev) =>
       prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v].sort()
@@ -90,6 +105,7 @@ export function CreateMaintenanceEventForm({
           ...(bodyWeekdays ? { weekdays: bodyWeekdays } : {}),
           until: until.trim() || null,
           assetId: assetId || null,
+          calendarId: calendarId || resolvedDefault,
           assigneeIds,
           checklistTemplateId: checklistTemplateId || null,
           color,
@@ -241,6 +257,20 @@ export function CreateMaintenanceEventForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
+          <label className="text-xs font-medium text-zinc-600">Calendario</label>
+          <select
+            value={calendarId}
+            onChange={(e) => setCalendarId(e.target.value)}
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            {calendars.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
           <label className="text-xs font-medium text-zinc-600">Activo</label>
           <select
             value={assetId}
@@ -256,14 +286,15 @@ export function CreateMaintenanceEventForm({
             ))}
           </select>
         </div>
-        <AssigneeMultiSelect
-          label="Responsables"
-          users={users}
-          value={assigneeIds}
-          onChange={setAssigneeIds}
-          emptyHint="Sin asignar"
-        />
       </div>
+
+      <AssigneeMultiSelect
+        label="Responsables"
+        users={users}
+        value={assigneeIds}
+        onChange={setAssigneeIds}
+        emptyHint="Sin asignar"
+      />
 
       <div className="space-y-2">
         <label className="text-xs font-medium text-zinc-600">Color del evento</label>

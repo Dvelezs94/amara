@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { UserAvatar } from "@/components/UserAvatar";
+import { useSetPageHeader } from "@/components/PageHeaderContext";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import {
   parseWorkOrderKind,
@@ -46,7 +47,10 @@ import {
   type WorkOrderAssetOption,
 } from "@/components/WorkOrderAssetSelect";
 import { useWorkOrderStatusColors } from "@/components/WorkOrderStatusColorsProvider";
-import { workOrderStatusBadgeStyle } from "@/lib/work-order-status-colors";
+import {
+  workOrderStatusBadgeStyle,
+  workOrderStatusSelectStyle,
+} from "@/lib/work-order-status-colors";
 import {
   formatUtcDateToDatetimeLocalValue,
   parseDatetimeLocalValue,
@@ -181,6 +185,15 @@ export function WorkOrderDetail({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const { colors: statusColors } = useWorkOrderStatusColors();
+
+  useSetPageHeader({
+    title: initial.title,
+    subtitle:
+      initial.folio != null
+        ? `Folio ${initial.folio}`
+        : `Ref. ${initial.id.slice(0, 8)}…`,
+  });
+
   function toRenderablePhotoUrl(raw: string): string {
     const trimmed = raw.trim();
     if (!trimmed) return trimmed;
@@ -907,12 +920,6 @@ export function WorkOrderDetail({
         </div>
       </div>
 
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 md:text-[26px] md:leading-snug">
-          {initial.title}
-        </h1>
-      </header>
-
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
         <div className="flex min-w-0 flex-1 flex-col gap-6">
           <details
@@ -1419,7 +1426,8 @@ export function WorkOrderDetail({
                 id="wo-status"
                 value={initial.status}
                 onChange={(e) => updateStatus(e.target.value)}
-                className="w-full cursor-pointer rounded-lg border-2 border-[#F14C03] bg-[#FFF5F0] py-2.5 pl-3 pr-8 text-sm font-semibold text-zinc-900 shadow-sm focus:border-[#F14C03] focus:outline-none focus:ring-2 focus:ring-[#F14C03]/25"
+                className="w-full cursor-pointer rounded-lg border-2 py-2.5 pl-3 pr-8 text-sm font-semibold shadow-sm focus:outline-none focus:ring-2"
+                style={workOrderStatusSelectStyle(initial.status, statusColors)}
               >
                 <option value="pending">Pendiente</option>
                 <option value="in_progress">En progreso</option>

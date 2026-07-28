@@ -1,25 +1,29 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assets } from "@/lib/db/schema";
-import { workOrders } from "@/lib/db/schema";
-import { assetFiles } from "@/lib/db/schema";
-import { users } from "@/lib/db/schema";
-import { desc, eq, sql } from "drizzle-orm";
+import {
+  assets,
+  assetFiles,
+  calendars,
+  maintenanceSchedules,
+  users,
+  workOrders,
+} from "@/lib/db/schema";
 import { AssetFilesSection } from "./AssetFilesSection";
 import { AssetWorkOrdersList } from "./AssetWorkOrdersList";
+import { AssetCalendarEventsList } from "./AssetCalendarEventsList";
 import { AssetActions } from "./AssetActions";
-import {
-  formatDowntimeMinutesSpanish,
-} from "@/lib/machine-downtime";
+import { formatDowntimeMinutesSpanish } from "@/lib/machine-downtime";
+import { SetPageHeader } from "@/components/SetPageHeader";
 
 async function getAsset(id: string) {
   const asset = await db.query.assets.findFirst({
     where: eq(assets.id, id),
   });
   if (!asset) return null;
-  const [workOrdersList, files, downtimeRow] = await Promise.all([
+  const [workOrdersList, scheduleList, files, downtimeRow] = await Promise.all([
     db
       .select({
         id: workOrders.id,
@@ -36,9 +40,30 @@ async function getAsset(id: string) {
       .leftJoin(users, eq(workOrders.assigneeId, users.id))
       .where(eq(workOrders.assetId, id))
       .orderBy(desc(workOrders.createdAt)),
+    db
+      .select({
+        id: maintenanceSchedules.id,
+        name: maintenanceSchedules.name,
+        recurrence: maintenanceSchedules.recurrence,
+        nextRunAt: maintenanceSchedules.nextRunAt,
+        color: maintenanceSchedules.color,
+        calendarName: calendars.name,
+      })
+      .from(maintenanceSchedules)
+      .leftJoin(calendars, eq(maintenanceSchedules.calendarId, calendars.id))
+      .where(
+        and(
+          eq(maintenanceSchedules.assetId, id),
+          isNull(maintenanceSchedules.deletedAt)
+        )
+      )
+      .orderBy(
+        asc(maintenanceSchedules.nextRunAt),
+        asc(maintenanceSchedules.name)
+      ),
     db.query.assetFiles.findMany({
       where: eq(assetFiles.assetId, id),
-      orderBy: (f, { desc }) => [desc(f.createdAt)],
+      orderBy: (f, { desc: d }) => [d(f.createdAt)],
     }),
     db
       .select({
@@ -58,7 +83,13 @@ async function getAsset(id: string) {
       .where(eq(workOrders.assetId, id)),
   ]);
   const downtimeTotalMinutes = downtimeRow[0]?.totalMinutes ?? 0;
-  return { ...asset, workOrders: workOrdersList, files, downtimeTotalMinutes };
+  return {
+    ...asset,
+    workOrders: workOrdersList,
+    schedules: scheduleList,
+    files,
+    downtimeTotalMinutes,
+  };
 }
 
 export default async function AssetDetailPage({
@@ -71,24 +102,19 @@ export default async function AssetDetailPage({
   if (!asset) notFound();
   return (
     <div className="space-y-6">
+      <SetPageHeader
+        title={asset.name}
+        subtitle={asset.assetId}
+        actions={<AssetActions id={asset.id} name={asset.name} />}
+      />
       <div className="space-y-1">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Link
-              href="/assets"
-              className="inline-flex items-center gap-1 text-sm font-medium text-[#F14C03] hover:underline"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              Maquinas
-            </Link>
-            <span aria-hidden className="text-zinc-400">
-              /
-            </span>
-            <h1 className="text-xl font-semibold text-zinc-900">{asset.name}</h1>
-          </div>
-          <AssetActions id={asset.id} name={asset.name} />
-        </div>
-        <p className="text-zinc-500">{asset.assetId}</p>
+        <Link
+          href="/assets"
+          className="inline-flex items-center gap-1 text-sm font-medium text-[#F14C03] hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Máquinas
+        </Link>
       </div>
       <section
         aria-labelledby="downtime-heading"
@@ -117,12 +143,54 @@ export default async function AssetDetailPage({
 
       <AssetFilesSection assetId={id} initialFiles={asset.files} />
 
-      {asset.workOrders.length > 0 && (
-        <section>
-          <h2 className="text-sm font-medium text-zinc-500 mb-2">Tareas</h2>
-          <AssetWorkOrdersList workOrders={asset.workOrders} />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-900">Tareas</h2>
+            {asset.workOrders.length > 0 ? (
+              <span className="tabular-nums text-xs text-zinc-500">
+                {asset.workOrders.length}
+              </span>
+            ) : null}
+          </div>
+          {asset.workOrders.length === 0 ? (
+            <p className="text-sm text-zinc-500">
+              Aún no hay tareas para esta máquina.
+            </p>
+          ) : (
+            <AssetWorkOrdersList workOrders={asset.workOrders} />
+          )}
         </section>
-      )}
+
+        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-900">
+              Eventos del calendario
+            </h2>
+            {asset.schedules.length > 0 ? (
+              <span className="tabular-nums text-xs text-zinc-500">
+                {asset.schedules.length}
+              </span>
+            ) : null}
+          </div>
+          {asset.schedules.length === 0 ? (
+            <p className="text-sm text-zinc-500">
+              No hay eventos de mantenimiento vinculados a esta máquina.
+            </p>
+          ) : (
+            <AssetCalendarEventsList
+              events={asset.schedules.map((s) => ({
+                id: s.id,
+                name: s.name,
+                recurrence: s.recurrence,
+                nextRunAt: s.nextRunAt,
+                color: s.color,
+                calendarName: s.calendarName,
+              }))}
+            />
+          )}
+        </section>
+      </div>
     </div>
   );
 }

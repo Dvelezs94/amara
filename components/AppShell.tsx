@@ -30,7 +30,52 @@ import {
 } from "@/lib/checklist-notification-parse";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WorkOrderStatusColorsProvider } from "@/components/WorkOrderStatusColorsProvider";
+import {
+  PageHeaderProvider,
+  resolveAppShellTitle,
+  usePageHeader,
+} from "@/components/PageHeaderContext";
 import type { WorkOrderStatusColors } from "@/lib/work-order-status-colors";
+
+function AppShellPageTitle() {
+  const pathname = usePathname();
+  const header = usePageHeader();
+  const pageTitle = header.title ?? resolveAppShellTitle(pathname);
+  const pageSubtitle = header.subtitle ?? null;
+  if (!pageTitle && !pageSubtitle) return null;
+  return (
+    <div className="min-w-0 flex-1 basis-[10rem]">
+      {pageTitle ? (
+        <h1 className="truncate text-base font-semibold leading-tight text-zinc-900 md:text-lg">
+          {pageTitle}
+        </h1>
+      ) : null}
+      {pageSubtitle ? (
+        <p className="truncate text-xs leading-tight text-zinc-500">
+          {pageSubtitle}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Content-area toolbar: filters/search left, page actions right. */
+function AppShellContentToolbar() {
+  const header = usePageHeader();
+  if (!header.filters && !header.actions) return null;
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        {header.filters ?? null}
+      </div>
+      {header.actions ? (
+        <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {header.actions}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
 
@@ -309,6 +354,7 @@ export function AppShell({
 
  return (
   <WorkOrderStatusColorsProvider initialColors={workOrderStatusColors}>
+  <PageHeaderProvider>
   <div className="min-h-screen flex flex-col md:flex-row">
    {/* Desktop sidebar */}
    <aside
@@ -496,7 +542,7 @@ export function AppShell({
      sidebarCollapsed ? "md:pl-20" : "md:pl-[260px]"
     }`}
    >
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-zinc-200 bg-white/95 px-4 backdrop-blur">
+    <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 border-b border-zinc-200 bg-white/95 px-4 py-2 backdrop-blur">
      <button
       type="button"
       onClick={() => setSidebarOpen(true)}
@@ -505,10 +551,8 @@ export function AppShell({
      >
       <Menu className="h-5 w-5 text-zinc-600" />
      </button>
-     <Link href="/tareas" className="text-lg font-extrabold uppercase tracking-tight text-[#F14C03] md:hidden">
-      MSA
-     </Link>
-     <div className="ml-auto flex items-center gap-2">
+     <AppShellPageTitle />
+     <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
       {canUseTaskFeatures && (
       <div className="relative md:hidden" ref={notificationsMobileRef}>
        <button
@@ -716,10 +760,12 @@ export function AppShell({
     </header>
 
     <main className="flex-1 min-h-0 !bg-zinc-200 p-4 md:mx-auto md:w-full md:max-w-none md:pb-4">
+     <AppShellContentToolbar />
      {children}
     </main>
    </div>
   </div>
+  </PageHeaderProvider>
   </WorkOrderStatusColorsProvider>
  );
 }

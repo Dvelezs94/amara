@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import {
   maintenanceSchedules,
   assets,
+  calendars,
   checklistTemplates,
   users,
 } from "@/lib/db/schema";
@@ -12,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
 import { parseRecurrencePayloadFromMaintenanceBody } from "@/lib/maintenance-schedule-recurrence-from-request";
+import { ensureDefaultCalendar } from "@/lib/ensure-default-calendar";
 
 function isMissingAssigneeColumnError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -114,6 +116,25 @@ export async function POST(req: Request) {
     }
   }
 
+  let calendarId: string | null =
+    body.calendarId != null && body.calendarId !== ""
+      ? String(body.calendarId)
+      : null;
+  if (calendarId) {
+    const cal = await db.query.calendars.findFirst({
+      where: eq(calendars.id, calendarId),
+      columns: { id: true },
+    });
+    if (!cal) {
+      return NextResponse.json(
+        { error: "Calendario no encontrado" },
+        { status: 400 }
+      );
+    }
+  } else {
+    calendarId = await ensureDefaultCalendar();
+  }
+
   const id = createId();
   try {
     await db.insert(maintenanceSchedules).values({
@@ -123,6 +144,7 @@ export async function POST(req: Request) {
       assigneeId,
       color,
       checklistTemplateId,
+      calendarId,
       recurrence,
       nextRunAt,
     });
@@ -135,6 +157,7 @@ export async function POST(req: Request) {
       name: string;
       assetId: string | null;
       checklistTemplateId: string | null;
+      calendarId?: string | null;
       recurrence: string;
       nextRunAt: Date;
       assigneeId?: string | null;
@@ -144,6 +167,7 @@ export async function POST(req: Request) {
       name,
       assetId,
       checklistTemplateId,
+      calendarId,
       recurrence,
       nextRunAt,
     };

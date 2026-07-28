@@ -66,7 +66,7 @@ export async function GET(req: Request) {
     .leftJoin(assets, sql`${workOrders.assetId} = ${assets.id}`)
     .where(inArray(workOrders.status, ["pending", "in_progress"]))
     .orderBy(asc(workOrders.dueDate), asc(workOrders.createdAt))
-    .limit(6)
+    .limit(50)
     : Promise.resolve([]);
 
   async function fetchScheduleRowsForUpcoming(): Promise<
@@ -176,7 +176,7 @@ export async function GET(req: Request) {
     })
     .filter((x): x is typeof x & { displayNext: Date } => x.displayNext != null)
     .sort((a, b) => a.displayNext.getTime() - b.displayNext.getTime())
-    .slice(0, 6)
+    .slice(0, 50)
     .map(({ row, displayNext }) => ({
       id: row.id,
       name: row.name,

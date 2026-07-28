@@ -22,12 +22,12 @@ export default async function EditAssetPage({
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
-      <h1 className="text-xl font-semibold text-zinc-900">Editar máquina</h1>
       <AssetEditForm
         id={id}
         initialName={asset.name}
         initialAssetId={asset.assetId}
         initialTracksMachineDowntime={asset.tracksMachineDowntime !== false}
+        initialGroupId={asset.groupId ?? null}
       />
       <Link
         href={`/assets/${id}`}

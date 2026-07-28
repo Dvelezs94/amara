@@ -11,6 +11,7 @@ import {
 } from "./lib/checklist-item-tree";
 import { workOrderChecklistIsCompleteForClosure } from "./lib/checklist-completion";
 import { Ionicons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -322,8 +323,65 @@ type UserOption = {
   username?: string;
 };
 
+type AndroidAppUpdateManifest = {
+  versionName: string;
+  versionCode?: number;
+  required?: boolean;
+  apkUrl: string;
+  notes?: string;
+  sha256?: string;
+};
+
 const API_HOST = (process.env.EXPO_PUBLIC_API_HOST ?? "").trim().replace(/\/$/, "");
 const apiUrl = (path: string) => `${API_HOST}${path}`;
+const APP_UPDATE_MANIFEST_PATH = "/downloads/android/version.json";
+const APP_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+function resolveRemoteUrl(urlOrPath: string): string {
+  const value = urlOrPath.trim();
+  if (!value) return "";
+  if (value.startsWith("http://") || value.startsWith("https://")) return value;
+  if (!API_HOST) return "";
+  return `${API_HOST}${value.startsWith("/") ? "" : "/"}${value}`;
+}
+
+function normalizeVersionCode(raw: unknown): number | null {
+  const num = Number(raw);
+  if (!Number.isInteger(num) || num < 0) return null;
+  return num;
+}
+
+function parseVersionNameParts(raw: string): number[] {
+  return raw
+    .trim()
+    .split(".")
+    .map((part) => Number.parseInt(part.replace(/[^\d].*$/, ""), 10))
+    .map((part) => (Number.isFinite(part) && part >= 0 ? part : 0));
+}
+
+function compareVersionNames(a: string, b: string): number {
+  const aa = parseVersionNameParts(a);
+  const bb = parseVersionNameParts(b);
+  const length = Math.max(aa.length, bb.length);
+  for (let idx = 0; idx < length; idx += 1) {
+    const left = aa[idx] ?? 0;
+    const right = bb[idx] ?? 0;
+    if (left !== right) return left > right ? 1 : -1;
+  }
+  return 0;
+}
+
+function isRemoteVersionNewer(
+  localVersionName: string,
+  localVersionCode: number | null,
+  remote: AndroidAppUpdateManifest
+): boolean {
+  const remoteCode = normalizeVersionCode(remote.versionCode);
+  if (localVersionCode != null && remoteCode != null && remoteCode !== localVersionCode) {
+    return remoteCode > localVersionCode;
+  }
+  return compareVersionNames(remote.versionName, localVersionName) > 0;
+}
 
 /** Same naming as web (`app/page.tsx` + `components/AppShell.tsx` sidebar). */
 const BRAND_MARK = "MSA";
@@ -1203,6 +1261,8 @@ export default function App() {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
+  const appVersionName = (Constants.expoConfig?.version ?? "0.0.0").trim();
+  const appVersionCode = normalizeVersionCode(Constants.expoConfig?.android?.versionCode);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -1288,6 +1348,8 @@ function AppContent() {
   const [kbOpeningId, setKbOpeningId] = useState<string | null>(null);
   /** After login, default assignee filter to current user once per session. */
   const assigneeFilterDefaultAppliedRef = useRef(false);
+  const shownUpdateVersionRef = useRef<string | null>(null);
+  const [updateDownloading, setUpdateDownloading] = useState(false);
 
   const canLogin = username.trim().length > 0 && password.trim().length > 0;
   const firstName = useMemo(() => {
@@ -2157,6 +2219,77 @@ function AppContent() {
     return "Urgente";
   }
 
+  const startAndroidAppUpdate = useCallback(async (remote: AndroidAppUpdateManifest) => {
+    const apkUrl = resolveRemoteUrl(remote.apkUrl);
+    if (!apkUrl) {
+      Alert.alert("Actualizacion", "No se encontro una URL valida para descargar la actualizacion.");
+      return;
+    }
+    setUpdateDownloading(true);
+    try {
+      const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDir) {
+        await Linking.openURL(apkUrl);
+        return;
+      }
+      const fileName = `msa-update-${Date.now()}.apk`;
+      const localUri = `${baseDir}${fileName}`;
+      const download = await FileSystem.downloadAsync(apkUrl, localUri);
+      const canOpen = await Linking.canOpenURL(download.uri).catch(() => false);
+      if (canOpen) {
+        await Linking.openURL(download.uri);
+      } else {
+        await Linking.openURL(apkUrl);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo descargar la actualizacion.";
+      Alert.alert("Actualizacion", message);
+    } finally {
+      setUpdateDownloading(false);
+    }
+  }, []);
+
+  const checkAndroidAppUpdate = useCallback(async () => {
+    if (Platform.OS !== "android") return;
+    const manifestUrl = resolveRemoteUrl(APP_UPDATE_MANIFEST_PATH);
+    if (!manifestUrl) return;
+    try {
+      const response = await fetch(manifestUrl);
+      if (!response.ok) return;
+      const data = (await response.json()) as Partial<AndroidAppUpdateManifest>;
+      const remoteVersionName =
+        typeof data.versionName === "string" ? data.versionName.trim() : "";
+      const remoteApkUrl = typeof data.apkUrl === "string" ? data.apkUrl.trim() : "";
+      if (!remoteVersionName || !remoteApkUrl) return;
+      const remote: AndroidAppUpdateManifest = {
+        versionName: remoteVersionName,
+        apkUrl: remoteApkUrl,
+        versionCode: normalizeVersionCode(data.versionCode) ?? undefined,
+        required: data.required === true,
+        notes: typeof data.notes === "string" ? data.notes.trim() : undefined,
+        sha256: typeof data.sha256 === "string" ? data.sha256.trim() : undefined,
+      };
+      if (!isRemoteVersionNewer(appVersionName, appVersionCode, remote)) return;
+      const alertKey = `${remote.versionName}:${remote.versionCode ?? "na"}`;
+      if (shownUpdateVersionRef.current === alertKey || updateDownloading) return;
+      shownUpdateVersionRef.current = alertKey;
+      const body = remote.notes
+        ? `Version ${remote.versionName} disponible.\n\n${remote.notes}`
+        : `Version ${remote.versionName} disponible.`;
+      Alert.alert("Actualizacion disponible", body, [
+        ...(remote.required ? [] : [{ text: "Despues", style: "cancel" as const }]),
+        {
+          text: "Actualizar",
+          onPress: () => {
+            void startAndroidAppUpdate(remote);
+          },
+        },
+      ]);
+    } catch {
+      // Ignore updater errors to avoid noisy UX when offline.
+    }
+  }, [appVersionCode, appVersionName, startAndroidAppUpdate, updateDownloading]);
+
   useEffect(() => {
     onAuthExpired = () => {
       clearClientSession("Tu sesion expiro. Inicia sesion nuevamente.");
@@ -2195,6 +2328,15 @@ function AppContent() {
     assigneeFilterDefaultAppliedRef.current = true;
     setFilterAssigneeId(me.id);
   }, [isLoggedIn, me?.id]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    void checkAndroidAppUpdate();
+    const timer = setInterval(() => {
+      void checkAndroidAppUpdate();
+    }, APP_UPDATE_CHECK_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [checkAndroidAppUpdate]);
 
   useEffect(() => {
     if (!isLoggedIn) return;

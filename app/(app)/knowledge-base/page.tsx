@@ -86,9 +86,9 @@ export default function KnowledgeBasePage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-zinc-900">Base de conocimiento</h1>
       <p className="text-sm text-zinc-500">
-        Archivos y documentación: sube aquí o desde la ficha de cada activo (manuales, especificaciones, etc.).
+        Archivos y documentación: sube aquí o desde la ficha de cada activo (manuales,
+        especificaciones, etc.).
       </p>
       {q && (
         <p className="text-sm text-zinc-500">

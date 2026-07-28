@@ -1,13 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { sortAssetGroups } from "@/lib/asset-group-helpers";
 
-export function AssetForm() {
+type Group = {
+  id: string;
+  name: string;
+  sortOrder: number;
+};
+
+export function AssetForm({ initialGroupId = null }: { initialGroupId?: string | null }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupId, setGroupId] = useState(initialGroupId ?? "");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/asset-groups")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && Array.isArray(data)) {
+          setGroups(sortAssetGroups(data));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGroups([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -22,7 +48,12 @@ export function AssetForm() {
       const res = await fetch("/api/assets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, assetId, tracksMachineDowntime }),
+        body: JSON.stringify({
+          name,
+          assetId,
+          tracksMachineDowntime,
+          groupId: groupId === "" ? null : groupId,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -67,6 +98,25 @@ export function AssetForm() {
           placeholder="ej. AST-001"
           className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
+      </div>
+      <div>
+        <label htmlFor="groupId" className="block text-sm font-medium text-zinc-700 mb-1">
+          Área
+        </label>
+        <select
+          id="groupId"
+          name="groupId"
+          value={groupId}
+          onChange={(e) => setGroupId(e.target.value)}
+          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        >
+          <option value="">Sin área</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
       </div>
       <label className="flex items-start gap-2.5 text-sm text-zinc-800">
         <input

@@ -13,14 +13,9 @@ export default async function UsersPage() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-xl font-semibold text-zinc-900">
-          Usuarios e invitaciones
-        </h1>
-        <p className="text-sm text-zinc-500">
-          Invita usuarios nuevos y asigna su rol desde aquí.
-        </p>
-      </header>
+      <p className="text-sm text-zinc-500">
+        Invita usuarios nuevos y asigna su rol desde aquí.
+      </p>
       <InviteUsersPanel />
     </div>
   );

@@ -30,6 +30,16 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+/** Flat groups for machines (assets); no nesting. */
+export const assetGroups = pgTable("asset_groups", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+});
+
 export const assets = pgTable("assets", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -37,6 +47,9 @@ export const assets = pgTable("assets", {
   locationId: text("location_id"),
   parentAssetId: text("parent_asset_id"),
   qrCode: text("qr_code"),
+  groupId: text("group_id").references(() => assetGroups.id, {
+    onDelete: "set null",
+  }),
   /** Si es false, no se registra paro de máquina en tareas de este activo (KPI y formularios). */
   tracksMachineDowntime: boolean("tracks_machine_downtime").notNull().default(true),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
@@ -396,6 +409,17 @@ export const notifications = pgTable(
   })
 );
 
+/** Named calendars (areas/teams); schedules optionally belong to one. */
+export const calendars = pgTable("calendars", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  color: text("color"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+});
+
 // Phase 3
 export const maintenanceSchedules = pgTable("maintenance_schedules", {
   id: text("id").primaryKey(),
@@ -405,6 +429,9 @@ export const maintenanceSchedules = pgTable("maintenance_schedules", {
   color: text("color"),
   recurrence: text("recurrence").notNull(), // cron or interval description
   checklistTemplateId: text("checklist_template_id"),
+  calendarId: text("calendar_id").references(() => calendars.id, {
+    onDelete: "set null",
+  }),
   nextRunAt: timestamp("next_run_at", { withTimezone: true, mode: "date" }),
   /** Soft-delete: null = activo en calendario */
   deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "date" }),

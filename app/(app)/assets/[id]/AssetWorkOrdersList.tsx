@@ -4,6 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronUp, ChevronsUp, Equal } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
+import { useWorkOrderStatusColors } from "@/components/WorkOrderStatusColorsProvider";
+import {
+  WORK_ORDER_STATUS_LABELS,
+  workOrderStatusBadgeStyle,
+  type WorkOrderStatusKey,
+} from "@/lib/work-order-status-colors";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 
 const PAGE_SIZE = 5;
@@ -35,7 +41,15 @@ function priorityIconMeta(priority?: string | null) {
   return { Icon: Equal, className: "text-[#E2A100]" };
 }
 
+function statusLabel(status: string): string {
+  if (status in WORK_ORDER_STATUS_LABELS) {
+    return WORK_ORDER_STATUS_LABELS[status as WorkOrderStatusKey];
+  }
+  return status;
+}
+
 export function AssetWorkOrdersList({ workOrders }: { workOrders: WorkOrderItem[] }) {
+  const { colors: statusColors } = useWorkOrderStatusColors();
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const visible = workOrders.slice(0, visibleCount);
   const hasMore = visibleCount < workOrders.length;
@@ -62,23 +76,22 @@ export function AssetWorkOrdersList({ workOrders }: { workOrders: WorkOrderItem[
                     );
                   })()}
                 </div>
-                <span
-                  className="block text-xs text-zinc-500"
-                >
-                  {wo.status === "pending"
-                    ? "Pendiente"
-                    : wo.status === "in_progress"
-                      ? "En progreso"
-                      : wo.status === "completed"
-                        ? "Completada"
-                        : wo.status}{" "}
-                  · Vence{" "}
-                  {wo.dueDate
-                    ? new Date(wo.dueDate).toLocaleDateString("es-MX", {
-                        timeZone: APP_TIME_ZONE,
-                      })
-                    : "—"}
-                </span>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    style={workOrderStatusBadgeStyle(wo.status, statusColors)}
+                  >
+                    {statusLabel(wo.status)}
+                  </span>
+                  <span>
+                    Vence{" "}
+                    {wo.dueDate
+                      ? new Date(wo.dueDate).toLocaleDateString("es-MX", {
+                          timeZone: APP_TIME_ZONE,
+                        })
+                      : "—"}
+                  </span>
+                </div>
                 {wo.assigneeName ? (
                   <div className="flex items-center gap-1.5 text-xs text-zinc-500">
                     <span>Asignado:</span>

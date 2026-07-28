@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import { WorkOrderStatusColorsSettings } from "@/components/WorkOrderStatusColorsSettings";
+import { useSetPageHeader } from "@/components/PageHeaderContext";
 
 export function TareasPageHeader({ isAdmin }: { isAdmin: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <h1 className="text-xl font-semibold text-zinc-900">Tareas</h1>
-      <div className="flex shrink-0 items-center gap-2">
+  useSetPageHeader({
+    title: "Tareas",
+    actions: (
+      <>
         {isAdmin ? <WorkOrderStatusColorsSettings /> : null}
         <Link
           href="/tareas/new"
-          className="rounded-xl bg-primary-600 text-white py-2.5 px-4 text-sm font-medium tap-target"
+          className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white tap-target hover:bg-primary-700"
         >
           Nueva tarea
         </Link>
-      </div>
-    </div>
-  );
+      </>
+    ),
+  });
+  return null;
 }

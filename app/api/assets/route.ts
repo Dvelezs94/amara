@@ -1,10 +1,30 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { assets } from "@/lib/db/schema";
-import { ilike, desc } from "drizzle-orm";
+import { assetGroups, assets } from "@/lib/db/schema";
+import { eq, ilike, desc } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
+
+async function resolveGroupId(
+  raw: unknown
+): Promise<{ ok: true; groupId: string | null } | { ok: false; error: string }> {
+  if (raw === undefined) {
+    return { ok: true, groupId: null };
+  }
+  if (raw === null || raw === "") {
+    return { ok: true, groupId: null };
+  }
+  const groupId = String(raw).trim();
+  if (!groupId) return { ok: true, groupId: null };
+  const group = await db.query.assetGroups.findFirst({
+    where: eq(assetGroups.id, groupId),
+  });
+  if (!group) {
+    return { ok: false, error: "Área no encontrada" };
+  }
+  return { ok: true, groupId };
+}
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -32,6 +52,10 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  const groupResult = await resolveGroupId(body.groupId);
+  if (!groupResult.ok) {
+    return NextResponse.json({ error: groupResult.error }, { status: 400 });
+  }
   const id = createId();
   const now = new Date();
   const tracksMachineDowntime =
@@ -45,6 +69,7 @@ export async function POST(req: Request) {
     locationId: body.locationId || null,
     parentAssetId: body.parentAssetId || null,
     qrCode: body.qrCode || null,
+    groupId: groupResult.groupId,
     metadata: body.metadata ?? null,
     tracksMachineDowntime,
     createdAt: now,
@@ -55,7 +80,7 @@ export async function POST(req: Request) {
     entityId: id,
     action: "created",
     userId: session.id,
-    metadata: { name, assetId },
+    metadata: { name, assetId, groupId: groupResult.groupId },
   });
   return NextResponse.json({ id });
 }

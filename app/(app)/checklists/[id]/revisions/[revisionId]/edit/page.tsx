@@ -9,6 +9,7 @@ import {
 import { db } from "@/lib/db";
 import { checklistTemplateRevisions } from "@/lib/db/schema";
 import { ChecklistTemplateForm } from "../../../../ChecklistTemplateForm";
+import { SetPageHeader } from "@/components/SetPageHeader";
 
 export default async function EditChecklistRevisionPage({
   params,
@@ -51,6 +52,14 @@ export default async function EditChecklistRevisionPage({
 
   return (
     <div className="space-y-4">
+      <SetPageHeader
+        title={
+          revision.status === "proposed"
+            ? "Editar revisión en curso"
+            : "Editar borrador"
+        }
+        subtitle={`${revision.name} (#${revision.revisionNumber})`}
+      />
       {notice === "draft_saved" && (
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           Borrador guardado.
@@ -61,18 +70,11 @@ export default async function EditChecklistRevisionPage({
           Cambios guardados. La revisión sigue en revisión por calidad.
         </p>
       )}
-      <div>
-        <h1 className="text-xl font-semibold text-zinc-900">
-          {revision.status === "proposed" ? "Editar revisión en curso" : "Editar borrador"}
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          Revisión <span className="font-semibold text-zinc-800">{revision.name}</span> (#
-          {revision.revisionNumber}) ·{" "}
-          {revision.status === "proposed"
-            ? "en revisión por calidad"
-            : "borrador no enviado"}
-        </p>
-      </div>
+      <p className="text-sm text-zinc-600">
+        {revision.status === "proposed"
+          ? "En revisión por calidad"
+          : "Borrador no enviado"}
+      </p>
       <ChecklistTemplateForm
         key={revision.id}
         templateId={params.id}

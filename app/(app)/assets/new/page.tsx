@@ -1,10 +1,16 @@
 import { AssetForm } from "../AssetForm";
 
-export default function NewAssetPage() {
+export default async function NewAssetPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ group?: string }>;
+}) {
+  const sp = await searchParams;
+  const initialGroupId = sp.group?.trim() || null;
+
   return (
     <div className="max-w-lg mx-auto space-y-4">
-      <h1 className="text-xl font-semibold text-zinc-900">Añadir activo</h1>
-      <AssetForm />
+      <AssetForm initialGroupId={initialGroupId} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { setMaintenanceScheduleAssigneeIds } from "@/lib/assignees";
 import { db } from "@/lib/db";
 import {
   assets,
+  calendars,
   checklistTemplates,
   maintenanceSchedules,
   users,
@@ -11,6 +12,7 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
 import { parseRecurrencePayloadFromMaintenanceBody } from "@/lib/maintenance-schedule-recurrence-from-request";
+import { ensureDefaultCalendar } from "@/lib/ensure-default-calendar";
 import {
   buildRecurrenceJson,
   expandOccurrencesInRange,
@@ -81,6 +83,7 @@ export async function PATCH(
   const hasChecklist = body.checklistTemplateId !== undefined;
   const hasAsset = body.assetId !== undefined;
   const hasColor = body.color !== undefined;
+  const hasCalendar = body.calendarId !== undefined;
   const hasAssignees =
     body.assigneeIds !== undefined || body.assigneeId !== undefined;
 
@@ -90,6 +93,7 @@ export async function PATCH(
     !hasChecklist &&
     !hasAsset &&
     !hasColor &&
+    !hasCalendar &&
     !hasAssignees
   ) {
     return NextResponse.json(
@@ -167,6 +171,26 @@ export async function PATCH(
     nextColor = colorRaw;
   }
 
+  let nextCalendarId: string | null | undefined;
+  if (hasCalendar) {
+    if (body.calendarId === null || body.calendarId === "") {
+      nextCalendarId = await ensureDefaultCalendar();
+    } else {
+      const cid = String(body.calendarId).trim();
+      const cal = await db.query.calendars.findFirst({
+        where: eq(calendars.id, cid),
+        columns: { id: true },
+      });
+      if (!cal) {
+        return NextResponse.json(
+          { error: "Calendario no encontrado" },
+          { status: 400 }
+        );
+      }
+      nextCalendarId = cid;
+    }
+  }
+
   let assigneeIdsUpdate: string[] | undefined;
   if (body.assigneeIds !== undefined) {
     if (!Array.isArray(body.assigneeIds)) {
@@ -220,6 +244,7 @@ export async function PATCH(
     checklistTemplateId?: string | null;
     assetId?: string | null;
     color?: string;
+    calendarId?: string | null;
   } = {};
   if (nextName !== undefined) setPayload.name = nextName;
   if (parsedRecurrence) {
@@ -234,6 +259,9 @@ export async function PATCH(
   }
   if (nextColor !== undefined) {
     setPayload.color = nextColor;
+  }
+  if (nextCalendarId !== undefined) {
+    setPayload.calendarId = nextCalendarId;
   }
 
   if (Object.keys(setPayload).length > 0) {
@@ -273,6 +301,7 @@ export async function PATCH(
         checklistTemplateId: hasChecklist,
         assetId: hasAsset,
         color: hasColor,
+        calendarId: hasCalendar,
         assignees: assigneeIdsUpdate !== undefined,
       },
     },
@@ -287,6 +316,7 @@ export async function PATCH(
   if (nextChecklistId !== undefined) out.checklistTemplateId = nextChecklistId;
   if (nextAssetId !== undefined) out.assetId = nextAssetId;
   if (nextColor !== undefined) out.color = nextColor;
+  if (nextCalendarId !== undefined) out.calendarId = nextCalendarId;
 
   return NextResponse.json(out);
 }

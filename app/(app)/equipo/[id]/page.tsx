@@ -15,6 +15,7 @@ import {
   workOrderKindBadgeClass,
   workOrderKindLabel,
 } from "@/lib/work-order-kind";
+import { SetPageHeader } from "@/components/SetPageHeader";
 
 function statusLabel(status: string): string {
   if (status === "pending") return "Pendiente";
@@ -71,6 +72,8 @@ export default async function EquipoUsuarioPage({
         <span className="text-zinc-600">Perfil</span>
       </nav>
 
+      <SetPageHeader title={user.name} subtitle={`@${user.username}`} />
+
       <header className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
           <UserAvatar
@@ -82,9 +85,6 @@ export default async function EquipoUsuarioPage({
             className="!h-20 !w-20 !text-2xl shrink-0"
           />
           <div className="min-w-0 flex-1 space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-              {user.name}
-            </h1>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600">
               <span className="inline-flex items-center gap-1.5">
                 <UserIcon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />

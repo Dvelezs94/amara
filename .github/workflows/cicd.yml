@@ -101,11 +101,33 @@ jobs:
           cp mobile/android/app/build/outputs/apk/release/app-release.apk downloads/android/msa-release.apk
           cp mobile/android/app/build/outputs/apk/release/app-release.apk /downloads/android/msa-release.apk || true
 
+      - name: Create Android update manifest
+        run: |
+          node <<'EOF'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const appConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), "mobile/app.json"), "utf8"));
+          const versionName = String(appConfig?.expo?.version ?? "0.0.0");
+          const versionCode = Number(appConfig?.expo?.android?.versionCode ?? 0);
+          const manifest = {
+            versionName,
+            versionCode: Number.isFinite(versionCode) ? versionCode : 0,
+            apkUrl: "/downloads/android/msa-release.apk",
+            required: false,
+            notes: "Nueva version disponible.",
+          };
+          fs.writeFileSync(
+            path.join(process.cwd(), "downloads/android/version.json"),
+            `${JSON.stringify(manifest, null, 2)}\n`,
+            "utf8"
+          );
+          EOF
+
       - name: Upload Android APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: downloads/android/msa-release.apk
+          path: downloads/android
           if-no-files-found: error
 
   deploy:
@@ -156,7 +178,7 @@ jobs:
           ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_APK_PATH}'"
           rsync -az \
             -e "ssh -p ${DEPLOY_PORT:-22}" \
-            downloads/android/msa-release.apk "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_APK_PATH}/msa-release.apk"
+            downloads/android/ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_APK_PATH}/"
 
       - name: Restart Docker Compose and run migrations
         run: |

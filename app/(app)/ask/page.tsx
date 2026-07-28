@@ -62,9 +62,9 @@ export default function AskPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-7rem)] md:h-[calc(100vh-4rem)] max-w-3xl mx-auto">
       <div className="flex-shrink-0 mb-4">
-        <h1 className="text-xl font-semibold text-zinc-900">Asistente de mantenimiento</h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          Pregunta sobre maquinas, órdenes de trabajo, checklists, documentación y solicitudes. El asistente consulta los datos por ti.
+        <p className="text-sm text-zinc-500">
+          Pregunta sobre maquinas, órdenes de trabajo, checklists, documentación y solicitudes. El
+          asistente consulta los datos por ti.
         </p>
       </div>
 

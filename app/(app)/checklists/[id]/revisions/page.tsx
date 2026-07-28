@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getChecklistTemplateById } from "@/lib/checklist-templates";
 import { getChecklistRevisions } from "@/lib/checklist-template-revisions-ui";
+import { SetPageHeader } from "@/components/SetPageHeader";
 import { ChecklistRevisionsTable } from "./ChecklistRevisionsTable";
 
 export default async function ChecklistRevisionsHubPage({
@@ -49,24 +50,25 @@ export default async function ChecklistRevisionsHubPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-zinc-900">Revisiones</h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-            Cada cambio a la plantilla pasa por una revisión con nombre y número, como una solicitud de
-            incorporación de cambios. Las propuestas en revisión las aprueba o rechaza calidad; los
-            borradores puedes editarlos hasta enviarlos.
-          </p>
-        </div>
-        {canAuthor && (
-          <Link
-            href={`/checklists/${id}/revisions/new`}
-            className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
-          >
-            Nueva revisión
-          </Link>
-        )}
-      </div>
+      <SetPageHeader
+        title="Revisiones"
+        subtitle={template.name}
+        actions={
+          canAuthor ? (
+            <Link
+              href={`/checklists/${id}/revisions/new`}
+              className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700"
+            >
+              Nueva revisión
+            </Link>
+          ) : null
+        }
+      />
+      <p className="max-w-2xl text-sm text-zinc-600">
+        Cada cambio a la plantilla pasa por una revisión con nombre y número, como una solicitud de
+        incorporación de cambios. Las propuestas en revisión las aprueba o rechaza calidad; los
+        borradores puedes editarlos hasta enviarlos.
+      </p>
 
       {notice === "revision_submitted" && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">

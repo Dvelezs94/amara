@@ -52,6 +52,7 @@ describe("isTecnicoApiPathAllowed", () => {
     expect(isTecnicoApiPathAllowed("/api/work-orders")).toBe(true);
     expect(isTecnicoApiPathAllowed("/api/work-orders/wo-1")).toBe(true);
     expect(isTecnicoApiPathAllowed("/api/assets")).toBe(true);
+    expect(isTecnicoApiPathAllowed("/api/asset-groups")).toBe(true);
   });
   it("blocks non-whitelisted APIs", () => {
     expect(isTecnicoApiPathAllowed("/api/admin/users")).toBe(false);
@@ -81,6 +82,7 @@ describe("isCalidad*PathAllowed", () => {
     expect(isCalidadAppPathAllowed("/equipo/user1")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/checklist-templates")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/checklist-folders")).toBe(true);
+    expect(isCalidadApiPathAllowed("/api/asset-groups")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/checklist-templates/abc/revisions")).toBe(
       true
     );

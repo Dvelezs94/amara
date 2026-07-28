@@ -28,7 +28,10 @@ import {
 } from "@/lib/work-order-kind";
 import type { DashboardKpis } from "@/lib/dashboard-kpis";
 import { defaultLast30DaysRange, isDefaultLast30DaysRange } from "@/lib/dashboard-date-range";
+import { useWorkOrderStatusColors } from "@/components/WorkOrderStatusColorsProvider";
+import { workOrderStatusBadgeStyle } from "@/lib/work-order-status-colors";
 import { APP_TIME_ZONE } from "@/lib/timezone";
+import { useSetPageHeader } from "@/components/PageHeaderContext";
 
 type Widget = {
   id: string;
@@ -74,13 +77,7 @@ type UpcomingEvent = {
 const CHART_AUTO_REFRESH_KEY = "dashboard-chart-auto-refresh";
 const CHART_REFRESH_LEGACY_MS_KEY = "dashboard-chart-refresh-ms";
 const CHART_REFRESH_INTERVAL_MS = 30_000;
-
-const statusColors: Record<PendingOrder["status"], string> = {
-  pending: "bg-amber-100 text-amber-800",
-  in_progress: "bg-blue-100 text-blue-800",
-  completed: "bg-emerald-100 text-emerald-800",
-  cancelled: "bg-zinc-100 text-zinc-600",
-};
+const LIST_PAGE_SIZE = 5;
 
 const priorityVisual: Record<
   PendingOrder["priority"],
@@ -100,9 +97,12 @@ const priorityLabelEs: Record<PendingOrder["priority"], string> = {
 };
 
 export default function DashboardPage() {
+  const { colors: statusColors } = useWorkOrderStatusColors();
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
+  const [pendingVisibleCount, setPendingVisibleCount] = useState(LIST_PAGE_SIZE);
+  const [eventsVisibleCount, setEventsVisibleCount] = useState(LIST_PAGE_SIZE);
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(() => defaultLast30DaysRange());
@@ -118,6 +118,34 @@ export default function DashboardPage() {
   const [widgetDeleteLoading, setWidgetDeleteLoading] = useState(false);
 
   const showLists = isDefaultLast30DaysRange(range);
+
+  useSetPageHeader({
+    title: "Dashboard",
+    filters: (
+      <button
+        type="button"
+        onClick={() => setRangeModalOpen(true)}
+        className="inline-flex max-w-[12rem] items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 sm:max-w-xs"
+        aria-label="Cambiar rango de fechas"
+      >
+        <CalendarDays className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden />
+        <span className="hidden truncate sm:inline">
+          {formatDashboardRangeTrigger(range)}
+        </span>
+        <span className="sm:hidden">Fechas</span>
+      </button>
+    ),
+    actions: (
+      <Link
+        href="/analytics"
+        className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-2.5 py-2 text-sm font-medium text-white hover:bg-primary-700"
+      >
+        <Plus className="h-4 w-4" />
+        <span className="hidden sm:inline">Añadir gráfico</span>
+        <span className="sm:hidden">Gráfico</span>
+      </Link>
+    ),
+  });
 
   function patchWidget(id: string, patch: Partial<Widget>) {
     setWidgets((prev) => prev.map((w) => (w.id === id ? { ...w, ...patch } : w)));
@@ -179,6 +207,8 @@ export default function DashboardPage() {
         setUpcomingEvents(
           Array.isArray(overviewData?.upcomingEvents) ? overviewData.upcomingEvents : []
         );
+        setPendingVisibleCount(LIST_PAGE_SIZE);
+        setEventsVisibleCount(LIST_PAGE_SIZE);
         setKpis(overviewData?.kpis ?? null);
       })
       .catch(() => {
@@ -305,41 +335,22 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-zinc-900">Dashboard</h1>
-        <p className="text-zinc-500">Cargando…</p>
-      </div>
+      <>
+        <DashboardDateRangeModal
+          open={rangeModalOpen}
+          onOpenChange={setRangeModalOpen}
+          value={range}
+          onApply={setRange}
+        />
+        <div className="space-y-4">
+          <p className="text-zinc-500">Cargando…</p>
+        </div>
+      </>
     );
   }
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-zinc-900">Dashboard</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setRangeModalOpen(true)}
-            className="inline-flex max-w-full items-center gap-2 rounded-md border border-zinc-300 bg-white py-2.5 pl-3 pr-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 sm:pr-4"
-            aria-label="Cambiar rango de fechas"
-          >
-            <CalendarDays className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden />
-            <span className="hidden truncate sm:inline">{formatDashboardRangeTrigger(range)}</span>
-            <span className="sm:hidden">Fechas</span>
-          </button>
-          <Link
-            href="/analytics"
-            className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary-600 py-2.5 pl-3 pr-3 text-sm font-medium text-white shadow-sm hover:bg-primary-700 sm:px-4 sm:font-semibold sm:uppercase sm:tracking-[0.08em]"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="sm:hidden">Gráfico</span>
-            <span className="hidden sm:inline">Añadir gráfico</span>
-          </Link>
-        </div>
-      </div>
-
       <DashboardDateRangeModal
         open={rangeModalOpen}
         onOpenChange={setRangeModalOpen}
@@ -414,85 +425,133 @@ export default function DashboardPage() {
 
       {showLists && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <section className="rounded-lg border border-zinc-200 bg-white p-4">
+          <section className="flex min-h-[16rem] flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-zinc-900">Tareas</h2>
-              <Link href="/tareas" className="text-sm font-medium text-primary-600 hover:underline">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-900">Tareas</h2>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  Pendientes y en progreso
+                </p>
+              </div>
+              <Link
+                href="/tareas"
+                className="shrink-0 text-sm font-medium text-primary-600 hover:underline"
+              >
                 Ver todas
               </Link>
             </div>
             {pendingOrders.length === 0 ? (
               <p className="text-sm text-zinc-500">No hay tareas pendientes.</p>
             ) : (
-              <ul className="space-y-2">
-                {pendingOrders.map((order) => (
-                  <li key={order.id} className="rounded-md border border-zinc-100 bg-surface p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <Link href={`/tareas/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
-                          {order.title}
-                        </Link>
+              <div className="flex min-h-0 flex-1 flex-col space-y-2">
+                <ul className="space-y-2">
+                  {pendingOrders.slice(0, pendingVisibleCount).map((order) => (
+                    <li key={order.id} className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Link href={`/tareas/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
+                            {order.title}
+                          </Link>
+                          <span
+                            className={`ml-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${workOrderKindBadgeClass(
+                              parseWorkOrderKind(order.kind)
+                            )}`}
+                          >
+                            {workOrderKindLabel(parseWorkOrderKind(order.kind))}
+                          </span>
+                        </div>
                         <span
-                          className={`ml-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${workOrderKindBadgeClass(
-                            parseWorkOrderKind(order.kind)
-                          )}`}
+                          className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
+                          style={workOrderStatusBadgeStyle(order.status, statusColors)}
                         >
-                          {workOrderKindLabel(parseWorkOrderKind(order.kind))}
+                          {statusLabel(order.status)}
                         </span>
                       </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                          statusColors[order.status]
-                        }`}
-                      >
-                        {statusLabel(order.status)}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <p className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
-                        <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                        <span className="truncate">Vence: {formatDate(order.dueDate)}</span>
-                      </p>
-                      <span className="inline-flex items-center gap-1.5 text-xs text-zinc-600">
-                        {renderPriorityIcon(order.priority)}
-                        <span>{priorityLabelEs[order.priority]}</span>
-                      </span>
-                    </div>
-                    {order.assetName && (
-                      <p className="mt-1 text-xs text-zinc-500">Activo: {order.assetName}</p>
-                    )}
-                  </li>
-                ))}
-              </ul>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
+                          <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          <span className="truncate">Vence: {formatDate(order.dueDate)}</span>
+                        </p>
+                        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-600">
+                          {renderPriorityIcon(order.priority)}
+                          <span>{priorityLabelEs[order.priority]}</span>
+                        </span>
+                      </div>
+                      {order.assetName && (
+                        <p className="mt-1 text-xs text-zinc-500">Activo: {order.assetName}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {pendingVisibleCount < pendingOrders.length ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingVisibleCount((n) => n + LIST_PAGE_SIZE)
+                    }
+                    className="mt-auto rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Cargar 5 más
+                  </button>
+                ) : null}
+              </div>
             )}
           </section>
 
-          <section className="rounded-lg border border-zinc-200 bg-white p-4">
+          <section className="flex min-h-[16rem] flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-zinc-900">Próximos eventos</h2>
-              <Link href="/calendario" className="text-sm font-medium text-primary-600 hover:underline">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-900">
+                  Eventos del calendario
+                </h2>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  Próximas programaciones
+                </p>
+              </div>
+              <Link
+                href="/calendario"
+                className="shrink-0 text-sm font-medium text-primary-600 hover:underline"
+              >
                 Ver calendario
               </Link>
             </div>
             {upcomingEvents.length === 0 ? (
               <p className="text-sm text-zinc-500">No hay eventos próximos.</p>
             ) : (
-              <ul className="space-y-2">
-                {upcomingEvents.map((event) => (
-                  <li key={event.id} className="rounded-md border border-zinc-100 bg-surface p-3">
-                    <p className="font-medium text-zinc-900">{event.name}</p>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      Fecha: {formatDate(event.nextRunAt)}
-                    </p>
-                    {event.assetName && (
-                      <p className="mt-1 text-xs text-zinc-500">Activo: {event.assetName}</p>
-                    )}
-                    {event.assigneeName && (
-                      <p className="mt-1 text-xs text-zinc-500">Asignado: {event.assigneeName}</p>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <div className="flex min-h-0 flex-1 flex-col space-y-2">
+                <ul className="space-y-2">
+                  {upcomingEvents.slice(0, eventsVisibleCount).map((event) => (
+                    <li key={event.id} className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="min-w-0 flex-1 font-medium text-zinc-900">
+                          {event.name}
+                        </p>
+                        <p className="flex shrink-0 items-center gap-1 text-xs text-zinc-500">
+                          <CalendarDays className="h-3.5 w-3.5" aria-hidden />
+                          {formatDate(event.nextRunAt)}
+                        </p>
+                      </div>
+                      {event.assetName && (
+                        <p className="mt-1 text-xs text-zinc-500">Activo: {event.assetName}</p>
+                      )}
+                      {event.assigneeName && (
+                        <p className="mt-1 text-xs text-zinc-500">Asignado: {event.assigneeName}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {eventsVisibleCount < upcomingEvents.length ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEventsVisibleCount((n) => n + LIST_PAGE_SIZE)
+                    }
+                    className="mt-auto rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Cargar 5 más
+                  </button>
+                ) : null}
+              </div>
             )}
           </section>
         </div>

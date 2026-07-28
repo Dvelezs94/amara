@@ -14,7 +14,6 @@ export default async function ProfilePage() {
   const role = roleLabel(session.role);
   return (
     <div className="max-w-lg mx-auto space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-900">Perfil</h1>
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <ProfilePhotoUpload
           userId={session.id}

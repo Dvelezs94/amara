@@ -5,6 +5,7 @@ import {
   resolveWorkOrderStatusColor,
   workOrderStatusBadgeStyle,
   workOrderStatusMarkerColor,
+  workOrderStatusSelectStyle,
 } from "@/lib/work-order-status-colors";
 
 describe("work-order-status-colors", () => {
@@ -29,6 +30,9 @@ describe("work-order-status-colors", () => {
     expect(workOrderStatusBadgeStyle("pending", custom).backgroundColor).toContain(
       "#112233"
     );
+    const select = workOrderStatusSelectStyle("in_progress", custom);
+    expect(select.borderColor).toBe("#445566");
+    expect(select.backgroundColor).toContain("#445566");
   });
 
   it("rejects invalid payloads", () => {

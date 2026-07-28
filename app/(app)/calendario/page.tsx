@@ -2,22 +2,38 @@ import { db } from "@/lib/db";
 import {
   maintenanceSchedules,
   assets,
+  calendars,
   checklistTemplates,
   users,
 } from "@/lib/db/schema";
 import { loadManyMaintenanceScheduleAssigneeIds } from "@/lib/assignees";
+import { assignOrphanSchedulesToDefaultCalendar } from "@/lib/ensure-default-calendar";
 import { asc, desc, isNotNull, isNull } from "drizzle-orm";
-import { CalendarMonthView } from "./CalendarMonthView";
-import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
+import { CalendarWorkspace } from "./CalendarWorkspace";
 import { DeletedSchedulesSection } from "./DeletedSchedulesSection";
 
 export const dynamic = "force-dynamic";
 
 export default async function CalendarioPage() {
+  await assignOrphanSchedulesToDefaultCalendar();
+
   const userList = await db
-    .select({ id: users.id, name: users.name })
+    .select({
+      id: users.id,
+      name: users.name,
+      avatarUrl: users.avatarUrl,
+    })
     .from(users)
     .orderBy(users.name);
+
+  const calendarList = await db
+    .select({
+      id: calendars.id,
+      name: calendars.name,
+      sortOrder: calendars.sortOrder,
+    })
+    .from(calendars)
+    .orderBy(asc(calendars.sortOrder), asc(calendars.name));
 
   const schedules = await db
     .select({
@@ -29,6 +45,7 @@ export default async function CalendarioPage() {
       nextRunAt: maintenanceSchedules.nextRunAt,
       checklistTemplateId: maintenanceSchedules.checklistTemplateId,
       assetId: maintenanceSchedules.assetId,
+      calendarId: maintenanceSchedules.calendarId,
     })
     .from(maintenanceSchedules)
     .where(isNull(maintenanceSchedules.deletedAt))
@@ -79,31 +96,14 @@ export default async function CalendarioPage() {
       nextRunAt: s.nextRunAt ? s.nextRunAt.toISOString() : null,
       checklistTemplateId: s.checklistTemplateId ?? null,
       assetId: s.assetId ?? null,
+      calendarId: s.calendarId ?? null,
     };
   });
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-zinc-900">Calendario</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Vista mensual y tareas de mantenimiento preventivo con repetición
-            (diaria, semanal, mensual, etc.).
-          </p>
-        </div>
-        <CalendarCreateEventModal
-          assets={assetOptions.map((a) => ({
-            id: a.id,
-            name: a.name,
-            sublabel: a.assetId,
-          }))}
-          users={userList}
-          checklistTemplates={templateOptions}
-        />
-      </header>
-
-      <CalendarMonthView
+      <CalendarWorkspace
+        calendars={calendarList}
         schedules={calendarSchedules}
         assets={assetOptions.map((a) => ({
           id: a.id,

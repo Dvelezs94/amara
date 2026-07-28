@@ -89,3 +89,22 @@ export function workOrderStatusBadgeStyle(
     color: `color-mix(in srgb, ${hex} 72%, #09090b)`,
   };
 }
+
+/** Border + fill for the status `<select>` (uses the user’s status colors). */
+export function workOrderStatusSelectStyle(
+  status: string,
+  colors?: Partial<WorkOrderStatusColors> | null
+): {
+  borderColor: string;
+  backgroundColor: string;
+  color: string;
+  ["--tw-ring-color"]: string;
+} {
+  const hex = resolveWorkOrderStatusColor(status, colors);
+  return {
+    borderColor: hex,
+    backgroundColor: `color-mix(in srgb, ${hex} 18%, white)`,
+    color: `color-mix(in srgb, ${hex} 72%, #09090b)`,
+    ["--tw-ring-color"]: `color-mix(in srgb, ${hex} 35%, transparent)`,
+  };
+}

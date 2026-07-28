@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getChecklistTemplateById } from "@/lib/checklist-templates";
 import { checklistItemDepth, flattenChecklistTreeForDisplay } from "@/lib/checklist-item-tree";
 import { ChecklistGroupedList } from "@/components/ChecklistGroupedList";
+import { SetPageHeader } from "@/components/SetPageHeader";
 import { DeleteChecklistButton } from "./DeleteChecklistButton";
 import { PrintChecklistButton } from "./PrintChecklistButton";
 
@@ -49,15 +50,18 @@ export default async function ChecklistTemplatePage({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold text-zinc-900">Plantilla publicada</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <PrintChecklistButton targetId="checklist-visualization" />
-          {canManage && (
-            <DeleteChecklistButton templateId={id} templateName={template.name} />
-          )}
-        </div>
-      </div>
+      <SetPageHeader
+        title={template.name}
+        subtitle="Plantilla publicada"
+        actions={
+          <>
+            <PrintChecklistButton targetId="checklist-visualization" />
+            {canManage && (
+              <DeleteChecklistButton templateId={id} templateName={template.name} />
+            )}
+          </>
+        }
+      />
       {notice === "revision_submitted" && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           Revisión enviada. Esta propuesta requiere revisión y aprobación de calidad. Puedes seguir el

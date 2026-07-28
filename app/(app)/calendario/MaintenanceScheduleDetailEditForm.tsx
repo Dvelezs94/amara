@@ -10,6 +10,7 @@ import {
   MAINTENANCE_FREQUENCY_OPTIONS,
   MAINTENANCE_WEEKDAYS,
 } from "./maintenance-schedule-form-constants";
+import { DEFAULT_CALENDAR_ID } from "@/lib/calendar-helpers";
 
 type SelectOption = { id: string; name: string; sublabel?: string };
 
@@ -18,8 +19,10 @@ export function MaintenanceScheduleDetailEditForm({
   recurrenceJson,
   checklistTemplateId: initialChecklistId,
   assetId: initialAssetId,
+  calendarId: initialCalendarId,
   color: initialColor,
   assets,
+  calendars = [],
   checklistTemplates,
   fallbackAnchorYmd,
   onSaved,
@@ -28,8 +31,10 @@ export function MaintenanceScheduleDetailEditForm({
   recurrenceJson: string;
   checklistTemplateId: string | null;
   assetId: string | null;
+  calendarId: string | null;
   color: string | null;
   assets: SelectOption[];
+  calendars?: SelectOption[];
   checklistTemplates: { id: string; name: string }[];
   /** When recurrence JSON is legacy/invalid, anchor new rules to the opened calendar day. */
   fallbackAnchorYmd: string;
@@ -57,6 +62,9 @@ export function MaintenanceScheduleDetailEditForm({
   const [weekdays, setWeekdays] = useState<number[]>(initialForm.weekdays);
   const [until, setUntil] = useState(initialForm.until);
   const [assetId, setAssetId] = useState(initialAssetId ?? "");
+  const [calendarId, setCalendarId] = useState(
+    initialCalendarId || DEFAULT_CALENDAR_ID
+  );
   const [checklistTemplateId, setChecklistTemplateId] = useState(
     initialChecklistId ?? ""
   );
@@ -75,6 +83,7 @@ export function MaintenanceScheduleDetailEditForm({
     setWeekdays(initialForm.weekdays);
     setUntil(initialForm.until);
     setAssetId(initialAssetId ?? "");
+    setCalendarId(initialCalendarId || DEFAULT_CALENDAR_ID);
     setChecklistTemplateId(initialChecklistId ?? "");
     setColor(
       initialColor && /^#[0-9A-F]{6}$/i.test(initialColor)
@@ -86,6 +95,7 @@ export function MaintenanceScheduleDetailEditForm({
     recurrenceJson,
     initialChecklistId,
     initialAssetId,
+    initialCalendarId,
     initialColor,
     initialForm.anchorDate,
     initialForm.frequency,
@@ -139,6 +149,7 @@ export function MaintenanceScheduleDetailEditForm({
           ...(bodyWeekdays ? { weekdays: bodyWeekdays } : {}),
           until: until.trim() || null,
           assetId: assetId || null,
+          calendarId: calendarId || DEFAULT_CALENDAR_ID,
           checklistTemplateId: checklistTemplateId || null,
           color,
         }),
@@ -255,6 +266,21 @@ export function MaintenanceScheduleDetailEditForm({
           onChange={(e) => setUntil(e.target.value)}
           className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-zinc-600">Calendario</label>
+        <select
+          value={calendarId}
+          onChange={(e) => setCalendarId(e.target.value)}
+          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        >
+          {calendars.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="space-y-1">

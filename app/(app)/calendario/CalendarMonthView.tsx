@@ -9,6 +9,7 @@ import {
   ChevronsUp,
   CircleX,
   Equal,
+  ExternalLink,
   Pencil,
   Trash2,
   X,
@@ -42,6 +43,7 @@ export type CalendarSchedulePayload = {
   nextRunAt: string | null;
   checklistTemplateId?: string | null;
   assetId?: string | null;
+  calendarId?: string | null;
 };
 
 type SelectedMaintenanceEvent = {
@@ -52,6 +54,7 @@ type SelectedMaintenanceEvent = {
   assigneeIds: string[];
   checklistTemplateId?: string | null;
   assetId?: string | null;
+  calendarId?: string | null;
   dateLabel: string;
   dateYmd: string;
 };
@@ -84,6 +87,7 @@ export type CalendarCell = {
     assigneeIds: string[];
     checklistTemplateId?: string | null;
     assetId?: string | null;
+    calendarId?: string | null;
     hasWorkOrder?: boolean;
   }[];
 };
@@ -113,6 +117,7 @@ function buildMonthCells(
       assigneeIds: string[];
       checklistTemplateId?: string | null;
       assetId?: string | null;
+      calendarId?: string | null;
     }[]
   >();
 
@@ -142,6 +147,7 @@ function buildMonthCells(
           assigneeIds: s.assigneeIds ?? [],
           checklistTemplateId: s.checklistTemplateId ?? null,
           assetId: s.assetId ?? null,
+          calendarId: s.calendarId ?? null,
         });
         map.set(key, list);
       }
@@ -185,6 +191,7 @@ type YearAuditRow = {
     assigneeIds: string[];
     checklistTemplateId?: string | null;
     assetId?: string | null;
+    calendarId?: string | null;
   };
 };
 
@@ -207,6 +214,7 @@ function buildYearAuditRows(
       assigneeIds: string[];
       checklistTemplateId?: string | null;
       assetId?: string | null;
+      calendarId?: string | null;
     }[]
   >();
 
@@ -237,6 +245,7 @@ function buildYearAuditRows(
           assigneeIds: s.assigneeIds ?? [],
           checklistTemplateId: s.checklistTemplateId ?? null,
           assetId: s.assetId ?? null,
+          calendarId: s.calendarId ?? null,
         });
         map.set(key, list);
       }
@@ -261,11 +270,15 @@ export function CalendarMonthView({
   assets,
   users,
   checklistTemplates,
+  calendars = [],
+  defaultCalendarId = null,
 }: {
   schedules: CalendarSchedulePayload[];
   assets: { id: string; name: string; sublabel?: string }[];
-  users: { id: string; name: string }[];
+  users: { id: string; name: string; avatarUrl?: string | null }[];
   checklistTemplates: { id: string; name: string }[];
+  calendars?: { id: string; name: string }[];
+  defaultCalendarId?: string | null;
 }) {
   const router = useRouter();
   const { colors: statusColors } = useWorkOrderStatusColors();
@@ -916,6 +929,7 @@ export function CalendarMonthView({
                                       assigneeIds: ev.assigneeIds ?? [],
                                       checklistTemplateId: ev.checklistTemplateId ?? null,
                                       assetId: ev.assetId ?? null,
+                                      calendarId: ev.calendarId ?? null,
                                       dateLabel: cell.date.toLocaleDateString("es-MX", {
                                         year: "numeric",
                                         month: "short",
@@ -1011,6 +1025,7 @@ export function CalendarMonthView({
                                     assigneeIds: row.ev.assigneeIds ?? [],
                                     checklistTemplateId: row.ev.checklistTemplateId ?? null,
                                     assetId: row.ev.assetId ?? null,
+                                    calendarId: row.ev.calendarId ?? null,
                                     dateLabel: row.date.toLocaleDateString("es-MX", {
                                       year: "numeric",
                                       month: "short",
@@ -1123,6 +1138,7 @@ export function CalendarMonthView({
                             assigneeIds: ev.assigneeIds ?? [],
                             checklistTemplateId: ev.checklistTemplateId ?? null,
                             assetId: ev.assetId ?? null,
+                            calendarId: ev.calendarId ?? null,
                             dateLabel: cell.date.toLocaleDateString("es-MX", {
                               year: "numeric",
                               month: "short",
@@ -1351,8 +1367,10 @@ export function CalendarMonthView({
                     recurrenceJson={panelEvent.recurrence}
                     checklistTemplateId={panelEvent.checklistTemplateId ?? null}
                     assetId={panelEvent.assetId ?? null}
+                    calendarId={panelEvent.calendarId ?? null}
                     color={panelEvent.color ?? null}
                     assets={assets}
+                    calendars={calendars}
                     checklistTemplates={checklistTemplates}
                     fallbackAnchorYmd={panelEvent.dateYmd}
                     onSaved={(patch) => {
@@ -1373,6 +1391,12 @@ export function CalendarMonthView({
                           n.assetId =
                             patch.assetId == null ? null : String(patch.assetId);
                         }
+                        if ("calendarId" in patch) {
+                          n.calendarId =
+                            patch.calendarId == null
+                              ? null
+                              : String(patch.calendarId);
+                        }
                         if (typeof patch.color === "string") n.color = patch.color;
                         return n;
                       });
@@ -1382,18 +1406,119 @@ export function CalendarMonthView({
                   />
                 </div>
               ) : (
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  {formatRecurrenceLabel(panelEvent.recurrence)}
-                </p>
+                <>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    {formatRecurrenceLabel(panelEvent.recurrence)}
+                  </p>
+                  <dl className="mt-2 space-y-2 text-xs text-zinc-700">
+                    <div>
+                      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                        Checklist
+                      </dt>
+                      <dd className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-zinc-900">
+                        {panelEvent.checklistTemplateId ? (
+                          <>
+                            <span>
+                              {checklistTemplates.find(
+                                (t) => t.id === panelEvent.checklistTemplateId
+                              )?.name ?? "Checklist no encontrada"}
+                            </span>
+                            <Link
+                              href={`/checklists/${panelEvent.checklistTemplateId}`}
+                              className="inline-flex items-center gap-1 rounded-sm border border-zinc-300 px-2 py-0.5 text-xs font-medium text-primary-700 hover:bg-zinc-50"
+                            >
+                              Ver
+                              <ExternalLink className="h-3 w-3" aria-hidden />
+                            </Link>
+                          </>
+                        ) : (
+                          "Sin checklist"
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                        Responsables
+                      </dt>
+                      <dd className="mt-0.5">
+                        {panelEvent.assigneeIds.length === 0 ? (
+                          <span className="text-sm text-zinc-500">Sin asignar</span>
+                        ) : (
+                          <span className="flex flex-wrap items-center gap-1">
+                            {panelEvent.assigneeIds.map((id) => {
+                              const u = users.find((x) => x.id === id);
+                              const name = u?.name ?? "Usuario";
+                              return (
+                                <span
+                                  key={id}
+                                  className="inline-flex items-center gap-1 rounded-full bg-zinc-100 py-0.5 pl-0.5 pr-2"
+                                >
+                                  <UserAvatar
+                                    userId={id}
+                                    name={name}
+                                    avatarUrl={u?.avatarUrl ?? null}
+                                    size="sm"
+                                    className="!h-5 !w-5 !text-[8px]"
+                                  />
+                                  <span className="max-w-[9rem] truncate text-sm text-zinc-800">
+                                    {name}
+                                  </span>
+                                </span>
+                              );
+                            })}
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                        Calendario
+                      </dt>
+                      <dd className="mt-0.5 text-sm text-zinc-900">
+                        {panelEvent.calendarId
+                          ? calendars.find((c) => c.id === panelEvent.calendarId)
+                              ?.name ?? "Calendario no encontrado"
+                          : "Sin calendario"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                        Máquina
+                      </dt>
+                      <dd className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-zinc-900">
+                        {(() => {
+                          if (!panelEvent.assetId) return "Sin máquina";
+                          const a = assets.find((x) => x.id === panelEvent.assetId);
+                          if (!a) return "Máquina no encontrada";
+                          const label = a.sublabel
+                            ? `${a.name} (${a.sublabel})`
+                            : a.name;
+                          return (
+                            <>
+                              <span>{label}</span>
+                              <Link
+                                href={`/assets/${panelEvent.assetId}`}
+                                className="inline-flex items-center gap-1 rounded-sm border border-zinc-300 px-2 py-0.5 text-xs font-medium text-primary-700 hover:bg-zinc-50"
+                              >
+                                Ver
+                                <ExternalLink className="h-3 w-3" aria-hidden />
+                              </Link>
+                            </>
+                          );
+                        })()}
+                      </dd>
+                    </div>
+                  </dl>
+                </>
               )}
               {!editingScheduleName ? (
                 <>
                   {createWorkOrderError ? (
-                    <p className="mb-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
+                    <p className="mb-2 mt-3 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
                       {createWorkOrderError}
                     </p>
                   ) : null}
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
+                  <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
                     Tareas asociadas en {panelEvent.dateLabel}
                   </p>
               {loadingLinkedWorkOrders ? (
@@ -1782,6 +1907,8 @@ export function CalendarMonthView({
         assets={assets}
         users={users}
         checklistTemplates={checklistTemplates}
+        calendars={calendars}
+        defaultCalendarId={defaultCalendarId}
         open={createModalOpen}
         onOpenChange={setCreateModalOpen}
         initialStartDate={createModalDate}
