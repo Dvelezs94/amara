@@ -23,6 +23,7 @@ describe("buildCategoricalDailyTimeData", () => {
           completedAt: "2024-01-02T12:00:00Z",
           checklistItems: [
             {
+              id: "c1",
               label: "Puerta",
               type: "custom_field",
               fieldType: "dropdown",
@@ -35,6 +36,7 @@ describe("buildCategoricalDailyTimeData", () => {
           completedAt: "2024-01-02T12:00:00Z",
           checklistItems: [
             {
+              id: "c2",
               label: "Puerta",
               type: "custom_field",
               fieldType: "dropdown",

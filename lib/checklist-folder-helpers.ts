@@ -97,10 +97,10 @@ export function filterChecklistsBySearch<
   );
 
   const visibleFolderIds = new Set<string>();
-  for (const id of nameMatchedFolderIds) {
+  Array.from(nameMatchedFolderIds).forEach((id) => {
     visibleFolderIds.add(id);
     for (const a of folderAncestorIds(id, folders)) visibleFolderIds.add(a);
-  }
+  });
   for (const t of matchedTemplates) {
     if (!t.folderId) continue;
     visibleFolderIds.add(t.folderId);
