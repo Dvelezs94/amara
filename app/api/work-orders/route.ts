@@ -12,6 +12,7 @@ import { loadManyWorkOrderAssignees, setWorkOrderAssigneeIds } from "@/lib/assig
 import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
 import { createNotification } from "@/lib/notifications";
 import { clampManualDowntimeMinutes } from "@/lib/machine-downtime";
+import { parseOptionalWorkOrderDateInput } from "@/lib/work-order-start-date";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -46,6 +47,7 @@ export async function GET(req: Request) {
       status: workOrders.status,
       priority: workOrders.priority,
       dueDate: workOrders.dueDate,
+      startDate: workOrders.startDate,
       completedAt: workOrders.completedAt,
       startedAt: workOrders.startedAt,
       kind: workOrders.kind,
@@ -158,6 +160,18 @@ export async function POST(req: Request) {
   } else if (typeof body.assigneeId === "string" && body.assigneeId.trim()) {
     assigneeIds = [body.assigneeId.trim()];
   }
+  const dueParsed = parseOptionalWorkOrderDateInput(
+    body.dueDate !== undefined ? body.dueDate : null
+  );
+  if (!dueParsed.ok) {
+    return NextResponse.json({ error: dueParsed.error }, { status: 400 });
+  }
+  const startParsed = parseOptionalWorkOrderDateInput(
+    body.startDate !== undefined ? body.startDate : null
+  );
+  if (!startParsed.ok) {
+    return NextResponse.json({ error: startParsed.error }, { status: 400 });
+  }
   await db.insert(workOrders).values({
     id,
     folio,
@@ -169,7 +183,8 @@ export async function POST(req: Request) {
     assetId,
     assigneeId: assigneeIds[0] ?? null,
     requesterId: session.id,
-    dueDate: body.dueDate ? new Date(body.dueDate) : null,
+    dueDate: dueParsed.date,
+    startDate: startParsed.date,
     createdAt: now,
     updatedAt: now,
     countsMachineDowntime,
@@ -206,7 +221,8 @@ export async function POST(req: Request) {
       assetId: body.assetId || null,
       assigneeId: assigneeIds[0] ?? null,
       checklistTemplateId,
-      dueDate: body.dueDate ?? null,
+      dueDate: dueParsed.date ? dueParsed.date.toISOString() : null,
+      startDate: startParsed.date ? startParsed.date.toISOString() : null,
     },
   });
   return NextResponse.json({ id });

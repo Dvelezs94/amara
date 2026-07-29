@@ -8,7 +8,15 @@ export default async function HomePage() {
   if (session) redirect("/tareas");
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-surface">
-      <h1 className="text-2xl font-semibold mb-1 text-zinc-900">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/amissa-logo.png"
+        alt="Amissa"
+        width={96}
+        height={111}
+        className="mb-5 h-24 w-auto rounded-2xl"
+      />
+      <h1 className="mb-1 text-2xl font-bold uppercase tracking-tight text-accent-500">
         MSA
       </h1>
       <p className="mb-8 text-center text-zinc-600">

@@ -90,15 +90,14 @@ export function resolveWorkOrderStatusColor(
   return DEFAULT_WORK_ORDER_STATUS_COLORS[key] ?? "#a1a1aa";
 }
 
-/** RN badge styles approximating web `workOrderStatusBadgeStyle` (color-mix → hex mix). */
+/** RN badge styles matching web `workOrderStatusBadgeStyle` (soft fill + dark text, no border). */
 export function workOrderStatusBadgeStyleRn(
   status: string,
   colors?: Partial<WorkOrderStatusColors> | null
-): { backgroundColor: string; borderColor: string; color: string } {
+): { backgroundColor: string; color: string } {
   const hex = resolveWorkOrderStatusColor(status, colors);
   return {
     backgroundColor: mixHexColors(hex, "#ffffff", 0.22),
-    borderColor: hex,
     color: mixHexColors(hex, "#09090b", 0.72),
   };
 }

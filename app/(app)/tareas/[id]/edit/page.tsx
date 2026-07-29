@@ -28,6 +28,9 @@ export default async function EditWorkOrderPage({
           assetId: wo.assetId ?? undefined,
           assigneeIds: wo.assigneeIds ?? [],
           dueDate: wo.dueDate ? new Date(wo.dueDate).toISOString().slice(0, 16) : undefined,
+          startDate: wo.startDate
+            ? new Date(wo.startDate).toISOString().slice(0, 10)
+            : undefined,
           countsMachineDowntime: wo.countsMachineDowntime === true,
           manualDowntimeMinutes: wo.manualDowntimeMinutes ?? 0,
         }}

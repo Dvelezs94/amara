@@ -10,6 +10,7 @@ import {
   formatDownloadBytes,
   formatDownloadPercent,
 } from "./lib/update-download";
+import { theme } from "./theme";
 
 export type AndroidUpdateUiPhase = "downloading" | "installing" | "error";
 
@@ -28,18 +29,6 @@ type Props = {
   onClose: () => void;
   onRetryInstall: () => void;
   onOpenInstallSettings: () => void;
-};
-
-const theme = {
-  primary: "#02257D",
-  accent: "#F14C03",
-  white: "#FFFFFF",
-  zinc100: "#F4F4F5",
-  zinc300: "#D4D4D8",
-  zinc500: "#71717A",
-  zinc700: "#3F3F46",
-  zinc900: "#18181B",
-  red600: "#DC2626",
 };
 
 export function AndroidUpdateProgressModal({
@@ -123,19 +112,19 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: theme.white,
-    borderRadius: 16,
+    borderRadius: 12,
     paddingHorizontal: 22,
     paddingVertical: 24,
     gap: 10,
   },
   title: {
-    color: theme.zinc900,
+    color: theme.textStrong,
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "600",
     textAlign: "center",
   },
   subtitle: {
-    color: theme.zinc700,
+    color: theme.text,
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
@@ -161,7 +150,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   size: {
-    color: theme.zinc500,
+    color: theme.textMuted,
     fontSize: 13,
     textAlign: "center",
   },
@@ -181,7 +170,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: theme.white,
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "500",
   },
   secondaryButton: {
     backgroundColor: theme.white,
@@ -192,9 +181,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   secondaryButtonText: {
-    color: theme.zinc900,
+    color: theme.textStrong,
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "500",
   },
   textButton: {
     paddingVertical: 8,
@@ -203,6 +192,6 @@ const styles = StyleSheet.create({
   textButtonLabel: {
     color: theme.accent,
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "500",
   },
 });

@@ -52,7 +52,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 ### Notable UI patterns
 
 - **`AppShell.tsx`** — Main chrome: desktop sidebar (orange active items, MSA branding), light gray main background (`zinc-200`), white cards, mobile bottom navigation with orange active state. **Page titles** go in the sticky top header via `PageHeaderContext` / `SetPageHeader` / `useSetPageHeader`. **Filters/search** (`filters`) and **page actions** (`actions`) render in a content toolbar above the page body (left / right); do not put those in the sticky nav and do not duplicate section `<h1>` in page bodies
-- **Work orders** — Kanban-style board in `app/(app)/tareas/WorkOrderList.tsx`; detail in `WorkOrderDetail.tsx`. When a task transitions to **completed**, the creator (`requesterId`) receives an in-app notification (“Tarea completada”) via `lib/work-order-completion-notifications.ts`.
+- **Work orders** — Kanban-style board in `app/(app)/tareas/WorkOrderList.tsx`; detail in `WorkOrderDetail.tsx`. When a task transitions to **completed**, the creator (`requesterId`) receives an in-app notification (“Tarea completada”) via `lib/work-order-completion-notifications.ts`. Optional **fecha de inicio** (`work_orders.start_date`) can be set from `/tareas` or calendar «Crear tarea»; the **mobile app** only lists the task from that calendar day onward (America/Monterrey). Distinct from `startedAt` (when work actually began). Apply migration `0026_work_order_start_date.sql` / `npm run db:migrate`.
 - **Checklist revisions** — Checklist edits create named proposed revisions (starting from baseline revision `0`). Revisions are reviewed in the right-side panel on checklist detail, and users with role **calidad** can approve/reject proposals.
 - **Checklist folders** — Optional hierarchy (`checklist_folders` + `checklist_templates.folder_id`). List UI supports creating/moving folders and moving templates between folders (admin/tecnico only for mutations). Apply migration `0008_checklist_folders.sql` / `npm run db:migrate`.
 - **Asset areas** — Flat (non-nested) areas for machines (`asset_groups` + `assets.group_id`; UI label: «Área»). List UI on `/assets` (explorer) supports creating/renaming/deleting areas and moving machines between them. Apply migration `0022_asset_groups.sql` / `npm run db:migrate`.
@@ -73,7 +73,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 - **Layout:** `tests/unit/*.test.ts` (web) and `mobile/tests/unit/*.test.ts` (mobile) — prefer **pure logic** in `lib/` / `mobile/lib/` (easy to cover); API routes may use **integration tests** with a test DB or HTTP mocks when added later.
 - **Policy:** When you **add or change behavior** (new API, new `lib/` helper, business rules, auth/middleware rules, recurrence, work-order UX logic, mobile helpers, machine photos, calendars, etc.), **add or update tests in the same change** so `npm test` (and mobile `npm test` when touching `mobile/`) stays green. Do not ship feature work without tests.
 - **Coverage map (extend as features grow):**
-  - Work orders / UI strings: `lib/work-order-kind.ts`, `lib/work-order-duration.ts`, `lib/machine-downtime.ts` (paro de máquina en tareas y total por activo)
+  - Work orders / UI strings: `lib/work-order-kind.ts`, `lib/work-order-duration.ts`, `lib/machine-downtime.ts` (paro de máquina en tareas y total por activo), `lib/work-order-start-date.ts` (fecha de inicio / visibilidad móvil)
   - Calendar / maintenance: `lib/maintenance-recurrence.ts`
   - Access control: `lib/middleware-rules.ts` (used by `middleware.ts`)
   - Profile / avatars: `lib/avatar-helpers.ts`, `lib/user-avatar-file.ts` (sanitize)
@@ -85,7 +85,8 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
   - Calendars (filtro por calendario): `lib/calendar-helpers.ts`
   - Dashboard presets / public solicitud note URLs / file paths: `lib/dashboard-quick-presets.ts`, `lib/solicitud-public-note-urls.ts`, `lib/file-storage.ts`
   - Work-order completion notifications: `lib/work-order-completion-notifications.ts`
-  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `work-order-status-colors.ts`, `due-format.ts`, `file-kind.ts`, plus mirrored checklist helpers under `mobile/lib/`
+  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `work-order-status-colors.ts`, `work-order-start-date.ts`, `checklist-field-save.ts` (checklist PATCH payloads / draft flush), `due-format.ts`, `file-kind.ts`, plus mirrored checklist helpers under `mobile/lib/`
+  - Checklist PATCH body parse/normalize: `lib/work-order-checklist-patch.ts`
 - **CI / pre-merge:** Run **`npm test`** (web) and **`cd mobile && npm test`** when mobile changes (same bar as `npm run lint`).
 
 ---
@@ -96,7 +97,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 
 - **Expo** (~SDK 54), **React Native**, **TypeScript**
 - Single main UI file: **`mobile/App.tsx`** (login, work order board/detail, knowledge base, notifications, profile)
-- **Styling** — `StyleSheet` with a `theme` object aligned to the **light web shell** (zinc neutrals, primary blue, accent orange)
+- **Styling** — `StyleSheet` with shared `mobile/theme.ts` tokens aligned to web (`tailwind.config.ts` / AppShell): primary `#02257D`, accent `#F14C03`, brand neutrals, kind badges matching `.wo-kind-*` in `globals.css`
 
 ### API usage
 

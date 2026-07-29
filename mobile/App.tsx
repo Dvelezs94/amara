@@ -10,6 +10,16 @@ import {
   groupFlattenedChecklistBySection,
 } from "./lib/checklist-item-tree";
 import { workOrderChecklistIsCompleteForClosure } from "./lib/checklist-completion";
+import {
+  applyChecklistItemLocalUpdate,
+  buildChecklistPatchBody,
+  buildFieldValuePatch,
+  buildStepCompletedPatch,
+  collectChecklistDraftFlushOps,
+  mergeChecklistDraftsIntoItems,
+  parseChecklistNumberDraftValue,
+  type ChecklistPatchPayload,
+} from "./lib/checklist-field-save";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import * as ImagePicker from "expo-image-picker";
@@ -76,25 +86,19 @@ import {
 } from "./lib/file-kind";
 import { downloadProgressRatio } from "./lib/update-download";
 import { normalizeWoStatus, statusLabel, type WoStatus } from "./lib/wo-status";
+import { isWorkOrderVisibleOnMobile } from "./lib/work-order-start-date";
 import {
   DEFAULT_WORK_ORDER_STATUS_COLORS,
   mergeWorkOrderStatusColors,
-  resolveWorkOrderStatusColor,
   workOrderStatusBadgeStyleRn,
   type WorkOrderStatusColors,
 } from "./lib/work-order-status-colors";
+import { theme } from "./theme";
 
 type AppSection = "workOrders" | "knowledgeBase" | "notifications" | "profile";
 
 /** API + DB use `pending`; legacy rows or clients may still send `open`. */
 // status helpers live in ./lib/wo-status
-
-function activeTaskRowBorderColor(
-  status: WoStatus,
-  colors: WorkOrderStatusColors
-): string {
-  return resolveWorkOrderStatusColor(status, colors);
-}
 
 function activeTaskListMeta(item: WorkOrderListItem): string {
   const asset =
@@ -121,6 +125,8 @@ type WorkOrderListItem = {
   /** routine = programada; on_demand = bajo demanda (same as web `lib/work-order-kind`) */
   kind?: string | null;
   dueDate: string | null;
+  /** Planned start; mobile hides the task until this calendar day. */
+  startDate?: string | null;
   assetName: string | null;
   assetAssetId: string | null;
   assigneeId: string | null;
@@ -212,6 +218,7 @@ type WorkOrderDetail = {
   priority: WoPriority;
   kind?: string | null;
   dueDate: string | null;
+  startDate?: string | null;
   completedAt?: string | null;
   startedAt?: string | null;
   countsMachineDowntime?: boolean;
@@ -344,38 +351,14 @@ type UserOption = {
   username?: string;
 };
 
-const API_HOST = (process.env.EXPO_PUBLIC_API_HOST ?? "").trim().replace(/\/$/, "");
-const apiUrl = (path: string) => `${API_HOST}${path}`;
-const APP_UPDATE_MANIFEST_PATH = "/downloads/android/version.json";
-const APP_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
 /** Same naming as web (`app/page.tsx` + `components/AppShell.tsx` sidebar). */
 const BRAND_MARK = "MSA";
 const BRAND_TAGLINE = "Maintenance Software Assistant";
 
-/** Align with web (tailwind + AppShell): light shell, brand orange, primary blue */
-const theme = {
-  surface: "#F8FAFC",
-  pageBg: "#E4E4E7",
-  white: "#FFFFFF",
-  zinc50: "#FAFAFA",
-  zinc100: "#F4F4F5",
-  zinc200: "#E4E4E7",
-  zinc300: "#D4D4D8",
-  zinc400: "#A1A1AA",
-  zinc500: "#71717A",
-  zinc600: "#52525B",
-  zinc700: "#3F3F46",
-  zinc800: "#27272A",
-  zinc900: "#18181B",
-  primary: "#02257D",
-  primary50: "#E8ECF7",
-  primary100: "#C5D0EB",
-  primary200: "#9EB2DB",
-  accent: "#F14C03",
-  red50: "#FEF2F2",
-  red600: "#DC2626",
-} as const;
+const API_HOST = (process.env.EXPO_PUBLIC_API_HOST ?? "").trim().replace(/\/$/, "");
+const apiUrl = (path: string) => `${API_HOST}${path}`;
+const APP_UPDATE_MANIFEST_PATH = "/downloads/android/version.json";
+const APP_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const AVATAR_PALETTE = [
   "#02257D",
@@ -448,7 +431,6 @@ function WorkOrderStatusBadge({
         styles.woStatusBadge,
         {
           backgroundColor: pill.backgroundColor,
-          borderColor: pill.borderColor,
         },
       ]}
       accessibilityRole="text"
@@ -1142,6 +1124,10 @@ function AppContent() {
   const [knowledgeRefreshing, setKnowledgeRefreshing] = useState(false);
   /** Draft strings for number fields while editing (allows "12." before blur). */
   const [checklistNumberDraft, setChecklistNumberDraft] = useState<Record<string, string>>({});
+  const [checklistTextDraft, setChecklistTextDraft] = useState<Record<string, string>>({});
+  /** Serialize checklist PATCHes per item so rapid edits don't race on the server. */
+  const checklistSaveChainRef = useRef<Map<string, Promise<void>>>(new Map());
+  const checklistSaveEpochRef = useRef(0);
   const [checklistDropdownModal, setChecklistDropdownModal] = useState<{
     itemId: string;
     label: string;
@@ -1267,7 +1253,7 @@ function AppContent() {
   }, [knowledge, kbQuery]);
 
   const workOrdersFiltered = useMemo(() => {
-    let list = workOrders;
+    let list = workOrders.filter((w) => isWorkOrderVisibleOnMobile(w.startDate));
     if (filterAssigneeId != null) {
       list = list.filter((w) => workOrderInvolvesUser(w, filterAssigneeId));
     }
@@ -1581,19 +1567,16 @@ function AppContent() {
   }
 
   async function ensureChecklistCompleteBeforeClose(workOrderId: string): Promise<boolean> {
-    if (selectedWorkOrderId === workOrderId && selectedWorkOrder != null) {
-      if (selectedWorkOrder.checklist.length === 0) return true;
-      if (!isChecklistFullyComplete(selectedWorkOrder.checklist)) {
-        Alert.alert(
-          "Checklist incompleto",
-          "Marca todos los pasos y completa los campos del checklist antes de cerrar la tarea."
-        );
-        return false;
-      }
-      return true;
-    }
+    // Always verify against the server after flushing drafts — never trust optimistic UI alone.
     try {
       const detail = await apiFetch<WorkOrderDetail>(`/api/work-orders/${workOrderId}`);
+      if (selectedWorkOrderId === workOrderId) {
+        setSelectedWorkOrder((wo) =>
+          wo && wo.id === workOrderId
+            ? { ...wo, checklist: detail.checklist }
+            : wo
+        );
+      }
       if (detail.checklist.length === 0) return true;
       if (!isChecklistFullyComplete(detail.checklist)) {
         Alert.alert(
@@ -1611,25 +1594,32 @@ function AppContent() {
     }
   }
 
-  function parseChecklistNumberDraftValue(raw: string): number | null {
-    const trimmed = raw.trim();
-    if (trimmed === "") return null;
-    const n = Number(trimmed.replace(",", "."));
-    return Number.isFinite(n) ? n : null;
+  async function awaitAllChecklistSaves(): Promise<void> {
+    const pending = Array.from(checklistSaveChainRef.current.values());
+    if (pending.length === 0) return;
+    await Promise.all(pending);
   }
 
-  async function flushChecklistNumberDrafts(workOrderId: string): Promise<void> {
-    if (selectedWorkOrderId !== workOrderId || selectedWorkOrder == null) return;
-    const pending = Object.entries(checklistNumberDraft);
-    if (pending.length === 0) return;
+  async function flushChecklistFieldDrafts(workOrderId: string): Promise<void> {
+    if (selectedWorkOrderId !== workOrderId) return;
+    const ops = collectChecklistDraftFlushOps(checklistNumberDraft, checklistTextDraft);
+    if (ops.length === 0) return;
 
     setChecklistNumberDraft({});
+    setChecklistTextDraft({});
     await Promise.all(
-      pending.map(([itemId, text]) =>
-        updateChecklist(itemId, {
-          value: parseChecklistNumberDraftValue(text),
-        })
-      )
+      ops.map((op) => {
+        const item = selectedWorkOrder?.checklist.find((c) => c.id === op.itemId);
+        const fieldType = item?.fieldType;
+        const payload =
+          fieldType === "number" ||
+          fieldType === "text" ||
+          fieldType == null ||
+          fieldType === ""
+            ? buildFieldValuePatch(fieldType ?? "text", op.value)
+            : { value: op.value };
+        return updateChecklist(op.itemId, payload);
+      })
     );
   }
 
@@ -1650,7 +1640,8 @@ function AppContent() {
     }
     try {
       if (next === "completed") {
-        await flushChecklistNumberDrafts(id);
+        await flushChecklistFieldDrafts(id);
+        await awaitAllChecklistSaves();
         const checklistOk = await ensureChecklistCompleteBeforeClose(id);
         if (!checklistOk) return;
       }
@@ -1692,33 +1683,46 @@ function AppContent() {
     await updateWorkOrderStatusById(selectedWorkOrder.id, status);
   }
 
-  async function updateChecklist(itemId: string, payload: { completed?: boolean; value?: unknown }) {
+  async function updateChecklist(itemId: string, payload: ChecklistPatchPayload) {
     if (!selectedWorkOrder) return;
     const woId = selectedWorkOrder.id;
-    const snapshot = selectedWorkOrder;
+    const epoch = checklistSaveEpochRef.current;
+    const item = selectedWorkOrder.checklist.find((c) => c.id === itemId);
+    const normalized: ChecklistPatchPayload =
+      payload.value !== undefined && item?.type === "custom_field"
+        ? buildFieldValuePatch(item.fieldType, payload.value)
+        : payload.completed !== undefined && item?.type === "step"
+          ? buildStepCompletedPatch(payload.completed)
+          : payload;
+
     setSelectedWorkOrder((wo) => {
-      if (!wo) return wo;
+      if (!wo || wo.id !== woId) return wo;
       return {
         ...wo,
-        checklist: wo.checklist.map((i) => {
-          if (i.id !== itemId) return i;
-          return {
-            ...i,
-            ...(payload.completed !== undefined ? { completed: payload.completed } : {}),
-            ...(payload.value !== undefined ? { value: payload.value } : {}),
-          };
-        }),
+        checklist: applyChecklistItemLocalUpdate(wo.checklist, itemId, normalized),
       };
     });
-    try {
-      await apiFetch<{ ok: true }>(`/api/work-orders/${woId}/checklist`, {
-        method: "PATCH",
-        body: JSON.stringify({ itemId, ...payload }),
-      });
-    } catch (error) {
-      setSelectedWorkOrder(snapshot);
-      setDetailError(error instanceof Error ? error.message : "No se pudo actualizar checklist.");
-    }
+
+    const runSave = async () => {
+      if (checklistSaveEpochRef.current !== epoch) return;
+      try {
+        const body = buildChecklistPatchBody(itemId, normalized);
+        await apiFetch<{ ok: true }>(`/api/work-orders/${woId}/checklist`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        if (checklistSaveEpochRef.current !== epoch) return;
+        setDetailError(error instanceof Error ? error.message : "No se pudo actualizar checklist.");
+        void openWorkOrder(woId, { silent: true });
+        throw error;
+      }
+    };
+
+    const prev = checklistSaveChainRef.current.get(itemId) ?? Promise.resolve();
+    const next = prev.then(runSave, runSave);
+    checklistSaveChainRef.current.set(itemId, next.then(() => undefined, () => undefined));
+    await next;
   }
 
   async function patchWorkOrderDowntimeFields(patch: {
@@ -2337,6 +2341,9 @@ function AppContent() {
 
   useEffect(() => {
     setChecklistNumberDraft({});
+    setChecklistTextDraft({});
+    checklistSaveChainRef.current = new Map();
+    checklistSaveEpochRef.current += 1;
   }, [selectedWorkOrderId]);
 
   useEffect(() => {
@@ -2464,13 +2471,22 @@ function AppContent() {
     (selectedWorkOrder.status === "in_progress" ||
       (selectedWorkOrder.status === "pending" && detailCanStartSelectedWorkOrder));
 
+  const checklistForCompleteness = useMemo(() => {
+    if (!selectedWorkOrder) return [];
+    return mergeChecklistDraftsIntoItems(
+      selectedWorkOrder.checklist,
+      checklistNumberDraft,
+      checklistTextDraft
+    );
+  }, [selectedWorkOrder, checklistNumberDraft, checklistTextDraft]);
+
   const detailSlideCompleteNeedsHint =
     selectedWorkOrder != null &&
     !detailLoading &&
     !detailError &&
     selectedWorkOrder.status === "in_progress" &&
     selectedWorkOrder.checklist.length > 0 &&
-    !isChecklistFullyComplete(selectedWorkOrder.checklist);
+    !isChecklistFullyComplete(checklistForCompleteness);
 
   const detailSlideCompleteDisabled = detailSlideCompleteNeedsHint;
 
@@ -2516,7 +2532,12 @@ function AppContent() {
             showsHorizontalScrollIndicator={false}
           >
             <View style={styles.loginContainer}>
-              <Text style={styles.loginBrandMark}>{BRAND_MARK}</Text>
+              <Image
+                source={require("./assets/amissa-logo.png")}
+                style={styles.loginLogo}
+                resizeMode="contain"
+                accessibilityLabel="Amissa"
+              />
               <Text style={styles.loginBrandTagline}>{BRAND_TAGLINE}</Text>
               <Text style={styles.loginTitle}>Iniciar sesion</Text>
 
@@ -2849,6 +2870,15 @@ function AppContent() {
                               </Pressable>
                             )}
                           </View>
+                        </View>
+                        <View style={styles.detailRowDivider} />
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailRowLabel}>Inicio</Text>
+                          <Text style={styles.detailRowValueText}>
+                            {selectedWorkOrder.startDate
+                              ? formatWoDetailDate(selectedWorkOrder.startDate)
+                              : "—"}
+                          </Text>
                         </View>
                         <View style={styles.detailRowDivider} />
                         <View style={styles.detailRow}>
@@ -3309,9 +3339,13 @@ function AppContent() {
                                         delete next[item.id];
                                         return next;
                                       });
-                                      void updateChecklist(item.id, {
-                                        value: parseChecklistNumberDraftValue(text),
-                                      });
+                                      void updateChecklist(
+                                        item.id,
+                                        buildFieldValuePatch(
+                                          "number",
+                                          parseChecklistNumberDraftValue(text)
+                                        )
+                                      );
                                     }}
                                     placeholder="Número"
                                     placeholderTextColor={theme.zinc400}
@@ -3437,10 +3471,38 @@ function AppContent() {
                                   </View>
                                 ) : (
                                   <TextInput
-                                    value={item.value != null ? String(item.value) : ""}
-                                    onChangeText={(text) =>
-                                      void updateChecklist(item.id, { value: text })
+                                    value={
+                                      checklistTextDraft[item.id] !== undefined
+                                        ? checklistTextDraft[item.id]!
+                                        : item.value != null
+                                          ? String(item.value)
+                                          : ""
                                     }
+                                    onFocus={() =>
+                                      setChecklistTextDraft((d) => ({
+                                        ...d,
+                                        [item.id]:
+                                          item.value != null ? String(item.value) : "",
+                                      }))
+                                    }
+                                    onChangeText={(text) => {
+                                      setChecklistTextDraft((d) => ({ ...d, [item.id]: text }));
+                                    }}
+                                    onEndEditing={(event) => {
+                                      const text =
+                                        event.nativeEvent.text ??
+                                        checklistTextDraft[item.id] ??
+                                        "";
+                                      setChecklistTextDraft((d) => {
+                                        const next = { ...d };
+                                        delete next[item.id];
+                                        return next;
+                                      });
+                                      void updateChecklist(
+                                        item.id,
+                                        buildFieldValuePatch("text", text)
+                                      );
+                                    }}
                                     placeholder="Escribir valor"
                                     placeholderTextColor={theme.zinc400}
                                     style={styles.input}
@@ -3676,7 +3738,7 @@ function AppContent() {
                       />
                     ) : (
                       <SlideToConfirm
-                        resetKey={`${selectedWorkOrder.id}-done-${isChecklistFullyComplete(selectedWorkOrder.checklist) ? "1" : "0"}`}
+                        resetKey={`${selectedWorkOrder.id}-done-${isChecklistFullyComplete(checklistForCompleteness) ? "1" : "0"}`}
                         label="Desliza para completar"
                         variant="success"
                         disabled={detailSlideCompleteDisabled}
@@ -3997,7 +4059,6 @@ function AppContent() {
                         style={[
                           styles.surfaceCard,
                           styles.activeRowCard,
-                          { borderLeftColor: activeTaskRowBorderColor(item.status, statusColors) },
                         ]}
                         onPress={() => openWorkOrder(item.id)}
                       >
@@ -4357,30 +4418,29 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: "center",
   },
-  loginBrandMark: {
-    color: theme.accent,
-    fontSize: 32,
-    fontWeight: "800",
-    textAlign: "center",
-    letterSpacing: -0.5,
+  loginLogo: {
+    width: 96,
+    height: 111,
+    alignSelf: "center",
+    borderRadius: 16,
   },
   loginBrandTagline: {
-    marginTop: 6,
+    marginTop: 12,
     marginBottom: 20,
-    color: theme.zinc600,
+    color: theme.text,
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
   },
   loginTitle: {
-    color: theme.zinc900,
-    fontSize: 22,
-    fontWeight: "700",
+    color: theme.textStrong,
+    fontSize: 20,
+    fontWeight: "600",
     textAlign: "center",
     marginBottom: 12,
   },
   loginFieldBlock: { gap: 8 },
-  loginLabel: { color: theme.zinc700, fontSize: 14, fontWeight: "600" },
+  loginLabel: { color: theme.neutral700, fontSize: 14, fontWeight: "500" },
   loginInput: {
     backgroundColor: theme.white,
     borderWidth: 1,
@@ -4388,7 +4448,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: theme.zinc900,
+    color: theme.textStrong,
     fontSize: 15,
   },
   loginButton: {
@@ -4437,15 +4497,16 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandTitle: {
     fontSize: 22,
-    fontWeight: "800",
+    fontWeight: "700",
     color: theme.accent,
     letterSpacing: -0.5,
+    textTransform: "uppercase",
   },
   headerGreeting: {
     marginTop: 2,
     fontSize: 12,
     fontWeight: "500",
-    color: theme.zinc500,
+    color: theme.textMuted,
   },
   headerAlertButton: {
     width: 40,
@@ -4466,10 +4527,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
   },
-  headerProfileAvatarFallbackText: { fontSize: 10, fontWeight: "800", color: theme.white },
+  headerProfileAvatarFallbackText: { fontSize: 10, fontWeight: "700", color: theme.white },
   headerAlertButtonActive: {
     borderColor: theme.accent,
-    backgroundColor: "#FFF7ED",
+    backgroundColor: theme.accent50,
   },
   headerAlertBadge: {
     position: "absolute",
@@ -4497,16 +4558,15 @@ const styles = StyleSheet.create({
     color: theme.zinc900,
   },
   primaryButton: {
-    backgroundColor: theme.accent,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#c43d02",
+    backgroundColor: theme.primary,
+    borderRadius: 12,
+    borderWidth: 0,
     paddingVertical: 12,
     alignItems: "center",
     marginTop: 8,
   },
   primaryButtonDisabled: { opacity: 0.55 },
-  primaryButtonText: { color: theme.white, fontSize: 16, fontWeight: "700" },
+  primaryButtonText: { color: theme.white, fontSize: 16, fontWeight: "500" },
   errorText: { color: theme.red600, fontSize: 13 },
   contentArea: {
     flex: 1,
@@ -4737,20 +4797,19 @@ const styles = StyleSheet.create({
   },
   woStatusBadge: {
     flexShrink: 0,
-    borderRadius: 999,
+    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderWidth: 1,
   },
   woStatusBadgeLabel: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "600",
   },
   detailCardHeaderSub: {
     marginTop: 6,
     fontSize: 12,
     fontWeight: "500",
-    color: theme.zinc400,
+    color: theme.textMuted,
   },
   detailCardBody: { paddingHorizontal: 16, paddingVertical: 14, gap: 0 },
   detailRow: {
@@ -4822,7 +4881,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
   },
-  downtimeUnitChipOn: { borderColor: theme.accent, backgroundColor: "#FFF5F0" },
+  downtimeUnitChipOn: { borderColor: theme.accent, backgroundColor: theme.accent50 },
   downtimeUnitChipOff: { borderColor: theme.zinc300, backgroundColor: theme.white },
   downtimeUnitChipPressed: { opacity: 0.85 },
   downtimeUnitChipTextOn: { fontSize: 13, fontWeight: "600", color: theme.accent },
@@ -4926,7 +4985,7 @@ const styles = StyleSheet.create({
   },
   commentSendBtnText: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "500",
     color: theme.white,
   },
   commentList: {
@@ -5071,21 +5130,20 @@ const styles = StyleSheet.create({
   pendingCard: {
     padding: 14,
     marginBottom: 12,
-    borderLeftWidth: 4,
   },
   pendingCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   pendingPriorityPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  pendingPriorityPillText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
+  pendingPriorityPillText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
   pendingDurationPill: {
     backgroundColor: theme.zinc100,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
   },
-  pendingDurationPillText: { fontSize: 12, fontWeight: "700", color: theme.zinc600 },
-  pendingCardTitle: { fontSize: 16, fontWeight: "700", color: theme.zinc900, marginBottom: 10 },
+  pendingDurationPillText: { fontSize: 12, fontWeight: "600", color: theme.neutral700 },
+  pendingCardTitle: { fontSize: 16, fontWeight: "600", color: theme.textStrong, marginBottom: 10 },
   pendingMetaRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
-  pendingMetaText: { flex: 1, fontSize: 13, color: theme.zinc600 },
+  pendingMetaText: { flex: 1, fontSize: 13, color: theme.text },
   pendingCardFooter: {
     flexDirection: "row",
     alignItems: "center",
@@ -5097,10 +5155,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
-  completedRowCardTinted: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#22C55E",
-  },
+  completedRowCardTinted: {},
   completedRowInner: {
     flexDirection: "row",
     alignItems: "center",
@@ -5108,11 +5163,10 @@ const styles = StyleSheet.create({
   },
   completedRowTextCol: { flex: 1, minWidth: 0 },
   completedRowTitle: { fontSize: 14, fontWeight: "600", color: theme.zinc800 },
-  completedRowMeta: { fontSize: 12, color: theme.zinc500, marginTop: 4 },
+  completedRowMeta: { fontSize: 12, color: theme.textMuted, marginTop: 4 },
   activeRowCard: {
     padding: 12,
     marginBottom: 8,
-    borderLeftWidth: 4,
   },
   activeRowInner: {
     flexDirection: "row",
@@ -5144,26 +5198,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     maxWidth: "100%",
+    borderWidth: 1,
   },
   kindBadgeRoutine: {
-    backgroundColor: theme.primary,
-    borderWidth: 1,
-    borderColor: "#011752",
+    backgroundColor: theme.kindRoutineBg,
+    borderColor: theme.kindRoutineBorder,
   },
   kindBadgeOnDemand: {
-    backgroundColor: "#FFEDD5",
-    borderWidth: 1,
-    borderColor: "#FDBA74",
+    backgroundColor: theme.kindOnDemandBg,
+    borderColor: theme.kindOnDemandBorder,
   },
   kindBadgeText: {
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "500",
   },
   kindBadgeTextRoutine: {
-    color: theme.white,
+    color: theme.kindRoutineFg,
   },
   kindBadgeTextOnDemand: {
-    color: "#9A3412",
+    color: theme.kindOnDemandFg,
   },
   sectionBlock: {
     gap: 10,
@@ -5173,8 +5226,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   sectionFirst: { marginTop: 0 },
-  sectionTitle: { color: theme.zinc900, fontSize: 16, fontWeight: "700" },
-  helpText: { color: theme.zinc500, fontSize: 12 },
+  sectionTitle: { color: theme.textStrong, fontSize: 16, fontWeight: "600" },
+  helpText: { color: theme.textMuted, fontSize: 12 },
   actionsRow: {
     flexDirection: "row",
     gap: 8,
@@ -5183,12 +5236,11 @@ const styles = StyleSheet.create({
   secondaryButton: {
     backgroundColor: theme.primary,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.primary,
+    borderWidth: 0,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
   },
-  secondaryButtonText: { color: theme.white, fontWeight: "700" },
+  secondaryButtonText: { color: theme.white, fontWeight: "500" },
   ghostButton: {
     borderWidth: 1,
     borderColor: theme.zinc300,
@@ -5198,7 +5250,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     backgroundColor: theme.white,
   },
-  ghostButtonText: { color: theme.primary, fontWeight: "600" },
+  ghostButtonText: { color: theme.primary, fontWeight: "500" },
   logoutButton: {
     backgroundColor: theme.white,
     borderRadius: 12,
@@ -5208,10 +5260,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: "center",
   },
-  logoutButtonText: { color: theme.zinc700, fontWeight: "700" },
+  logoutButtonText: { color: theme.neutral700, fontWeight: "600" },
   checklistCard: {
-    backgroundColor: theme.zinc50,
-    borderRadius: 10,
+    backgroundColor: theme.white,
+    borderRadius: 8,
     padding: 12,
     borderWidth: 1,
     borderColor: theme.zinc200,
@@ -5222,14 +5274,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
     backgroundColor: theme.white,
     borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: theme.zinc300,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
   checklistSectionCardGap: {
     marginTop: 16,
@@ -5255,9 +5307,9 @@ const styles = StyleSheet.create({
   },
   checklistLooseGroup: {
     backgroundColor: theme.white,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: theme.zinc300,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.zinc200,
     overflow: "hidden",
   },
   checklistLooseRow: {
@@ -5730,16 +5782,16 @@ const styles = StyleSheet.create({
   listContent: { gap: 10, paddingBottom: 24 },
   surfaceCard: {
     backgroundColor: theme.white,
-    borderRadius: 12,
+    borderRadius: 8,
     padding: 14,
     borderWidth: 1,
     borderColor: theme.zinc200,
     gap: 6,
     shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   kbFileCard: {
     paddingVertical: 12,

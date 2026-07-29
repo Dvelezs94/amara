@@ -152,6 +152,7 @@ export function WorkOrderDetail({
     priority: string;
     kind?: string | null;
     dueDate: string | Date | null;
+    startDate?: string | Date | null;
     createdAt: string | Date;
     startedAt?: string | Date | null;
     completedAt: string | Date | null;
@@ -1703,6 +1704,13 @@ export function WorkOrderDetail({
               </div>
 
               <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
+                <span className="text-zinc-500">Inicio</span>
+                <span className="font-medium text-zinc-900">
+                  {initial.startDate ? formatDate(initial.startDate) : "—"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 py-3 text-sm">
                 <span className="text-zinc-500">Vencimiento</span>
                 <span className="font-medium text-zinc-900">
                   {formatDate(initial.dueDate)}
@@ -1714,13 +1722,13 @@ export function WorkOrderDetail({
                   void durationTick;
                   const nowMs = Date.now();
                   const compact = formatWorkOrderElapsedCompact(
-                    initial.createdAt,
+                    initial.startedAt,
                     initial.status,
                     initial.completedAt,
                     nowMs
                   );
                   const verbose = formatWorkOrderElapsedLabel(
-                    initial.createdAt,
+                    initial.startedAt,
                     initial.status,
                     initial.completedAt,
                     nowMs
@@ -1744,7 +1752,7 @@ export function WorkOrderDetail({
                         </span>
                         {initial.status === "in_progress" ? (
                           <span className="mt-1 block text-xs text-zinc-400">
-                            Desde el alta. Actualización cada minuto.
+                            Desde que pasó a en progreso. Actualización cada minuto.
                           </span>
                         ) : null}
                       </div>

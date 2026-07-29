@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import {
   API_AUTH_PUBLIC_PREFIX,
   decodeSessionRoleFromCookie,
+  isPublicStaticAssetPath,
   isTecnicoApiPathAllowed,
   isTecnicoAppPathAllowed,
   isCalidadApiPathAllowed,
@@ -11,6 +12,10 @@ import {
 
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
+  /** Public static files under `/public` (logos, etc.) — must not require auth. */
+  if (isPublicStaticAssetPath(path)) {
+    return NextResponse.next();
+  }
   if (path.startsWith("/uploads/")) return NextResponse.next();
   if (path.startsWith("/downloads/")) return NextResponse.next();
   if (

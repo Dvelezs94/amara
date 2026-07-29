@@ -6,6 +6,7 @@ import {
   isPathUnderAnyPrefix,
   isCalidadApiPathAllowed,
   isCalidadAppPathAllowed,
+  isPublicStaticAssetPath,
 } from "@/lib/middleware-rules";
 
 function makeSessionCookie(role: string) {
@@ -14,6 +15,18 @@ function makeSessionCookie(role: string) {
   );
   return `hdr.${payload}.sig`;
 }
+
+describe("isPublicStaticAssetPath", () => {
+  it("allows brand logo and common public assets", () => {
+    expect(isPublicStaticAssetPath("/amissa-logo.png")).toBe(true);
+    expect(isPublicStaticAssetPath("/favicon.ico")).toBe(true);
+    expect(isPublicStaticAssetPath("/icons/app.webp")).toBe(true);
+  });
+  it("does not treat app routes as static assets", () => {
+    expect(isPublicStaticAssetPath("/login")).toBe(false);
+    expect(isPublicStaticAssetPath("/api/work-orders")).toBe(false);
+  });
+});
 
 describe("decodeSessionRoleFromCookie", () => {
   it("reads role from JWT-shaped cookie", () => {

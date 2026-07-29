@@ -25,6 +25,7 @@ export function WorkOrderForm({
     assetId?: string;
     assigneeIds?: string[];
     dueDate?: string;
+    startDate?: string;
     checklistTemplateId?: string;
     countsMachineDowntime?: boolean;
     manualDowntimeMinutes?: number;
@@ -92,6 +93,8 @@ export function WorkOrderForm({
     const assetId = selectedAssetId || undefined;
     const countsMachineDowntime = downtimeUiEnabled && downtimeChecked;
     const dueDate = (form.elements.namedItem("dueDate") as HTMLInputElement).value || undefined;
+    const startDate =
+      (form.elements.namedItem("startDate") as HTMLInputElement).value || undefined;
     const checklistTemplateId = (form.elements.namedItem("checklistTemplateId") as HTMLSelectElement)?.value || undefined;
     const manualRaw = (form.elements.namedItem("manualDowntimeAmount") as HTMLInputElement)?.value ?? "";
     const manualUnit = (form.elements.namedItem("manualDowntimeUnit") as HTMLSelectElement)?.value ?? "min";
@@ -119,6 +122,7 @@ export function WorkOrderForm({
             assetId: assetId || null,
             ...(canEditAssignee ? { assigneeIds } : {}),
             dueDate: dueDate || null,
+            startDate: startDate || null,
             countsMachineDowntime,
             manualDowntimeMinutes,
           }),
@@ -141,6 +145,7 @@ export function WorkOrderForm({
             assetId: assetId || null,
             assigneeIds,
             dueDate: dueDate || null,
+            startDate: startDate || null,
             checklistTemplateId: checklistTemplateId || null,
             countsMachineDowntime,
             manualDowntimeMinutes,
@@ -236,6 +241,22 @@ export function WorkOrderForm({
           emptyHint="Sin asignar"
         />
       )}
+      <div>
+        <label htmlFor="startDate" className="block text-sm font-medium text-zinc-700 mb-1">
+          Fecha de inicio{" "}
+          <span className="font-normal text-zinc-500">(opcional)</span>
+        </label>
+        <input
+          id="startDate"
+          name="startDate"
+          type="date"
+          defaultValue={initial.startDate?.slice(0, 10)}
+          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        />
+        <p className="mt-1 text-xs text-zinc-500">
+          En la app móvil la tarea solo se muestra a partir de esta fecha.
+        </p>
+      </div>
       <div>
         <label htmlFor="dueDate" className="block text-sm font-medium text-zinc-700 mb-1">
           Fecha de vencimiento

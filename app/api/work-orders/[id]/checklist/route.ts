@@ -7,6 +7,7 @@ import { workOrderChecklist } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
+import { parseWorkOrderChecklistPatchBody } from "@/lib/work-order-checklist-patch";
 
 export async function POST(
   req: Request,
@@ -85,19 +86,18 @@ export async function PATCH(
     );
   }
   const body = await req.json().catch(() => ({}));
-  const itemId = body.itemId;
-  if (!itemId) {
+
+  // Peek item for field-type normalization (and 404 / no-op section).
+  const itemIdEarly =
+    typeof (body as { itemId?: unknown }).itemId === "string"
+      ? String((body as { itemId: string }).itemId).trim()
+      : "";
+  if (!itemIdEarly) {
     return NextResponse.json({ error: "itemId required" }, { status: 400 });
-  }
-  const updates: Record<string, unknown> = {};
-  if (body.completed !== undefined) updates.completed = body.completed;
-  if (body.value !== undefined) updates.value = body.value;
-  if (Object.keys(updates).length === 0) {
-    return NextResponse.json({ error: "No updates" }, { status: 400 });
   }
   const before = await db.query.workOrderChecklist.findFirst({
     where: and(
-      eq(workOrderChecklist.id, itemId),
+      eq(workOrderChecklist.id, itemIdEarly),
       eq(workOrderChecklist.workOrderId, workOrderId)
     ),
   });
@@ -107,6 +107,16 @@ export async function PATCH(
   if (before.type === "section" || before.type === "text_block") {
     return NextResponse.json({ ok: true });
   }
+
+  const parsed = parseWorkOrderChecklistPatchBody(body, {
+    type: before.type,
+    fieldType: before.fieldType,
+  });
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  }
+
+  const { itemId, updates } = parsed;
 
   await db
     .update(workOrderChecklist)
@@ -125,19 +135,14 @@ export async function PATCH(
     userId: session.id,
     metadata: {
       workOrderId,
-      before: before
-        ? {
-            completed: before.completed,
-            value: before.value,
-          }
-        : null,
+      before: {
+        completed: before.completed,
+        value: before.value,
+      },
       after: {
         completed:
-          body.completed !== undefined
-            ? body.completed
-            : before?.completed,
-        value:
-          body.value !== undefined ? body.value : before?.value,
+          updates.completed !== undefined ? updates.completed : before.completed,
+        value: updates.value !== undefined ? updates.value : before.value,
       },
     },
   });

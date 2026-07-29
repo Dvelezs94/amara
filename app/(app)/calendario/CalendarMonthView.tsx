@@ -306,6 +306,7 @@ export function CalendarMonthView({
   const [userOptions, setUserOptions] = useState<{ id: string; name: string }[]>([]);
   const [loadingUserOptions, setLoadingUserOptions] = useState(false);
   const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
+  const [createStartDate, setCreateStartDate] = useState("");
   const [assigneePromptOpen, setAssigneePromptOpen] = useState(false);
   const [undoBanner, setUndoBanner] = useState<
     | { kind: "recurrence"; scheduleId: string }
@@ -1655,6 +1656,7 @@ export function CalendarMonthView({
                     if (panelEventHasWorkOrder) return;
                     setCreateWorkOrderError(null);
                     setSelectedAssigneeIds([...panelEvent.assigneeIds]);
+                    setCreateStartDate("");
                     setAssigneePromptOpen(true);
                   }}
                   className="rounded-lg bg-primary-600 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-white hover:bg-primary-700 disabled:opacity-50"
@@ -1691,6 +1693,25 @@ export function CalendarMonthView({
                     emptyHint="Selecciona al menos una persona"
                   />
                 )}
+                <div className="mt-2">
+                  <label
+                    htmlFor="calendar-create-start-date"
+                    className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600"
+                  >
+                    Fecha de inicio (opcional)
+                  </label>
+                  <input
+                    id="calendar-create-start-date"
+                    type="date"
+                    value={createStartDate}
+                    onChange={(e) => setCreateStartDate(e.target.value)}
+                    disabled={creatingWorkOrder}
+                    className="w-full rounded-sm border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900"
+                  />
+                  <p className="mt-1 text-[10px] leading-snug text-zinc-500">
+                    En la app móvil la tarea solo se muestra a partir de esta fecha.
+                  </p>
+                </div>
                 <div className="mt-2 flex justify-end gap-2">
                   <button
                     type="button"
@@ -1719,6 +1740,7 @@ export function CalendarMonthView({
                             body: JSON.stringify({
                               dateYmd: panelEvent.dateYmd,
                               assigneeIds: selectedAssigneeIds,
+                              startDate: createStartDate || null,
                             }),
                           }
                         );

@@ -48,9 +48,9 @@ describe("mixHexColors", () => {
 });
 
 describe("workOrderStatusBadgeStyleRn", () => {
-  it("uses status color for border and mixes for fill/text", () => {
+  it("mixes status color for fill/text without a border token", () => {
     const style = workOrderStatusBadgeStyleRn("pending", { pending: "#112233" });
-    expect(style.borderColor).toBe("#112233");
+    expect(style).not.toHaveProperty("borderColor");
     expect(style.backgroundColor).not.toBe("#112233");
     expect(style.color).not.toBe("#112233");
   });

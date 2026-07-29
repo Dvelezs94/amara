@@ -5,6 +5,14 @@
 
 export const API_AUTH_PUBLIC_PREFIX = "/api/auth/";
 
+/** Static files under `/public` that must stay reachable without a session. */
+const PUBLIC_STATIC_FILE_RE =
+  /\.(?:png|jpe?g|gif|webp|svg|ico|txt|xml|webmanifest)$/i;
+
+export function isPublicStaticAssetPath(path: string): boolean {
+  return PUBLIC_STATIC_FILE_RE.test(path);
+}
+
 export const TECNICO_ALLOWED_APP_PREFIXES = [
   "/tareas",
   "/knowledge-base",

@@ -23,12 +23,27 @@ describe("mobile checklist-completion mirrors web rules", () => {
       })
     ).toBe(true);
   });
-  it("complete checklist closes", () => {
+  it("complete checklist closes with all field types filled", () => {
     expect(
       workOrderChecklistIsCompleteForClosure([
         { type: "step", completed: true, fieldType: null, value: null },
+        { type: "custom_field", fieldType: "text", value: "ok", isOptional: false },
+        { type: "custom_field", fieldType: "number", value: 3, isOptional: false },
+        { type: "custom_field", fieldType: "date", value: "2026-07-30", isOptional: false },
+        { type: "custom_field", fieldType: "dropdown", value: "A", isOptional: false },
+        { type: "custom_field", fieldType: "checkbox", value: true, isOptional: false },
+        { type: "custom_field", fieldType: "photo", value: ["/p"], isOptional: false },
+        { type: "section", fieldType: null, value: null },
       ])
     ).toBe(true);
+  });
+  it("blocks when required number is still null (unsaved draft scenario)", () => {
+    expect(
+      workOrderChecklistIsCompleteForClosure([
+        { type: "step", completed: true, fieldType: null, value: null },
+        { type: "custom_field", fieldType: "number", value: null, isOptional: false },
+      ])
+    ).toBe(false);
   });
 });
 

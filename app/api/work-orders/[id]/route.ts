@@ -23,6 +23,7 @@ import { checklistItemBlocksWorkOrderCompletion } from "@/lib/checklist-completi
 import { validateWorkOrderCompletedAt } from "@/lib/datetime-local";
 import { canDeleteWorkOrder } from "@/lib/auth-shared";
 import { workOrderAssignedToUserIds } from "@/lib/work-order-assignee";
+import { parseOptionalWorkOrderDateInput } from "@/lib/work-order-start-date";
 
 async function assetAllowsDowntimeTracking(assetId: string | null): Promise<boolean> {
   if (!assetId) return false;
@@ -392,7 +393,20 @@ export async function PATCH(
     updates.assetId =
       typeof body.assetId === "string" && body.assetId.trim() ? body.assetId.trim() : null;
   }
-  if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
+  if (body.dueDate !== undefined) {
+    const dueParsed = parseOptionalWorkOrderDateInput(body.dueDate);
+    if (!dueParsed.ok) {
+      return NextResponse.json({ error: dueParsed.error }, { status: 400 });
+    }
+    updates.dueDate = dueParsed.date;
+  }
+  if (body.startDate !== undefined) {
+    const startParsed = parseOptionalWorkOrderDateInput(body.startDate);
+    if (!startParsed.ok) {
+      return NextResponse.json({ error: startParsed.error }, { status: 400 });
+    }
+    updates.startDate = startParsed.date;
+  }
   if (body.countsMachineDowntime !== undefined) {
     if (typeof body.countsMachineDowntime !== "boolean") {
       return NextResponse.json({ error: "Valor inv?lido" }, { status: 400 });
@@ -519,6 +533,7 @@ export async function PATCH(
     body.priority !== undefined ||
     body.assetId !== undefined ||
     body.dueDate !== undefined ||
+    body.startDate !== undefined ||
     body.countsMachineDowntime !== undefined ||
     body.manualDowntimeMinutes !== undefined;
   const isTransitioningToCompleted = isWorkOrderTransitioningToCompleted(
@@ -578,6 +593,7 @@ export async function PATCH(
         priority: wo.priority,
         assigneeId: wo.assigneeId,
         dueDate: wo.dueDate,
+        startDate: wo.startDate,
       },
       after: {
         status: body.status ?? wo.status,
@@ -586,6 +602,8 @@ export async function PATCH(
         assigneeIds: assigneesAfter.map((a) => a.id),
         dueDate:
           body.dueDate !== undefined ? body.dueDate : wo.dueDate,
+        startDate:
+          body.startDate !== undefined ? body.startDate : wo.startDate,
       },
     },
   });

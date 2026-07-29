@@ -93,6 +93,11 @@ export const workOrders = pgTable(
     assigneeId: text("assignee_id"),
     requesterId: text("requester_id"),
     dueDate: timestamp("due_date", { withTimezone: true, mode: "date" }),
+    /**
+     * Planned start / fecha de inicio (optional).
+     * Mobile app only shows the task from this calendar day onward. Distinct from startedAt.
+     */
+    startDate: timestamp("start_date", { withTimezone: true, mode: "date" }),
     completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
     /** Set once on first transition to in_progress; null = nunca iniciada */
     startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),

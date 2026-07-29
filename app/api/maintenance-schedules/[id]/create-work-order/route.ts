@@ -15,6 +15,7 @@ import {
 } from "@/lib/maintenance-schedule-work-order";
 import { workOrderExistsForScheduleDay } from "@/lib/maintenance-schedule-work-order-db";
 import { toYmdLocal } from "@/lib/maintenance-recurrence";
+import { parseOptionalWorkOrderDateInput } from "@/lib/work-order-start-date";
 
 export async function POST(
   req: Request,
@@ -42,6 +43,13 @@ export async function POST(
     (schedule.nextRunAt ? toYmdLocal(new Date(schedule.nextRunAt)) : null);
   const dueDate =
     (dateYmd ? dueDateFromYmd(dateYmd) : null) ?? schedule.nextRunAt ?? null;
+
+  const startParsed = parseOptionalWorkOrderDateInput(
+    body?.startDate !== undefined ? body.startDate : null
+  );
+  if (!startParsed.ok) {
+    return NextResponse.json({ error: startParsed.error }, { status: 400 });
+  }
 
   if (dateYmd && (await workOrderExistsForScheduleDay(id, dateYmd))) {
     return NextResponse.json(
@@ -97,6 +105,7 @@ export async function POST(
     assigneeId,
     requesterId: session.id,
     dueDate,
+    startDate: startParsed.date,
     createdAt: now,
     updatedAt: now,
   });
@@ -120,6 +129,7 @@ export async function POST(
       scheduleId: schedule.id,
       checklistTemplateId: schedule.checklistTemplateId ?? null,
       dueDate: dueDate ? dueDate.toISOString() : null,
+      startDate: startParsed.date ? startParsed.date.toISOString() : null,
     },
   });
 

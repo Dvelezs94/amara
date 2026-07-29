@@ -564,7 +564,7 @@ export function WorkOrderList() {
                   const nowMs = Date.now();
                   const elapsedCompact = showElapsed
                     ? formatWorkOrderElapsedCompact(
-                        wo.createdAt,
+                        wo.startedAt,
                         wo.status,
                         wo.completedAt ?? null,
                         nowMs
@@ -574,7 +574,7 @@ export function WorkOrderList() {
                     wo.status === "completed" ? "Duración" : "Transcurrido";
                   const elapsedTitle = showElapsed
                     ? formatWorkOrderElapsedLabel(
-                        wo.createdAt,
+                        wo.startedAt,
                         wo.status,
                         wo.completedAt ?? null,
                         nowMs
