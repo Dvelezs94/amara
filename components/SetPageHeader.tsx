@@ -12,6 +12,11 @@ export function SetPageHeader({
   filters,
   actions,
 }: PageHeaderContent) {
-  useSetPageHeader({ title, subtitle, filters, actions });
+  // Omit `filters` when unset so layout breadcrumbs (usePageHeaderFilters) are preserved.
+  useSetPageHeader(
+    filters !== undefined
+      ? { title, subtitle, filters, actions }
+      : { title, subtitle, actions }
+  );
   return null;
 }

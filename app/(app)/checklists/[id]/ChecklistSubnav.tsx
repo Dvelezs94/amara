@@ -1,8 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { usePageHeaderFilters } from "@/components/PageHeaderContext";
 
 export function ChecklistSubnav({
   checklistId,
@@ -15,8 +17,8 @@ export function ChecklistSubnav({
   const base = `/checklists/${checklistId}`;
   const onRevisions = pathname.startsWith(`${base}/revisions`);
 
-  return (
-    <div className="space-y-3">
+  const breadcrumb = useMemo(
+    () => (
       <nav
         className="flex flex-wrap items-center gap-1 text-sm text-zinc-500"
         aria-label="Migas de pan"
@@ -33,28 +35,34 @@ export function ChecklistSubnav({
         </span>
         <span className="text-zinc-600">{templateName}</span>
       </nav>
-      <div className="inline-flex rounded-lg border border-zinc-200 bg-white p-1 shadow-sm">
-        <Link
-          href={base}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-            !onRevisions
-              ? "bg-zinc-900 text-white"
-              : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-          }`}
-        >
-          Plantilla publicada
-        </Link>
-        <Link
-          href={`${base}/revisions`}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-            onRevisions
-              ? "bg-zinc-900 text-white"
-              : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-          }`}
-        >
-          Revisiones
-        </Link>
-      </div>
+    ),
+    [templateName]
+  );
+
+  usePageHeaderFilters(breadcrumb);
+
+  return (
+    <div className="inline-flex rounded-lg border border-zinc-200 bg-white p-1 shadow-sm">
+      <Link
+        href={base}
+        className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+          !onRevisions
+            ? "bg-zinc-900 text-white"
+            : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+        }`}
+      >
+        Plantilla publicada
+      </Link>
+      <Link
+        href={`${base}/revisions`}
+        className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+          onRevisions
+            ? "bg-zinc-900 text-white"
+            : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+        }`}
+      >
+        Revisiones
+      </Link>
     </div>
   );
 }

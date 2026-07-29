@@ -20,7 +20,8 @@ export type PageHeaderContent = {
 };
 
 type PageHeaderSetters = {
-  setHeader: (next: PageHeaderContent) => void;
+  /** Shallow-merge into the current header (does not wipe omitted keys). */
+  patchHeader: (next: PageHeaderContent) => void;
   clearHeader: () => void;
 };
 
@@ -30,8 +31,8 @@ const PageHeaderSettersContext = createContext<PageHeaderSetters | null>(null);
 export function PageHeaderProvider({ children }: { children: ReactNode }) {
   const [header, setHeaderState] = useState<PageHeaderContent>({});
 
-  const setHeader = useCallback((next: PageHeaderContent) => {
-    setHeaderState(next);
+  const patchHeader = useCallback((next: PageHeaderContent) => {
+    setHeaderState((prev) => ({ ...prev, ...next }));
   }, []);
 
   const clearHeader = useCallback(() => {
@@ -39,8 +40,8 @@ export function PageHeaderProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setters = useMemo(
-    () => ({ setHeader, clearHeader }),
-    [setHeader, clearHeader]
+    () => ({ patchHeader, clearHeader }),
+    [patchHeader, clearHeader]
   );
 
   return (
@@ -61,19 +62,51 @@ export function usePageHeader() {
   return header;
 }
 
-/** Set sticky header title/actions for the lifetime of the calling component. */
-export function useSetPageHeader(content: PageHeaderContent) {
+function usePageHeaderSetters() {
   const setters = useContext(PageHeaderSettersContext);
   if (!setters) {
-    throw new Error("useSetPageHeader must be used within PageHeaderProvider");
+    throw new Error("Page header hooks must be used within PageHeaderProvider");
   }
-  const { setHeader, clearHeader } = setters;
+  return setters;
+}
+
+/**
+ * Set sticky header title/actions for the lifetime of the calling component.
+ * Omitting `filters` leaves any filters set by another caller (e.g. layout breadcrumb).
+ */
+export function useSetPageHeader(content: PageHeaderContent) {
+  const { patchHeader } = usePageHeaderSetters();
   const { title, subtitle, filters, actions } = content;
+  const includeFilters = Object.prototype.hasOwnProperty.call(content, "filters");
 
   useEffect(() => {
-    setHeader({ title, subtitle, filters, actions });
-    return () => clearHeader();
-  }, [title, subtitle, filters, actions, setHeader, clearHeader]);
+    const patch: PageHeaderContent = {
+      title: title ?? null,
+      subtitle: subtitle ?? null,
+      actions: actions ?? null,
+    };
+    if (includeFilters) patch.filters = filters ?? null;
+    patchHeader(patch);
+    return () => {
+      const clear: PageHeaderContent = {
+        title: null,
+        subtitle: null,
+        actions: null,
+      };
+      if (includeFilters) clear.filters = null;
+      patchHeader(clear);
+    };
+  }, [title, subtitle, filters, actions, includeFilters, patchHeader]);
+}
+
+/** Set content-toolbar filters (left) without owning title/actions. */
+export function usePageHeaderFilters(filters: ReactNode) {
+  const { patchHeader } = usePageHeaderSetters();
+
+  useEffect(() => {
+    patchHeader({ filters });
+    return () => patchHeader({ filters: null });
+  }, [filters, patchHeader]);
 }
 
 /** Longest-prefix match for default section titles in the sticky header. */
