@@ -17,6 +17,7 @@ import { AssetCalendarEventsList } from "./AssetCalendarEventsList";
 import { AssetActions } from "./AssetActions";
 import { formatDowntimeMinutesSpanish } from "@/lib/machine-downtime";
 import { SetPageHeader } from "@/components/SetPageHeader";
+import { AssetPhotoThumb } from "../AssetImageField";
 
 async function getAsset(id: string) {
   const asset = await db.query.assets.findFirst({
@@ -116,6 +117,19 @@ export default async function AssetDetailPage({
           Máquinas
         </Link>
       </div>
+      <section className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <AssetPhotoThumb imageUrl={asset.imageUrl} name={asset.name} size="lg" />
+        <div className="min-w-0">
+          <p className="text-sm text-zinc-500">ID</p>
+          <p className="font-medium text-zinc-900">{asset.assetId}</p>
+          <Link
+            href={`/assets/${asset.id}/edit`}
+            className="mt-2 inline-block text-sm font-medium text-primary-600 hover:underline"
+          >
+            {asset.imageUrl ? "Cambiar foto" : "Añadir foto"}
+          </Link>
+        </div>
+      </section>
       <section
         aria-labelledby="downtime-heading"
         className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"

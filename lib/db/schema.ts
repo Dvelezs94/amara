@@ -52,6 +52,8 @@ export const assets = pgTable("assets", {
   }),
   /** Si es false, no se registra paro de máquina en tareas de este activo (KPI y formularios). */
   tracksMachineDowntime: boolean("tracks_machine_downtime").notNull().default(true),
+  /** Foto principal de la máquina (URL pública S3). */
+  imageUrl: text("image_url"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .notNull()

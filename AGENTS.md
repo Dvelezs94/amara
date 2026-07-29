@@ -56,6 +56,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 - **Checklist revisions** — Checklist edits create named proposed revisions (starting from baseline revision `0`). Revisions are reviewed in the right-side panel on checklist detail, and users with role **calidad** can approve/reject proposals.
 - **Checklist folders** — Optional hierarchy (`checklist_folders` + `checklist_templates.folder_id`). List UI supports creating/moving folders and moving templates between folders (admin/tecnico only for mutations). Apply migration `0008_checklist_folders.sql` / `npm run db:migrate`.
 - **Asset areas** — Flat (non-nested) areas for machines (`asset_groups` + `assets.group_id`; UI label: «Área»). List UI on `/assets` (explorer) supports creating/renaming/deleting areas and moving machines between them. Apply migration `0022_asset_groups.sql` / `npm run db:migrate`.
+- **Machine photos** — Optional hero image on assets (`assets.image_url`). Upload via `POST /api/assets/{id}/image` (images only, S3). Shown as thumbnails on `/assets` list and on asset detail; set from create/edit forms. Apply migration `0025_asset_image_url.sql` / `npm run db:migrate`.
 - **Calendars** — Named calendars for areas/teams (`calendars` + `maintenance_schedules.calendar_id`). Built-in default **Mantenimiento** (`cal_mantenimiento`); new/orphan schedules are assigned there. `/calendario` sidebar switches views (Todos / each calendar); dashboard «Próximos eventos» still aggregates all calendars. Apply migrations `0023_calendars.sql` + `0024_default_mantenimiento_calendar.sql` / `npm run db:migrate`.
 - **Touch** — `.tap-target` in globals for minimum touch size on coarse pointers
 
@@ -78,6 +79,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
   - Roles: `lib/auth-shared.ts`
   - Checklists (plantillas, cierre de tarea): `lib/checklist-items-from-payload.ts`, `lib/checklist-completion.ts`
   - Asset areas (lista de máquinas): `lib/asset-group-helpers.ts`
+  - Machine photos (nombre de archivo): `lib/asset-image-file.ts`
   - Calendars (filtro por calendario): `lib/calendar-helpers.ts`
   - Work-order completion notifications: `lib/work-order-completion-notifications.ts`
 - **CI / pre-merge:** Run **`npm test`** before considering work done (same bar as `npm run lint`).

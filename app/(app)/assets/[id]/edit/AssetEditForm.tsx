@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { sortAssetGroups } from "@/lib/asset-group-helpers";
+import { AssetImageField } from "../../AssetImageField";
 
 type Group = {
   id: string;
@@ -17,6 +18,7 @@ type AssetEditFormProps = {
   initialAssetId: string;
   initialTracksMachineDowntime: boolean;
   initialGroupId: string | null;
+  initialImageUrl?: string | null;
 };
 
 export function AssetEditForm({
@@ -25,12 +27,14 @@ export function AssetEditForm({
   initialAssetId,
   initialTracksMachineDowntime,
   initialGroupId,
+  initialImageUrl = null,
 }: AssetEditFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
+  const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +93,11 @@ export function AssetEditForm({
       {error && (
         <p className="text-sm text-red-600 bg-red-50 rounded-lg p-2">{error}</p>
       )}
+      <AssetImageField
+        assetId={id}
+        initialImageUrl={imageUrl}
+        onUploaded={(url) => setImageUrl(url)}
+      />
       <div>
         <label htmlFor="name" className="block text-sm font-medium text-zinc-700 mb-1">
           Nombre *

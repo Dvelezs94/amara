@@ -155,6 +155,13 @@
       "when": 1780700000000,
       "tag": "0024_default_mantenimiento_calendar",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1780800000000,
+      "tag": "0025_asset_image_url",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { sortAssetGroups } from "@/lib/asset-group-helpers";
+import { AssetImageField } from "./AssetImageField";
 
 type Group = {
   id: string;
@@ -17,6 +18,7 @@ export function AssetForm({ initialGroupId = null }: { initialGroupId?: string |
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
+  const [imageFile, setImageFile] = useState<File | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +63,27 @@ export function AssetForm({ initialGroupId = null }: { initialGroupId?: string |
         setLoading(false);
         return;
       }
-      router.push(`/assets/${data.id}`);
+      const newId = data.id as string;
+      if (imageFile && newId) {
+        const fd = new FormData();
+        fd.append("file", imageFile);
+        const imgRes = await fetch(`/api/assets/${newId}/image`, {
+          method: "POST",
+          body: fd,
+        });
+        if (!imgRes.ok) {
+          const imgData = await imgRes.json().catch(() => ({}));
+          setError(
+            imgData.error ??
+              "Máquina creada, pero no se pudo subir la foto. Puedes añadirla al editar."
+          );
+          setLoading(false);
+          router.push(`/assets/${newId}/edit`);
+          router.refresh();
+          return;
+        }
+      }
+      router.push(`/assets/${newId}`);
       router.refresh();
     } catch {
       setError("Algo salió mal");
@@ -74,6 +96,7 @@ export function AssetForm({ initialGroupId = null }: { initialGroupId?: string |
       {error && (
         <p className="text-sm text-red-600 bg-red-50 rounded-lg p-2">{error}</p>
       )}
+      <AssetImageField onFileChange={setImageFile} />
       <div>
         <label htmlFor="name" className="block text-sm font-medium text-zinc-700 mb-1">
           Nombre *

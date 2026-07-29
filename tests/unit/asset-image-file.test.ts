@@ -1,0 +1,20 @@
+import { describe, expect, it } from "vitest";
+import { sanitizeAssetImageFilename } from "@/lib/asset-image-file";
+
+describe("sanitizeAssetImageFilename", () => {
+  it("keeps safe characters", () => {
+    expect(sanitizeAssetImageFilename("motor-01")).toBe("motor-01");
+  });
+  it("replaces unsafe characters", () => {
+    expect(sanitizeAssetImageFilename("foto máquina #2.jpg")).toBe(
+      "foto_m_quina__2.jpg"
+    );
+  });
+  it("falls back when empty after sanitize", () => {
+    expect(sanitizeAssetImageFilename("!!!")).toBe("file");
+  });
+  it("truncates long names", () => {
+    const long = "a".repeat(200);
+    expect(sanitizeAssetImageFilename(long).length).toBe(120);
+  });
+});

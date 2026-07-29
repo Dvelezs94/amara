@@ -28,6 +28,7 @@ export default async function EditAssetPage({
         initialAssetId={asset.assetId}
         initialTracksMachineDowntime={asset.tracksMachineDowntime !== false}
         initialGroupId={asset.groupId ?? null}
+        initialImageUrl={asset.imageUrl ?? null}
       />
       <Link
         href={`/assets/${id}`}
