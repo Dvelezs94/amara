@@ -4,7 +4,8 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 import { recordAuditLog } from "@/lib/audit";
-import { assetImageProxyPath, writeAssetImageFile } from "@/lib/asset-image-file";
+import { assetImageProxyPath } from "@/lib/asset-image-helpers";
+import { writeAssetImageFile } from "@/lib/asset-image-file";
 import {
   deleteFileFromS3ByPublicUrl,
   presignS3PublicUrl,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assetImageProxyPath,
   sanitizeAssetImageFilename,
-} from "@/lib/asset-image-file";
+} from "@/lib/asset-image-helpers";
 
 describe("sanitizeAssetImageFilename", () => {
   it("keeps safe characters", () => {

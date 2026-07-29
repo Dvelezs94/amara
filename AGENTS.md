@@ -79,7 +79,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
   - Roles: `lib/auth-shared.ts`
   - Checklists (plantillas, cierre de tarea): `lib/checklist-items-from-payload.ts`, `lib/checklist-completion.ts`
   - Asset areas (lista de máquinas): `lib/asset-group-helpers.ts`
-  - Machine photos (nombre de archivo): `lib/asset-image-file.ts`
+  - Machine photos (proxy path / filename sanitize): `lib/asset-image-helpers.ts`
   - Calendars (filtro por calendario): `lib/calendar-helpers.ts`
   - Work-order completion notifications: `lib/work-order-completion-notifications.ts`
 - **CI / pre-merge:** Run **`npm test`** before considering work done (same bar as `npm run lint`).

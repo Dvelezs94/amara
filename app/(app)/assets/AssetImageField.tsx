@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Factory, ImagePlus, X } from "lucide-react";
-import { assetImageProxyPath } from "@/lib/asset-image-file";
+import { assetImageProxyPath } from "@/lib/asset-image-helpers";
 
 type AssetImageFieldProps = {
   /** Whether an image already exists on the server (edit mode). */
