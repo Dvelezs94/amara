@@ -62,6 +62,7 @@ import {
   AndroidUpdateProgressModal,
   type AndroidUpdateUiState,
 } from "./AndroidUpdateProgressModal";
+import { BottomSheetSelectModal } from "./BottomSheetSelectModal";
 import { installLocalApk, openUnknownSourcesSettings } from "./lib/apk-install";
 import {
   isRemoteVersionNewer,
@@ -3748,159 +3749,129 @@ function AppContent() {
                   </View>
                 ) : null}
 
-                <Modal
+                <BottomSheetSelectModal
                   visible={machinePickerVisible}
-                  transparent
-                  animationType="fade"
+                  title="Máquina"
                   onRequestClose={() => setMachinePickerVisible(false)}
+                  sheetStyle={{ paddingBottom: Math.max(insets.bottom, 16) }}
                 >
-                  <View style={styles.checklistDropdownModalRoot}>
+                  <ScrollView
+                    style={styles.checklistDropdownScroll}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator
+                  >
                     <Pressable
-                      style={styles.checklistDropdownBackdrop}
-                      onPress={() => setMachinePickerVisible(false)}
-                    />
-                    <View
-                      style={[
-                        styles.checklistDropdownSheet,
-                        { paddingBottom: Math.max(insets.bottom, 16) },
-                      ]}
+                      style={styles.checklistDropdownOption}
+                      onPress={() => void patchWorkOrderAsset(null)}
                     >
-                      <Text style={styles.checklistDropdownSheetTitle}>Máquina</Text>
-                      <ScrollView
-                        style={styles.checklistDropdownScroll}
-                        keyboardShouldPersistTaps="handled"
-                        showsVerticalScrollIndicator
-                      >
+                      <Text style={styles.checklistDropdownOptionTextMuted}>Sin máquina</Text>
+                    </Pressable>
+                    {machines.map((m) => {
+                      const selected = selectedWorkOrder?.asset?.id === m.id;
+                      return (
+                        <Pressable
+                          key={m.id}
+                          style={[
+                            styles.checklistDropdownOption,
+                            selected && styles.checklistDropdownOptionSelected,
+                          ]}
+                          onPress={() => void patchWorkOrderAsset(m.id)}
+                        >
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text
+                              style={[
+                                styles.checklistDropdownOptionText,
+                                selected && styles.checklistDropdownOptionTextSelected,
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {m.name}
+                            </Text>
+                            <Text style={styles.detailRowSub}>{m.assetId}</Text>
+                          </View>
+                          {selected ? (
+                            <Ionicons name="checkmark" size={20} color={theme.primary} />
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                  <Pressable
+                    style={styles.checklistDropdownCloseBtn}
+                    onPress={() => setMachinePickerVisible(false)}
+                  >
+                    <Text style={styles.checklistDropdownCloseBtnText}>Cerrar</Text>
+                  </Pressable>
+                </BottomSheetSelectModal>
+
+                <BottomSheetSelectModal
+                  visible={checklistDropdownModal != null}
+                  title={checklistDropdownModal?.label ?? ""}
+                  onRequestClose={() => setChecklistDropdownModal(null)}
+                  sheetStyle={{ paddingBottom: Math.max(insets.bottom, 16) }}
+                >
+                  <ScrollView
+                    style={styles.checklistDropdownScroll}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator
+                  >
+                    {checklistDropdownModal ? (
+                      <>
                         <Pressable
                           style={styles.checklistDropdownOption}
-                          onPress={() => void patchWorkOrderAsset(null)}
+                          onPress={() => {
+                            void updateChecklist(checklistDropdownModal.itemId, { value: null });
+                            setChecklistDropdownModal(null);
+                          }}
                         >
-                          <Text style={styles.checklistDropdownOptionTextMuted}>Sin máquina</Text>
+                          <Text style={styles.checklistDropdownOptionTextMuted}>
+                            (Sin seleccion)
+                          </Text>
                         </Pressable>
-                        {machines.map((m) => {
-                          const selected = selectedWorkOrder?.asset?.id === m.id;
+                        {checklistDropdownModal.options.map((opt) => {
+                          const m = selectedWorkOrder?.checklist.find(
+                            (i) => i.id === checklistDropdownModal.itemId
+                          );
+                          const selected = String(m?.value ?? "") === opt;
                           return (
                             <Pressable
-                              key={m.id}
+                              key={opt}
                               style={[
                                 styles.checklistDropdownOption,
                                 selected && styles.checklistDropdownOptionSelected,
                               ]}
-                              onPress={() => void patchWorkOrderAsset(m.id)}
+                              onPress={() => {
+                                void updateChecklist(checklistDropdownModal.itemId, {
+                                  value: opt,
+                                });
+                                setChecklistDropdownModal(null);
+                              }}
                             >
-                              <View style={{ flex: 1, minWidth: 0 }}>
-                                <Text
-                                  style={[
-                                    styles.checklistDropdownOptionText,
-                                    selected && styles.checklistDropdownOptionTextSelected,
-                                  ]}
-                                  numberOfLines={2}
-                                >
-                                  {m.name}
-                                </Text>
-                                <Text style={styles.detailRowSub}>{m.assetId}</Text>
-                              </View>
+                              <Text
+                                style={[
+                                  styles.checklistDropdownOptionText,
+                                  selected && styles.checklistDropdownOptionTextSelected,
+                                ]}
+                                numberOfLines={3}
+                              >
+                                {opt}
+                              </Text>
                               {selected ? (
                                 <Ionicons name="checkmark" size={20} color={theme.primary} />
                               ) : null}
                             </Pressable>
                           );
                         })}
-                      </ScrollView>
-                      <Pressable
-                        style={styles.checklistDropdownCloseBtn}
-                        onPress={() => setMachinePickerVisible(false)}
-                      >
-                        <Text style={styles.checklistDropdownCloseBtnText}>Cerrar</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                </Modal>
-
-                <Modal
-                  visible={checklistDropdownModal != null}
-                  transparent
-                  animationType="fade"
-                  onRequestClose={() => setChecklistDropdownModal(null)}
-                >
-                  <View style={styles.checklistDropdownModalRoot}>
-                    <Pressable
-                      style={styles.checklistDropdownBackdrop}
-                      onPress={() => setChecklistDropdownModal(null)}
-                    />
-                    <View
-                      style={[
-                        styles.checklistDropdownSheet,
-                        { paddingBottom: Math.max(insets.bottom, 16) },
-                      ]}
-                    >
-                      <Text style={styles.checklistDropdownSheetTitle} numberOfLines={2}>
-                        {checklistDropdownModal?.label ?? ""}
-                      </Text>
-                      <ScrollView
-                        style={styles.checklistDropdownScroll}
-                        keyboardShouldPersistTaps="handled"
-                        showsVerticalScrollIndicator
-                      >
-                        {checklistDropdownModal ? (
-                          <>
-                            <Pressable
-                              style={styles.checklistDropdownOption}
-                              onPress={() => {
-                                void updateChecklist(checklistDropdownModal.itemId, { value: null });
-                                setChecklistDropdownModal(null);
-                              }}
-                            >
-                              <Text style={styles.checklistDropdownOptionTextMuted}>
-                                (Sin seleccion)
-                              </Text>
-                            </Pressable>
-                            {checklistDropdownModal.options.map((opt) => {
-                              const m = selectedWorkOrder?.checklist.find(
-                                (i) => i.id === checklistDropdownModal.itemId
-                              );
-                              const selected = String(m?.value ?? "") === opt;
-                              return (
-                                <Pressable
-                                  key={opt}
-                                  style={[
-                                    styles.checklistDropdownOption,
-                                    selected && styles.checklistDropdownOptionSelected,
-                                  ]}
-                                  onPress={() => {
-                                    void updateChecklist(checklistDropdownModal.itemId, {
-                                      value: opt,
-                                    });
-                                    setChecklistDropdownModal(null);
-                                  }}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.checklistDropdownOptionText,
-                                      selected && styles.checklistDropdownOptionTextSelected,
-                                    ]}
-                                    numberOfLines={3}
-                                  >
-                                    {opt}
-                                  </Text>
-                                  {selected ? (
-                                    <Ionicons name="checkmark" size={20} color={theme.primary} />
-                                  ) : null}
-                                </Pressable>
-                              );
-                            })}
-                          </>
-                        ) : null}
-                      </ScrollView>
-                      <Pressable
-                        style={styles.checklistDropdownCloseBtn}
-                        onPress={() => setChecklistDropdownModal(null)}
-                      >
-                        <Text style={styles.checklistDropdownCloseBtnText}>Cerrar</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                </Modal>
+                      </>
+                    ) : null}
+                  </ScrollView>
+                  <Pressable
+                    style={styles.checklistDropdownCloseBtn}
+                    onPress={() => setChecklistDropdownModal(null)}
+                  >
+                    <Text style={styles.checklistDropdownCloseBtnText}>Cerrar</Text>
+                  </Pressable>
+                </BottomSheetSelectModal>
 
                 {checklistDatePicker != null && Platform.OS === "android" ? (
                   <DateTimePicker
