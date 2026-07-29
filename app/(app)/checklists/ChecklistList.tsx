@@ -11,6 +11,7 @@ import Link from "next/link";
 import {
   ChevronDown,
   ChevronRight,
+  FoldVertical,
   Folder,
   FolderPlus,
   Pencil,
@@ -73,16 +74,48 @@ export function ChecklistList({ canCreate = true }: { canCreate?: boolean }) {
     parentFolderId: string | null;
   } | null>(null);
 
+  const allFoldersCollapsed =
+    folders.length > 0 && folders.every((f) => openFolders[f.id] === false);
+
   useSetPageHeader({
     title: "Checklist",
     filters: (
-      <input
-        type="search"
-        placeholder="Buscar plantillas o carpetas…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 placeholder:text-zinc-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 md:max-w-md"
-      />
+      <>
+        <input
+          type="search"
+          placeholder="Buscar plantillas o carpetas…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 placeholder:text-zinc-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 md:max-w-md"
+        />
+        <button
+          type="button"
+          disabled={folders.length === 0}
+          title={
+            allFoldersCollapsed
+              ? "Expandir todas las carpetas"
+              : "Contraer todas las carpetas"
+          }
+          aria-label={
+            allFoldersCollapsed
+              ? "Expandir todas las carpetas"
+              : "Contraer todas las carpetas"
+          }
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-2 text-sm font-medium text-zinc-800 tap-target hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => {
+            setOpenFolders(
+              Object.fromEntries(
+                folders.map((f) => [f.id, allFoldersCollapsed])
+              )
+            );
+          }}
+        >
+          <FoldVertical className="h-4 w-4" />
+          <span className="hidden sm:inline">
+            {allFoldersCollapsed ? "Expandir todo" : "Contraer todo"}
+          </span>
+        </button>
+      </>
     ),
     actions: canCreate ? (
       <>
