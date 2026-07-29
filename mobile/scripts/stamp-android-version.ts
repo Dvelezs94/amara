@@ -31,14 +31,12 @@ const appConfig = JSON.parse(fs.readFileSync(appJsonPath, "utf8")) as {
     [k: string]: unknown;
   };
 };
-const baseVersion = String(appConfig?.expo?.version ?? "1.0.0").split("+")[0] ?? "1.0.0";
 const runNumber = Number(process.env.GITHUB_RUN_NUMBER || "0");
 
 const stamped = buildAndroidAppVersion({
   now: new Date(),
   commitSha: gitSha(),
   runNumber: Number.isFinite(runNumber) ? runNumber : 0,
-  baseVersion,
   timeZone: "America/Monterrey",
 });
 

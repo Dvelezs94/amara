@@ -67,10 +67,11 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 
 ### Testing (required for agents)
 
+- **Requirement:** **Every feature needs tests** — web and mobile. New or changed product behavior is not done until it has automated coverage (or an existing suite is extended). Prefer unit tests on pure helpers; if UI/API logic is hard to test as-is, extract helpers into `lib/` / `mobile/lib/` and test those in the same change.
 - **Runner (web):** **Vitest** (`vitest.config.ts`), **`npm test`** / **`npm run test:watch`**
 - **Runner (mobile):** Vitest under `mobile/` (`mobile/vitest.config.ts`), **`cd mobile && npm test`**
 - **Layout:** `tests/unit/*.test.ts` (web) and `mobile/tests/unit/*.test.ts` (mobile) — prefer **pure logic** in `lib/` / `mobile/lib/` (easy to cover); API routes may use **integration tests** with a test DB or HTTP mocks when added later.
-- **Policy:** When you **add or change behavior** (new API, new `lib/` helper, business rules, auth/middleware rules, recurrence, work-order UX logic, mobile helpers, etc.), **add or update tests in the same change** so `npm test` (and mobile `npm test` when touching `mobile/`) stays green. If something is too coupled to run quickly, extract testable helpers into `lib/` / `mobile/lib/` first, then test them.
+- **Policy:** When you **add or change behavior** (new API, new `lib/` helper, business rules, auth/middleware rules, recurrence, work-order UX logic, mobile helpers, machine photos, calendars, etc.), **add or update tests in the same change** so `npm test` (and mobile `npm test` when touching `mobile/`) stays green. Do not ship feature work without tests.
 - **Coverage map (extend as features grow):**
   - Work orders / UI strings: `lib/work-order-kind.ts`, `lib/work-order-duration.ts`, `lib/machine-downtime.ts` (paro de máquina en tareas y total por activo)
   - Calendar / maintenance: `lib/maintenance-recurrence.ts`
@@ -116,8 +117,9 @@ cd mobile && npm install && npm run start
 - GitHub Actions builds an Android release APK from Expo (`expo prebuild` + Gradle `assembleRelease`)
 - CI sets `EXPO_PUBLIC_API_HOST=https://msa.saimco.mx` for the Android build job
 - APK is copied to `/downloads/android` when available (falls back to `downloads/android` in workspace if root path is unavailable), then uploaded as workflow artifact
-- CI stamps Android `versionName` / `versionCode` from **day (America/Monterrey) + commit SHA** (and `GITHUB_RUN_NUMBER` for same-day monotonicity) via `mobile/scripts/stamp-android-version.ts` before prebuild
+- CI stamps Android `versionName` / `versionCode` from **day (America/Monterrey) + commit SHA** (and `GITHUB_RUN_NUMBER` for same-day monotonicity) via `mobile/scripts/stamp-android-version.ts` before prebuild — `versionName` looks like `20260728.a1b2c3d`
 - CI also publishes `/downloads/android/version.json` (versionName/versionCode + APK URL) for in-app Android update checks
+- In-app updater downloads the APK with progress UI, then installs via **content URI** + `expo-intent-launcher` (not `Linking.openURL(file://…)`). Needs `REQUEST_INSTALL_PACKAGES` and a native rebuild after dependency/permission changes
 - Deploy job syncs `downloads/android/*` to server path `/var/www/msa/downloads/android/`
 
 ---
@@ -140,6 +142,6 @@ cd mobile && npm install && npm run start
 
 ## Maintenance of this file
 
-**Agents:** When you finish work that changes architecture, env requirements, role limits, folder layout, or **behavior**, **update `AGENTS.md`** as needed and **add/update tests** (see **Testing** above). You may **override, shorten, or restructure** this document if that improves clarity—this is not a legal spec, it is operational context.
+**Agents:** When you finish work that changes architecture, env requirements, role limits, folder layout, or **behavior**, **update `AGENTS.md`** as needed and **add/update tests for that feature** on web and/or mobile (see **Testing** above — every feature needs tests). You may **override, shorten, or restructure** this document if that improves clarity—this is not a legal spec, it is operational context.
 
 **Humans:** Treat this as a quick orientation; the code and `middleware.ts` remain authoritative for security behavior.

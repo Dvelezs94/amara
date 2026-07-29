@@ -49,6 +49,11 @@ import {
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import {
+  AndroidUpdateProgressModal,
+  type AndroidUpdateUiState,
+} from "./AndroidUpdateProgressModal";
+import { installLocalApk, openUnknownSourcesSettings } from "./lib/apk-install";
+import {
   isRemoteVersionNewer,
   normalizeVersionCode,
   resolveRemoteUrl,
@@ -69,6 +74,7 @@ import {
   looksLikePdf,
   type KnowledgeFileKind,
 } from "./lib/file-kind";
+import { downloadProgressRatio } from "./lib/update-download";
 import { normalizeWoStatus, statusLabel, type WoStatus } from "./lib/wo-status";
 
 type AppSection = "workOrders" | "knowledgeBase" | "notifications" | "profile";
@@ -1182,7 +1188,54 @@ function AppContent() {
   /** After login, default assignee filter to current user once per session. */
   const assigneeFilterDefaultAppliedRef = useRef(false);
   const shownUpdateVersionRef = useRef<string | null>(null);
-  const [updateDownloading, setUpdateDownloading] = useState(false);
+  const pendingApkUriRef = useRef<string | null>(null);
+  const [updateUi, setUpdateUi] = useState<AndroidUpdateUiState>({
+    visible: false,
+    phase: "downloading",
+    versionName: "",
+    progress: 0,
+    bytesWritten: 0,
+    bytesTotal: 0,
+    error: null,
+  });
+  const androidPackageName =
+    Constants.expoConfig?.android?.package ?? "com.diegodt2.mobile";
+
+  const closeUpdateUi = useCallback(() => {
+    setUpdateUi((prev) => ({ ...prev, visible: false, error: null }));
+  }, []);
+
+  const retryInstallPendingApk = useCallback(async () => {
+    const uri = pendingApkUriRef.current;
+    if (!uri) {
+      setUpdateUi((prev) => ({
+        ...prev,
+        phase: "error",
+        error: "No hay un APK descargado para instalar. Intenta actualizar de nuevo.",
+      }));
+      return;
+    }
+    setUpdateUi((prev) => ({
+      ...prev,
+      visible: true,
+      phase: "installing",
+      error: null,
+    }));
+    try {
+      await installLocalApk(uri);
+      closeUpdateUi();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo abrir el instalador. Permite instalar apps desconocidas e intentalo de nuevo.";
+      setUpdateUi((prev) => ({
+        ...prev,
+        phase: "error",
+        error: message,
+      }));
+    }
+  }, [closeUpdateUi]);
 
   const canLogin = username.trim().length > 0 && password.trim().length > 0;
   const firstName = useMemo(() => {
@@ -2058,29 +2111,70 @@ function AppContent() {
       Alert.alert("Actualizacion", "No se encontro una URL valida para descargar la actualizacion.");
       return;
     }
-    setUpdateDownloading(true);
+    pendingApkUriRef.current = null;
+    setUpdateUi({
+      visible: true,
+      phase: "downloading",
+      versionName: remote.versionName,
+      progress: 0,
+      bytesWritten: 0,
+      bytesTotal: 0,
+      error: null,
+    });
     try {
       const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
       if (!baseDir) {
+        closeUpdateUi();
         await Linking.openURL(apkUrl);
         return;
       }
       const fileName = `msa-update-${Date.now()}.apk`;
       const localUri = `${baseDir}${fileName}`;
-      const download = await FileSystem.downloadAsync(apkUrl, localUri);
-      const canOpen = await Linking.canOpenURL(download.uri).catch(() => false);
-      if (canOpen) {
-        await Linking.openURL(download.uri);
-      } else {
-        await Linking.openURL(apkUrl);
+      const downloadResumable = FileSystem.createDownloadResumable(
+        apkUrl,
+        localUri,
+        {},
+        (progressData) => {
+          const ratio = downloadProgressRatio(
+            progressData.totalBytesWritten,
+            progressData.totalBytesExpectedToWrite
+          );
+          setUpdateUi((prev) =>
+            prev.visible
+              ? {
+                  ...prev,
+                  progress: ratio,
+                  bytesWritten: progressData.totalBytesWritten,
+                  bytesTotal: Math.max(0, progressData.totalBytesExpectedToWrite),
+                }
+              : prev
+          );
+        }
+      );
+      const download = await downloadResumable.downloadAsync();
+      if (!download?.uri) {
+        throw new Error("No se pudo guardar el archivo de actualizacion.");
       }
+      pendingApkUriRef.current = download.uri;
+      setUpdateUi((prev) => ({
+        ...prev,
+        phase: "installing",
+        progress: 1,
+        bytesWritten: prev.bytesTotal || prev.bytesWritten,
+      }));
+      await installLocalApk(download.uri);
+      closeUpdateUi();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo descargar la actualizacion.";
-      Alert.alert("Actualizacion", message);
-    } finally {
-      setUpdateDownloading(false);
+      const message =
+        error instanceof Error ? error.message : "No se pudo descargar la actualizacion.";
+      setUpdateUi((prev) => ({
+        ...prev,
+        visible: true,
+        phase: "error",
+        error: message,
+      }));
     }
-  }, []);
+  }, [closeUpdateUi]);
 
   const checkAndroidAppUpdate = useCallback(async () => {
     if (Platform.OS !== "android") return;
@@ -2104,7 +2198,7 @@ function AppContent() {
       };
       if (!isRemoteVersionNewer(appVersionName, appVersionCode, remote)) return;
       const alertKey = `${remote.versionName}:${remote.versionCode ?? "na"}`;
-      if (shownUpdateVersionRef.current === alertKey || updateDownloading) return;
+      if (shownUpdateVersionRef.current === alertKey || updateUi.visible) return;
       shownUpdateVersionRef.current = alertKey;
       const body = remote.notes
         ? `Version ${remote.versionName} disponible.\n\n${remote.notes}`
@@ -2121,7 +2215,7 @@ function AppContent() {
     } catch {
       // Ignore updater errors to avoid noisy UX when offline.
     }
-  }, [appVersionCode, appVersionName, startAndroidAppUpdate, updateDownloading]);
+  }, [appVersionCode, appVersionName, startAndroidAppUpdate, updateUi.visible]);
 
   useEffect(() => {
     onAuthExpired = () => {
@@ -2350,6 +2444,19 @@ function AppContent() {
 
   const detailSlideCompleteDisabled = detailSlideCompleteNeedsHint;
 
+  const updateProgressModal = (
+    <AndroidUpdateProgressModal
+      state={updateUi}
+      onClose={closeUpdateUi}
+      onRetryInstall={() => {
+        void retryInstallPendingApk();
+      }}
+      onOpenInstallSettings={() => {
+        void openUnknownSourcesSettings(androidPackageName);
+      }}
+    />
+  );
+
   if (authHydrating) {
     return (
       <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
@@ -2357,6 +2464,7 @@ function AppContent() {
           <ActivityIndicator color={theme.primary} />
           <Text style={styles.loginHydrationText}>Cargando...</Text>
         </View>
+        {updateProgressModal}
         <StatusBar style="dark" />
       </SafeAreaView>
     );
@@ -2420,6 +2528,7 @@ function AppContent() {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+        {updateProgressModal}
         <StatusBar style="dark" />
       </SafeAreaView>
     );
@@ -4199,6 +4308,7 @@ function AppContent() {
       </Modal>
 
       <StatusBar style="dark" />
+      {updateProgressModal}
     </SafeAreaView>
   );
 }

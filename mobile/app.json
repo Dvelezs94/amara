@@ -24,7 +24,7 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.REQUEST_INSTALL_PACKAGES"
       ],
       "package": "com.diegodt2.mobile"
     },

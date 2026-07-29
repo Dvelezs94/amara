@@ -36,15 +36,14 @@ describe("daysSinceVersionEpoch", () => {
 describe("buildAndroidAppVersion", () => {
   const now = new Date("2026-07-28T18:00:00.000Z");
 
-  it("builds versionName from base + day + sha", () => {
+  it("builds versionName from day + sha", () => {
     const v = buildAndroidAppVersion({
       now,
       commitSha: "deadbeef1234567",
       runNumber: 42,
-      baseVersion: "1.0.0",
       timeZone: "UTC",
     });
-    expect(v.versionName).toBe("1.0.0+20260728.deadbee");
+    expect(v.versionName).toBe("20260728.deadbee");
     expect(v.shortSha).toBe("deadbee");
     expect(v.dayStamp).toBe("20260728");
   });

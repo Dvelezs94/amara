@@ -9,8 +9,6 @@ export type AndroidBuildVersionInput = {
   commitSha: string;
   /** GitHub Actions run number — preferred for same-day monotonic increments. */
   runNumber?: number | null;
-  /** Base semver from app.json (e.g. "1.0.0"). */
-  baseVersion?: string;
   /** IANA timezone for the calendar "day" part of versionName. */
   timeZone?: string;
 };
@@ -63,11 +61,10 @@ function commitDerivedSuffix(shortSha: string): number {
 /**
  * versionCode = daysSinceEpoch * 10000 + suffix(0..9999)
  * Always increases across days; within a day, GITHUB_RUN_NUMBER keeps it monotonic.
- * versionName = `{base}+{YYYYMMDD}.{shortSha}`
+ * versionName = `{YYYYMMDD}.{shortSha}`
  */
 export function buildAndroidAppVersion(input: AndroidBuildVersionInput): AndroidBuildVersion {
   const timeZone = input.timeZone ?? "America/Monterrey";
-  const base = (input.baseVersion ?? "1.0.0").trim() || "1.0.0";
   const shortSha = shortCommitSha(input.commitSha);
   const dayStamp = dayStampInTimeZone(input.now, timeZone);
   const days = daysSinceVersionEpoch(input.now);
@@ -77,7 +74,7 @@ export function buildAndroidAppVersion(input: AndroidBuildVersionInput): Android
     Number.isInteger(run) && run > 0 ? run % 10000 : commitDerivedSuffix(shortSha);
 
   const versionCode = days * 10000 + suffix;
-  const versionName = `${base}+${dayStamp}.${shortSha}`;
+  const versionName = `${dayStamp}.${shortSha}`;
 
   return { versionName, versionCode, dayStamp, shortSha };
 }
