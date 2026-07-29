@@ -103,7 +103,7 @@ export async function POST(
     id,
     assetId,
     filename: baseName + ext || file.name,
-    fileUrl,
+    fileUrl: `/api/asset-files/${id}`,
     category,
   });
 }

@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     id,
     assetId: null,
     filename: baseName + ext || file.name,
-    fileUrl,
+    fileUrl: `/api/asset-files/${id}`,
     category,
     createdAt: new Date().toISOString(),
   });

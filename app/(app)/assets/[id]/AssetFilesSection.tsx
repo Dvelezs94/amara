@@ -103,7 +103,7 @@ export function AssetFilesSection({
               <FileText className="h-5 w-5 text-zinc-400 shrink-0" />
               <div className="min-w-0 flex-1">
                 <a
-                  href={f.fileUrl}
+                  href={`/api/asset-files/${f.id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-medium text-zinc-900 hover:text-primary-600 truncate block"
@@ -115,7 +115,7 @@ export function AssetFilesSection({
                 )}
               </div>
               <a
-                href={f.fileUrl}
+                href={`/api/asset-files/${f.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-2 rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"

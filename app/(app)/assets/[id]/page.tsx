@@ -161,7 +161,14 @@ export default async function AssetDetailPage({
         )}
       </section>
 
-      <AssetFilesSection assetId={id} initialFiles={asset.files} />
+      <AssetFilesSection
+        assetId={id}
+        initialFiles={asset.files.map((f) => ({
+          ...f,
+          // Proxy through signed-download route (DB stores raw S3 URL).
+          fileUrl: `/api/asset-files/${f.id}`,
+        }))}
+      />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
