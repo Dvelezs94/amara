@@ -118,7 +118,13 @@ export default async function AssetDetailPage({
         </Link>
       </div>
       <section className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <AssetPhotoThumb imageUrl={asset.imageUrl} name={asset.name} size="lg" />
+        <AssetPhotoThumb
+          assetId={asset.id}
+          hasImage={asset.imageUrl}
+          name={asset.name}
+          size="lg"
+          cacheKey={asset.updatedAt}
+        />
         <div className="min-w-0">
           <p className="text-sm text-zinc-500">ID</p>
           <p className="font-medium text-zinc-900">{asset.assetId}</p>

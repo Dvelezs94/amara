@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeAssetImageFilename } from "@/lib/asset-image-file";
+import {
+  assetImageProxyPath,
+  sanitizeAssetImageFilename,
+} from "@/lib/asset-image-file";
 
 describe("sanitizeAssetImageFilename", () => {
   it("keeps safe characters", () => {
@@ -16,5 +19,14 @@ describe("sanitizeAssetImageFilename", () => {
   it("truncates long names", () => {
     const long = "a".repeat(200);
     expect(sanitizeAssetImageFilename(long).length).toBe(120);
+  });
+});
+
+describe("assetImageProxyPath", () => {
+  it("returns image API path", () => {
+    expect(assetImageProxyPath("abc")).toBe("/api/assets/abc/image");
+  });
+  it("adds cache key", () => {
+    expect(assetImageProxyPath("abc", 123)).toBe("/api/assets/abc/image?v=123");
   });
 });

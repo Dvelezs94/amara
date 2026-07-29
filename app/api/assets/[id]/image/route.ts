@@ -4,8 +4,35 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 import { recordAuditLog } from "@/lib/audit";
-import { writeAssetImageFile } from "@/lib/asset-image-file";
-import { deleteFileFromS3ByPublicUrl } from "@/lib/s3-storage";
+import { assetImageProxyPath, writeAssetImageFile } from "@/lib/asset-image-file";
+import {
+  deleteFileFromS3ByPublicUrl,
+  presignS3PublicUrl,
+} from "@/lib/s3-storage";
+
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { id } = await params;
+  const asset = await db.query.assets.findFirst({
+    where: eq(assets.id, id),
+    columns: { id: true, imageUrl: true },
+  });
+  if (!asset?.imageUrl) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  const signedUrl = presignS3PublicUrl(asset.imageUrl);
+  const format = new URL(req.url).searchParams.get("format");
+  if (format === "json") {
+    return NextResponse.json({ url: signedUrl });
+  }
+  return NextResponse.redirect(signedUrl, { status: 302 });
+}
 
 export async function POST(
   req: Request,
@@ -52,9 +79,10 @@ export async function POST(
   }
 
   const previousUrl = asset.imageUrl ?? null;
+  const now = new Date();
   await db
     .update(assets)
-    .set({ imageUrl: fileUrl, updatedAt: new Date() })
+    .set({ imageUrl: fileUrl, updatedAt: now })
     .where(eq(assets.id, id));
 
   if (previousUrl && previousUrl !== fileUrl) {
@@ -71,7 +99,7 @@ export async function POST(
 
   return NextResponse.json({
     ok: true,
-    imageUrl: fileUrl,
+    imageUrl: assetImageProxyPath(id, now.getTime()),
     filename: displayName,
   });
 }

@@ -374,9 +374,11 @@ export function AssetList() {
                         className="flex min-w-0 flex-1 items-center gap-3 tap-target"
                       >
                         <AssetPhotoThumb
-                          imageUrl={asset.imageUrl}
+                          assetId={asset.id}
+                          hasImage={asset.imageUrl}
                           name={asset.name}
                           size="md"
+                          cacheKey={asset.updatedAt}
                         />
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-zinc-900">

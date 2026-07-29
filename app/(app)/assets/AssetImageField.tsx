@@ -2,15 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Factory, ImagePlus, X } from "lucide-react";
+import { assetImageProxyPath } from "@/lib/asset-image-file";
 
 type AssetImageFieldProps = {
-  /** Existing server URL (edit mode). */
-  initialImageUrl?: string | null;
+  /** Whether an image already exists on the server (edit mode). */
+  hasImage?: boolean;
   /** Called when the user picks/clears a local file before create, or after remote upload. */
   onFileChange?: (file: File | null) => void;
   /** When set, uploads immediately to this asset id. */
   assetId?: string;
-  onUploaded?: (imageUrl: string | null) => void;
+  onUploaded?: (hasImage: boolean) => void;
   label?: string;
 };
 
@@ -36,21 +37,24 @@ function AssetPhotoPlaceholder({
 }
 
 export function AssetImageField({
-  initialImageUrl = null,
+  hasImage = false,
   onFileChange,
   assetId,
   onUploaded,
   label = "Foto de la máquina",
 }: AssetImageFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(initialImageUrl);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(() =>
+    hasImage && assetId ? assetImageProxyPath(assetId) : null
+  );
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setPreviewUrl(initialImageUrl);
-  }, [initialImageUrl]);
+    if (objectUrl) return;
+    setPreviewUrl(hasImage && assetId ? assetImageProxyPath(assetId) : null);
+  }, [hasImage, assetId, objectUrl]);
 
   useEffect(() => {
     return () => {
@@ -65,7 +69,7 @@ export function AssetImageField({
       setObjectUrl(null);
     }
     if (!file) {
-      setPreviewUrl(initialImageUrl);
+      setPreviewUrl(hasImage && assetId ? assetImageProxyPath(assetId) : null);
       onFileChange?.(null);
       return;
     }
@@ -93,9 +97,14 @@ export function AssetImageField({
         setError(data.error ?? "No se pudo subir la imagen");
         return;
       }
-      const nextUrl = typeof data.imageUrl === "string" ? data.imageUrl : null;
+      const nextUrl =
+        typeof data.imageUrl === "string"
+          ? data.imageUrl
+          : assetImageProxyPath(assetId, Date.now());
+      URL.revokeObjectURL(local);
+      setObjectUrl(null);
       setPreviewUrl(nextUrl);
-      onUploaded?.(nextUrl);
+      onUploaded?.(true);
     } catch {
       setError("No se pudo subir la imagen");
     } finally {
@@ -125,7 +134,7 @@ export function AssetImageField({
         return;
       }
       setPreviewUrl(null);
-      onUploaded?.(null);
+      onUploaded?.(false);
     } catch {
       setError("No se pudo quitar la imagen");
     } finally {
@@ -192,21 +201,26 @@ export function AssetImageField({
 }
 
 export function AssetPhotoThumb({
-  imageUrl,
+  assetId,
+  hasImage,
   name,
   size = "md",
+  cacheKey,
 }: {
-  imageUrl?: string | null;
+  assetId: string;
+  hasImage?: boolean | string | null;
   name: string;
   size?: "sm" | "md" | "lg";
+  cacheKey?: string | number | Date | null;
 }) {
   const sizeClass =
     size === "sm" ? "h-10 w-10" : size === "lg" ? "h-28 w-28" : "h-12 w-12";
-  if (imageUrl) {
+  const show = Boolean(hasImage);
+  if (show) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={imageUrl}
+        src={assetImageProxyPath(assetId, cacheKey)}
         alt={name}
         className={`${sizeClass} shrink-0 rounded-lg border border-zinc-200 object-cover`}
       />

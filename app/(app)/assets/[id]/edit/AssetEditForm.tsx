@@ -34,7 +34,7 @@ export function AssetEditForm({
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
-  const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
+  const [hasImage, setHasImage] = useState(Boolean(initialImageUrl));
 
   useEffect(() => {
     let cancelled = false;
@@ -95,8 +95,8 @@ export function AssetEditForm({
       )}
       <AssetImageField
         assetId={id}
-        initialImageUrl={imageUrl}
-        onUploaded={(url) => setImageUrl(url)}
+        hasImage={hasImage}
+        onUploaded={(next) => setHasImage(next)}
       />
       <div>
         <label htmlFor="name" className="block text-sm font-medium text-zinc-700 mb-1">
