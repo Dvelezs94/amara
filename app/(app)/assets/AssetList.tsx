@@ -267,14 +267,14 @@ export function AssetList() {
       {loading ? (
         <div className="h-64 animate-pulse rounded-xl bg-zinc-100" aria-hidden />
       ) : (
-        <div className="flex min-h-[28rem] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white md:flex-row">
-          <aside className="flex w-full shrink-0 flex-col border-b border-zinc-200 bg-zinc-50 md:w-56 md:border-b-0 md:border-r">
-            <div className="flex items-center justify-between gap-2 px-3 py-2">
+        <div className="flex max-h-[min(70vh,40rem)] min-h-[28rem] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white md:flex-row">
+          <aside className="flex max-h-48 w-full shrink-0 flex-col border-b border-zinc-200 bg-zinc-50 md:max-h-none md:w-56 md:border-b-0 md:border-r">
+            <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 Áreas
               </p>
             </div>
-            <nav className="flex flex-1 gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:overflow-x-visible">
+            <nav className="flex min-h-0 flex-1 gap-1 overflow-x-auto overflow-y-auto px-2 pb-2 md:flex-col md:overflow-x-hidden">
               {navItems.map((n) => (
                 <button
                   key={String(n.id)}
@@ -297,7 +297,7 @@ export function AssetList() {
                 </button>
               ))}
             </nav>
-            <div className="border-t border-zinc-200 p-2">
+            <div className="shrink-0 border-t border-zinc-200 p-2">
               <button
                 type="button"
                 onClick={() => {
@@ -311,8 +311,8 @@ export function AssetList() {
               </button>
             </div>
           </aside>
-          <div className="min-w-0 flex-1 p-3 md:p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col p-3 md:p-4">
+            <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-zinc-900">{activeTitle}</h2>
               {activeGroup ? (
                 <span className="inline-flex items-center gap-0.5">
@@ -346,6 +346,7 @@ export function AssetList() {
                 </span>
               ) : null}
             </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
             {items.length === 0 && groups.length === 0 ? (
               <div className="rounded-xl border border-dashed border-zinc-300 bg-white/70 p-8 text-center">
                 <p className="text-zinc-500">Aún no hay máquinas.</p>
@@ -409,6 +410,7 @@ export function AssetList() {
                 ))}
               </ul>
             )}
+            </div>
           </div>
         </div>
       )}
