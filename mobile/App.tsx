@@ -86,6 +86,12 @@ import {
   type KnowledgeFileKind,
 } from "./lib/file-kind";
 import { downloadProgressRatio } from "./lib/update-download";
+import {
+  assertDiskSpaceForUpdateDownload,
+  deleteCachedUpdateApks,
+  deleteUpdateApkFile,
+  resolveUpdateApkLocalUri,
+} from "./lib/apk-update-storage";
 import { normalizeWoStatus, statusLabel, type WoStatus } from "./lib/wo-status";
 import { isWorkOrderVisibleOnMobile } from "./lib/work-order-start-date";
 import {
@@ -1204,6 +1210,13 @@ function AppContent() {
     setUpdateUi((prev) => ({ ...prev, visible: false, error: null }));
   }, []);
 
+  const finishUpdateAndCleanupApk = useCallback(async () => {
+    const uri = pendingApkUriRef.current;
+    pendingApkUriRef.current = null;
+    closeUpdateUi();
+    await deleteUpdateApkFile(uri);
+  }, [closeUpdateUi]);
+
   const retryInstallPendingApk = useCallback(async () => {
     const uri = pendingApkUriRef.current;
     if (!uri) {
@@ -1222,7 +1235,7 @@ function AppContent() {
     }));
     try {
       await installLocalApk(uri);
-      closeUpdateUi();
+      await finishUpdateAndCleanupApk();
     } catch (error) {
       const message =
         error instanceof Error
@@ -1234,7 +1247,7 @@ function AppContent() {
         error: message,
       }));
     }
-  }, [closeUpdateUi]);
+  }, [finishUpdateAndCleanupApk]);
 
   const canLogin = username.trim().length > 0 && password.trim().length > 0;
   const firstName = useMemo(() => {
@@ -2157,8 +2170,9 @@ function AppContent() {
         await Linking.openURL(apkUrl);
         return;
       }
-      const fileName = `msa-update-${Date.now()}.apk`;
-      const localUri = `${baseDir}${fileName}`;
+      // Drop prior update APKs and refuse if free space is too low.
+      await assertDiskSpaceForUpdateDownload(baseDir);
+      const localUri = resolveUpdateApkLocalUri(baseDir);
       const downloadResumable = FileSystem.createDownloadResumable(
         apkUrl,
         localUri,
@@ -2192,7 +2206,7 @@ function AppContent() {
         bytesWritten: prev.bytesTotal || prev.bytesWritten,
       }));
       await installLocalApk(download.uri);
-      closeUpdateUi();
+      await finishUpdateAndCleanupApk();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "No se pudo descargar la actualizacion.";
@@ -2203,13 +2217,20 @@ function AppContent() {
         error: message,
       }));
     }
-  }, [closeUpdateUi]);
+  }, [closeUpdateUi, finishUpdateAndCleanupApk]);
 
   const checkAndroidAppUpdate = useCallback(async () => {
     if (Platform.OS !== "android") return;
     const manifestUrl = resolveRemoteUrl(APP_UPDATE_MANIFEST_PATH, API_HOST);
     if (!manifestUrl) return;
     try {
+      // Purge leftover update APKs when not mid-install (legacy timestamped files too).
+      if (!updateUi.visible && !pendingApkUriRef.current) {
+        const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+        if (baseDir) {
+          await deleteCachedUpdateApks(baseDir);
+        }
+      }
       const response = await fetch(manifestUrl);
       if (!response.ok) return;
       const data = (await response.json()) as Partial<AndroidAppUpdateManifest>;

@@ -85,7 +85,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
   - Calendars (filtro por calendario): `lib/calendar-helpers.ts`
   - Dashboard presets / public solicitud note URLs / file paths: `lib/dashboard-quick-presets.ts`, `lib/solicitud-public-note-urls.ts`, `lib/file-storage.ts`
   - Work-order completion notifications: `lib/work-order-completion-notifications.ts`
-  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `work-order-status-colors.ts`, `work-order-start-date.ts`, `checklist-field-save.ts` (checklist PATCH payloads / draft flush), `due-format.ts`, `file-kind.ts`, plus mirrored checklist helpers under `mobile/lib/`
+  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `work-order-status-colors.ts`, `work-order-start-date.ts`, `checklist-field-save.ts` (checklist PATCH payloads / draft flush), `due-format.ts`, `file-kind.ts`, `update-download.ts` / `apk-update-storage.ts` (APK update progress + cache cleanup), plus mirrored checklist helpers under `mobile/lib/`
   - Checklist PATCH body parse/normalize: `lib/work-order-checklist-patch.ts`
 - **CI / pre-merge:** Run **`npm test`** (web) and **`cd mobile && npm test`** when mobile changes (same bar as `npm run lint`).
 
@@ -122,6 +122,7 @@ cd mobile && npm install && npm run start
 - CI stamps Android `versionName` / `versionCode` from **day (America/Monterrey) + commit SHA** (and `GITHUB_RUN_NUMBER` for same-day monotonicity) via `mobile/scripts/stamp-android-version.ts` before prebuild — `versionName` looks like `20260728.a1b2c3d`
 - CI also publishes `/downloads/android/version.json` (versionName/versionCode + APK URL) for in-app Android update checks
 - In-app updater downloads the APK with progress UI, then installs via **content URI** + `expo-intent-launcher` (not `Linking.openURL(file://…)`). Needs `REQUEST_INSTALL_PACKAGES` and a native rebuild after dependency/permission changes
+- Updater stores a **single** cached APK (`msa-update.apk`), deletes prior/legacy timestamped downloads before each update, removes the file after install, and refuses to download when free disk is too low (`mobile/lib/update-download.ts`, `mobile/lib/apk-update-storage.ts`)
 - Deploy job syncs `downloads/android/*` to server path `/var/www/msa/downloads/android/`
 
 ---
