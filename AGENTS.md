@@ -85,7 +85,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
   - Calendars (filtro por calendario): `lib/calendar-helpers.ts`
   - Dashboard presets / public solicitud note URLs / file paths: `lib/dashboard-quick-presets.ts`, `lib/solicitud-public-note-urls.ts`, `lib/file-storage.ts`
   - Work-order completion notifications: `lib/work-order-completion-notifications.ts`
-  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `due-format.ts`, `file-kind.ts`, plus mirrored checklist helpers under `mobile/lib/`
+  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `work-order-status-colors.ts`, `due-format.ts`, `file-kind.ts`, plus mirrored checklist helpers under `mobile/lib/`
 - **CI / pre-merge:** Run **`npm test`** (web) and **`cd mobile && npm test`** when mobile changes (same bar as `npm run lint`).
 
 ---
@@ -105,6 +105,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 - Login: `POST /api/auth/login`; logout: `POST /api/auth/logout-json`
 - Changing técnico API allowlists on the web may **break the app** until the mobile client or middleware list is updated
 - **Media attachments** — checklist photo fields and comment attachments support **camera + gallery** via `expo-image-picker` (`POST /api/work-orders/{id}/attachments`)
+- **Task status colors** — loaded from `GET /api/app-settings/work-order-status-colors` (same settings as the web app) and applied to status badges / list accents; defaults apply until the call succeeds
 
 ### Run
 

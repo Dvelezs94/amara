@@ -29,6 +29,7 @@ export const TECNICO_ALLOWED_API_PREFIXES = [
   "/api/checklist-templates",
   "/api/checklist-folders",
   "/api/notifications",
+  "/api/app-settings/work-order-status-colors",
 ] as const;
 
 export const CALIDAD_ALLOWED_API_PREFIXES = [
@@ -40,6 +41,7 @@ export const CALIDAD_ALLOWED_API_PREFIXES = [
   "/api/users",
   "/api/notifications",
   "/api/users/me/avatar",
+  "/api/app-settings/work-order-status-colors",
 ] as const;
 
 /** Decode `role` from the JWT-style session cookie payload (middle segment). */

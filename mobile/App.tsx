@@ -76,15 +76,24 @@ import {
 } from "./lib/file-kind";
 import { downloadProgressRatio } from "./lib/update-download";
 import { normalizeWoStatus, statusLabel, type WoStatus } from "./lib/wo-status";
+import {
+  DEFAULT_WORK_ORDER_STATUS_COLORS,
+  mergeWorkOrderStatusColors,
+  resolveWorkOrderStatusColor,
+  workOrderStatusBadgeStyleRn,
+  type WorkOrderStatusColors,
+} from "./lib/work-order-status-colors";
 
 type AppSection = "workOrders" | "knowledgeBase" | "notifications" | "profile";
 
 /** API + DB use `pending`; legacy rows or clients may still send `open`. */
 // status helpers live in ./lib/wo-status
 
-function activeTaskRowBorderColor(status: WoStatus): string {
-  if (status === "in_progress") return theme.primary;
-  return "#EAB308";
+function activeTaskRowBorderColor(
+  status: WoStatus,
+  colors: WorkOrderStatusColors
+): string {
+  return resolveWorkOrderStatusColor(status, colors);
 }
 
 function activeTaskListMeta(item: WorkOrderListItem): string {
@@ -425,26 +434,26 @@ function WorkOrderKindBadge({ kindRaw }: { kindRaw: unknown }) {
   );
 }
 
-function WorkOrderStatusBadge({ status }: { status: WoStatus }) {
-  const pill =
-    status === "pending"
-      ? styles.woStatusBadgePending
-      : status === "in_progress"
-        ? styles.woStatusBadgeInProgress
-        : status === "completed"
-          ? styles.woStatusBadgeCompleted
-          : styles.woStatusBadgeCancelled;
-  const pillText =
-    status === "pending"
-      ? styles.woStatusBadgePendingText
-      : status === "in_progress"
-        ? styles.woStatusBadgeInProgressText
-        : status === "completed"
-          ? styles.woStatusBadgeCompletedText
-          : styles.woStatusBadgeCancelledText;
+function WorkOrderStatusBadge({
+  status,
+  colors,
+}: {
+  status: WoStatus;
+  colors: WorkOrderStatusColors;
+}) {
+  const pill = workOrderStatusBadgeStyleRn(status, colors);
   return (
-    <View style={[styles.woStatusBadge, pill]} accessibilityRole="text">
-      <Text style={[styles.woStatusBadgeLabel, pillText]} numberOfLines={1}>
+    <View
+      style={[
+        styles.woStatusBadge,
+        {
+          backgroundColor: pill.backgroundColor,
+          borderColor: pill.borderColor,
+        },
+      ]}
+      accessibilityRole="text"
+    >
+      <Text style={[styles.woStatusBadgeLabel, { color: pill.color }]} numberOfLines={1}>
         {statusLabel(status)}
       </Text>
     </View>
@@ -1112,6 +1121,9 @@ function AppContent() {
   const [activeSection, setActiveSection] = useState<AppSection>("workOrders");
 
   const [workOrders, setWorkOrders] = useState<WorkOrderListItem[]>([]);
+  const [statusColors, setStatusColors] = useState<WorkOrderStatusColors>(
+    DEFAULT_WORK_ORDER_STATUS_COLORS
+  );
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -1426,6 +1438,17 @@ function AppContent() {
     }
   }
 
+  async function loadStatusColors() {
+    try {
+      const data = await apiFetch<{ colors?: unknown }>(
+        "/api/app-settings/work-order-status-colors"
+      );
+      setStatusColors(mergeWorkOrderStatusColors(data?.colors));
+    } catch {
+      // Keep defaults if settings endpoint is unavailable.
+    }
+  }
+
   async function loadInitialData() {
     await Promise.all([
       loadWorkOrders(),
@@ -1434,13 +1457,14 @@ function AppContent() {
       loadNotifications(),
       loadUsers(),
       loadMachines(),
+      loadStatusColors(),
     ]);
   }
 
   async function refreshWorkOrdersFeed() {
     setWorkOrdersRefreshing(true);
     try {
-      await Promise.all([loadWorkOrders(), loadUsers(), loadMachines()]);
+      await Promise.all([loadWorkOrders(), loadUsers(), loadMachines(), loadStatusColors()]);
     } finally {
       setWorkOrdersRefreshing(false);
     }
@@ -2237,7 +2261,13 @@ function AppContent() {
         if (cancelled) return;
         setIsLoggedIn(true);
         setMe(meData);
-        await Promise.all([loadWorkOrders(), loadKnowledge(), loadNotifications(), loadUsers()]);
+        await Promise.all([
+          loadWorkOrders(),
+          loadKnowledge(),
+          loadNotifications(),
+          loadUsers(),
+          loadStatusColors(),
+        ]);
       } catch {
         sessionCookieHeader = null;
         await persistSessionCookieHeader(null).catch(() => undefined);
@@ -2691,7 +2721,10 @@ function AppContent() {
                           <Text style={[styles.detailCardHeaderTitle, styles.detailCardHeaderTitleFlex]}>
                             Detalles
                           </Text>
-                          <WorkOrderStatusBadge status={selectedWorkOrder.status} />
+                          <WorkOrderStatusBadge
+                            status={selectedWorkOrder.status}
+                            colors={statusColors}
+                          />
                         </View>
                       </Pressable>
                       {detailDetailsExpanded ? (
@@ -3964,7 +3997,7 @@ function AppContent() {
                         style={[
                           styles.surfaceCard,
                           styles.activeRowCard,
-                          { borderLeftColor: activeTaskRowBorderColor(item.status) },
+                          { borderLeftColor: activeTaskRowBorderColor(item.status, statusColors) },
                         ]}
                         onPress={() => openWorkOrder(item.id)}
                       >
@@ -3974,7 +4007,7 @@ function AppContent() {
                               <Text style={styles.activeRowTitle} numberOfLines={1}>
                                 {item.title}
                               </Text>
-                              <WorkOrderStatusBadge status={item.status} />
+                              <WorkOrderStatusBadge status={item.status} colors={statusColors} />
                             </View>
                             <Text style={styles.activeRowMeta} numberOfLines={1}>
                               {activeTaskListMeta(item)}
@@ -4713,26 +4746,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
-  woStatusBadgePending: {
-    backgroundColor: "#FEF08A",
-    borderColor: "#EAB308",
-  },
-  woStatusBadgePendingText: { color: "#713F12" },
-  woStatusBadgeInProgress: {
-    backgroundColor: "#DBEAFE",
-    borderColor: theme.primary,
-  },
-  woStatusBadgeInProgressText: { color: "#1E3A8A" },
-  woStatusBadgeCompleted: {
-    backgroundColor: "#BBF7D0",
-    borderColor: "#22C55E",
-  },
-  woStatusBadgeCompletedText: { color: "#14532D" },
-  woStatusBadgeCancelled: {
-    backgroundColor: theme.zinc200,
-    borderColor: theme.zinc300,
-  },
-  woStatusBadgeCancelledText: { color: theme.zinc600 },
   detailCardHeaderSub: {
     marginTop: 6,
     fontSize: 12,

@@ -53,10 +53,14 @@ describe("isTecnicoApiPathAllowed", () => {
     expect(isTecnicoApiPathAllowed("/api/work-orders/wo-1")).toBe(true);
     expect(isTecnicoApiPathAllowed("/api/assets")).toBe(true);
     expect(isTecnicoApiPathAllowed("/api/asset-groups")).toBe(true);
+    expect(
+      isTecnicoApiPathAllowed("/api/app-settings/work-order-status-colors")
+    ).toBe(true);
   });
   it("blocks non-whitelisted APIs", () => {
     expect(isTecnicoApiPathAllowed("/api/admin/users")).toBe(false);
     expect(isTecnicoApiPathAllowed("/api/dashboard/overview")).toBe(false);
+    expect(isTecnicoApiPathAllowed("/api/app-settings")).toBe(false);
   });
 });
 
@@ -87,6 +91,9 @@ describe("isCalidad*PathAllowed", () => {
       true
     );
     expect(isCalidadApiPathAllowed("/api/work-orders")).toBe(true);
+    expect(
+      isCalidadApiPathAllowed("/api/app-settings/work-order-status-colors")
+    ).toBe(true);
   });
 
   it("blocks non-whitelisted calidad paths", () => {
