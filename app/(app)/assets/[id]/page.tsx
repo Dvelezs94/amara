@@ -106,17 +106,17 @@ export default async function AssetDetailPage({
       <SetPageHeader
         title={asset.name}
         subtitle={asset.assetId}
+        filters={
+          <Link
+            href="/assets"
+            className="inline-flex items-center gap-1 text-sm font-medium text-[#F14C03] hover:underline"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Máquinas
+          </Link>
+        }
         actions={<AssetActions id={asset.id} name={asset.name} />}
       />
-      <div className="space-y-1">
-        <Link
-          href="/assets"
-          className="inline-flex items-center gap-1 text-sm font-medium text-[#F14C03] hover:underline"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Máquinas
-        </Link>
-      </div>
       <section className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <AssetPhotoThumb
           assetId={asset.id}
