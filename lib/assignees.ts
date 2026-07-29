@@ -7,6 +7,7 @@ import {
   workOrderAssignees,
   workOrders,
 } from "@/lib/db/schema";
+import { dedupeAssigneeIds } from "@/lib/assignee-ids";
 
 export type AssigneeUser = {
   id: string;
@@ -16,22 +17,11 @@ export type AssigneeUser = {
   avatarBackgroundColor: string | null;
 };
 
-function dedupeIds(ids: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const id of ids) {
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
-  }
-  return out;
-}
-
 export async function setWorkOrderAssigneeIds(
   workOrderId: string,
   userIds: string[]
 ): Promise<void> {
-  const unique = dedupeIds(userIds);
+  const unique = dedupeAssigneeIds(userIds);
   await db
     .delete(workOrderAssignees)
     .where(eq(workOrderAssignees.workOrderId, workOrderId));
@@ -53,7 +43,7 @@ export async function setMaintenanceScheduleAssigneeIds(
   scheduleId: string,
   userIds: string[]
 ): Promise<void> {
-  const unique = dedupeIds(userIds);
+  const unique = dedupeAssigneeIds(userIds);
   await db
     .delete(maintenanceScheduleAssignees)
     .where(

@@ -83,6 +83,17 @@ jobs:
         run: npm ci
         working-directory: mobile
 
+      - name: Run mobile unit tests
+        run: npm test
+        working-directory: mobile
+
+      - name: Stamp Android version from day + commit
+        run: node --experimental-strip-types scripts/stamp-android-version.ts
+        working-directory: mobile
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+
       - name: Generate Android project from Expo config
         run: npx expo prebuild --platform android --non-interactive
         working-directory: mobile
@@ -106,15 +117,23 @@ jobs:
           node <<'EOF'
           const fs = require("node:fs");
           const path = require("node:path");
+          const stampedPath = path.join(process.cwd(), "mobile/.build-version.json");
           const appConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), "mobile/app.json"), "utf8"));
-          const versionName = String(appConfig?.expo?.version ?? "0.0.0");
-          const versionCode = Number(appConfig?.expo?.android?.versionCode ?? 0);
+          const stamped = fs.existsSync(stampedPath)
+            ? JSON.parse(fs.readFileSync(stampedPath, "utf8"))
+            : null;
+          const versionName = String(
+            stamped?.versionName ?? appConfig?.expo?.version ?? "0.0.0"
+          );
+          const versionCode = Number(
+            stamped?.versionCode ?? appConfig?.expo?.android?.versionCode ?? 0
+          );
           const manifest = {
             versionName,
             versionCode: Number.isFinite(versionCode) ? versionCode : 0,
             apkUrl: "/downloads/android/msa-release.apk",
             required: false,
-            notes: "Nueva version disponible.",
+            notes: `Nueva version ${versionName}.`,
           };
           fs.writeFileSync(
             path.join(process.cwd(), "downloads/android/version.json"),

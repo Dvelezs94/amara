@@ -67,22 +67,25 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
 
 ### Testing (required for agents)
 
-- **Runner:** **Vitest** (`vitest.config.ts`), **`npm test`** / **`npm run test:watch`**
-- **Layout:** `tests/unit/*.test.ts` — prefer **pure logic** in `lib/` (easy to cover); API routes may use **integration tests** with a test DB or HTTP mocks when added later.
-- **Policy:** When you **add or change behavior** (new API, new `lib/` helper, business rules, auth/middleware rules, recurrence, work-order UX logic, etc.), **add or update tests in the same change** so `npm test` stays green. If something is too coupled to run quickly, extract testable helpers into `lib/` first, then test them.
+- **Runner (web):** **Vitest** (`vitest.config.ts`), **`npm test`** / **`npm run test:watch`**
+- **Runner (mobile):** Vitest under `mobile/` (`mobile/vitest.config.ts`), **`cd mobile && npm test`**
+- **Layout:** `tests/unit/*.test.ts` (web) and `mobile/tests/unit/*.test.ts` (mobile) — prefer **pure logic** in `lib/` / `mobile/lib/` (easy to cover); API routes may use **integration tests** with a test DB or HTTP mocks when added later.
+- **Policy:** When you **add or change behavior** (new API, new `lib/` helper, business rules, auth/middleware rules, recurrence, work-order UX logic, mobile helpers, etc.), **add or update tests in the same change** so `npm test` (and mobile `npm test` when touching `mobile/`) stays green. If something is too coupled to run quickly, extract testable helpers into `lib/` / `mobile/lib/` first, then test them.
 - **Coverage map (extend as features grow):**
   - Work orders / UI strings: `lib/work-order-kind.ts`, `lib/work-order-duration.ts`, `lib/machine-downtime.ts` (paro de máquina en tareas y total por activo)
   - Calendar / maintenance: `lib/maintenance-recurrence.ts`
   - Access control: `lib/middleware-rules.ts` (used by `middleware.ts`)
-  - Profile / avatars: `lib/avatar-helpers.ts`
-  - IDs: `lib/id.ts`
+  - Profile / avatars: `lib/avatar-helpers.ts`, `lib/user-avatar-file.ts` (sanitize)
+  - IDs / assignees / folio: `lib/id.ts`, `lib/assignee-ids.ts`, `lib/work-order-folio-helpers.ts`
   - Roles: `lib/auth-shared.ts`
-  - Checklists (plantillas, cierre de tarea): `lib/checklist-items-from-payload.ts`, `lib/checklist-completion.ts`
+  - Checklists (plantillas, cierre de tarea): `lib/checklist-items-from-payload.ts`, `lib/checklist-completion.ts`, `lib/checklist-template-revisions-ui.ts`
   - Asset areas (lista de máquinas): `lib/asset-group-helpers.ts`
   - Machine photos (proxy path / filename sanitize): `lib/asset-image-helpers.ts`
   - Calendars (filtro por calendario): `lib/calendar-helpers.ts`
+  - Dashboard presets / public solicitud note URLs / file paths: `lib/dashboard-quick-presets.ts`, `lib/solicitud-public-note-urls.ts`, `lib/file-storage.ts`
   - Work-order completion notifications: `lib/work-order-completion-notifications.ts`
-- **CI / pre-merge:** Run **`npm test`** before considering work done (same bar as `npm run lint`).
+  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `due-format.ts`, `file-kind.ts`, plus mirrored checklist helpers under `mobile/lib/`
+- **CI / pre-merge:** Run **`npm test`** (web) and **`cd mobile && npm test`** when mobile changes (same bar as `npm run lint`).
 
 ---
 
@@ -113,6 +116,7 @@ cd mobile && npm install && npm run start
 - GitHub Actions builds an Android release APK from Expo (`expo prebuild` + Gradle `assembleRelease`)
 - CI sets `EXPO_PUBLIC_API_HOST=https://msa.saimco.mx` for the Android build job
 - APK is copied to `/downloads/android` when available (falls back to `downloads/android` in workspace if root path is unavailable), then uploaded as workflow artifact
+- CI stamps Android `versionName` / `versionCode` from **day (America/Monterrey) + commit SHA** (and `GITHUB_RUN_NUMBER` for same-day monotonicity) via `mobile/scripts/stamp-android-version.ts` before prebuild
 - CI also publishes `/downloads/android/version.json` (versionName/versionCode + APK URL) for in-app Android update checks
 - Deploy job syncs `downloads/android/*` to server path `/var/www/msa/downloads/android/`
 

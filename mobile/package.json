@@ -2,12 +2,15 @@
   "name": "mobile",
   "version": "1.0.0",
   "main": "index.ts",
-  "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web"
-  },
+    "scripts": {
+      "start": "expo start",
+      "android": "expo run:android",
+      "ios": "expo run:ios",
+      "web": "expo start --web",
+      "test": "vitest run",
+      "test:watch": "vitest",
+      "stamp-version": "node --experimental-strip-types scripts/stamp-android-version.ts"
+    },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-community/datetimepicker": "8.4.4",
@@ -25,7 +28,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.7"
   },
   "private": true
 }

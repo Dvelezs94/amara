@@ -48,27 +48,33 @@ import {
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-
-const APP_TIME_ZONE = "America/Monterrey";
+import {
+  isRemoteVersionNewer,
+  normalizeVersionCode,
+  resolveRemoteUrl,
+  type AndroidAppUpdateManifest,
+} from "./lib/app-update";
+import {
+  APP_TIME_ZONE,
+  formatDueRelative,
+  formatDurationUntilDueShort,
+} from "./lib/due-format";
+import {
+  ensureFileScheme,
+  inlinePdfWebViewUri,
+  isLikelyInternalApiUrl,
+  isLikelyInternalDownloadUrl,
+  knowledgeFileKind,
+  looksLikeImageFilename,
+  looksLikePdf,
+  type KnowledgeFileKind,
+} from "./lib/file-kind";
+import { normalizeWoStatus, statusLabel, type WoStatus } from "./lib/wo-status";
 
 type AppSection = "workOrders" | "knowledgeBase" | "notifications" | "profile";
-type WoStatus = "pending" | "in_progress" | "completed" | "cancelled";
 
 /** API + DB use `pending`; legacy rows or clients may still send `open`. */
-function normalizeWoStatus(raw: unknown): WoStatus {
-  if (raw === "open") return "pending";
-  if (raw === "pending" || raw === "in_progress" || raw === "completed" || raw === "cancelled") {
-    return raw;
-  }
-  return "pending";
-}
-
-function statusLabel(status: WoStatus): string {
-  if (status === "pending") return "Pendiente";
-  if (status === "in_progress") return "En progreso";
-  if (status === "completed") return "Completada";
-  return "Cancelada";
-}
+// status helpers live in ./lib/wo-status
 
 function activeTaskRowBorderColor(status: WoStatus): string {
   if (status === "in_progress") return theme.primary;
@@ -323,65 +329,10 @@ type UserOption = {
   username?: string;
 };
 
-type AndroidAppUpdateManifest = {
-  versionName: string;
-  versionCode?: number;
-  required?: boolean;
-  apkUrl: string;
-  notes?: string;
-  sha256?: string;
-};
-
 const API_HOST = (process.env.EXPO_PUBLIC_API_HOST ?? "").trim().replace(/\/$/, "");
 const apiUrl = (path: string) => `${API_HOST}${path}`;
 const APP_UPDATE_MANIFEST_PATH = "/downloads/android/version.json";
 const APP_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
-function resolveRemoteUrl(urlOrPath: string): string {
-  const value = urlOrPath.trim();
-  if (!value) return "";
-  if (value.startsWith("http://") || value.startsWith("https://")) return value;
-  if (!API_HOST) return "";
-  return `${API_HOST}${value.startsWith("/") ? "" : "/"}${value}`;
-}
-
-function normalizeVersionCode(raw: unknown): number | null {
-  const num = Number(raw);
-  if (!Number.isInteger(num) || num < 0) return null;
-  return num;
-}
-
-function parseVersionNameParts(raw: string): number[] {
-  return raw
-    .trim()
-    .split(".")
-    .map((part) => Number.parseInt(part.replace(/[^\d].*$/, ""), 10))
-    .map((part) => (Number.isFinite(part) && part >= 0 ? part : 0));
-}
-
-function compareVersionNames(a: string, b: string): number {
-  const aa = parseVersionNameParts(a);
-  const bb = parseVersionNameParts(b);
-  const length = Math.max(aa.length, bb.length);
-  for (let idx = 0; idx < length; idx += 1) {
-    const left = aa[idx] ?? 0;
-    const right = bb[idx] ?? 0;
-    if (left !== right) return left > right ? 1 : -1;
-  }
-  return 0;
-}
-
-function isRemoteVersionNewer(
-  localVersionName: string,
-  localVersionCode: number | null,
-  remote: AndroidAppUpdateManifest
-): boolean {
-  const remoteCode = normalizeVersionCode(remote.versionCode);
-  if (localVersionCode != null && remoteCode != null && remoteCode !== localVersionCode) {
-    return remoteCode > localVersionCode;
-  }
-  return compareVersionNames(remote.versionName, localVersionName) > 0;
-}
 
 /** Same naming as web (`app/page.tsx` + `components/AppShell.tsx` sidebar). */
 const BRAND_MARK = "MSA";
@@ -503,43 +454,6 @@ function SectionLoadingState({ label }: { label: string }) {
   );
 }
 
-const RELATIVE_DUE_MAX_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function calendarDaysFromToday(dueStr: string): number | null {
-  const due = new Date(dueStr);
-  if (Number.isNaN(due.getTime())) return null;
-  const startToday = new Date();
-  startToday.setHours(0, 0, 0, 0);
-  const startDue = new Date(due);
-  startDue.setHours(0, 0, 0, 0);
-  return Math.round((startDue.getTime() - startToday.getTime()) / DAY_MS);
-}
-
-function formatDueShortDate(s: string) {
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("es-MX", {
-    month: "short",
-    day: "numeric",
-    timeZone: APP_TIME_ZONE,
-  });
-}
-
-/** Spanish relative due copy (same idea as web `WorkOrderList` `formatDueRelative`) */
-function formatDueRelative(s: string | null) {
-  if (!s) return "—";
-  const diff = calendarDaysFromToday(s);
-  if (diff === null) return "—";
-  if (diff === 0) return "Vence hoy";
-  if (diff === 1) return "Vence mañana";
-  if (diff >= 2 && diff <= RELATIVE_DUE_MAX_DAYS) return `Vence en ${diff} días`;
-  if (diff > RELATIVE_DUE_MAX_DAYS) return `Vence el ${formatDueShortDate(s)}`;
-  if (diff === -1) return "Venció ayer";
-  if (diff <= -2 && diff >= -RELATIVE_DUE_MAX_DAYS) return `Venció hace ${-diff} días`;
-  return `Venció el ${formatDueShortDate(s)}`;
-}
-
 function formatWoDetailDate(s: string | number | Date | null | undefined) {
   if (s == null) return "—";
   const d = new Date(s);
@@ -570,24 +484,6 @@ function formatElapsedClock(createdAt: string | undefined, _refreshToken = 0) {
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-/** Short label for time until due (e.g. 45m, 1.5h, 3d) */
-function formatDurationUntilDueShort(dueDate: string | null) {
-  if (!dueDate) return "—";
-  const due = new Date(dueDate).getTime();
-  if (Number.isNaN(due)) return "—";
-  const ms = due - Date.now();
-  if (ms < 0) return "Vencida";
-  const m = Math.ceil(ms / 60000);
-  if (m < 60) return `${m}m`;
-  const h = ms / 3600000;
-  if (h < 48) {
-    const rounded = Math.round(h * 10) / 10;
-    return rounded % 1 === 0 ? `${Math.round(rounded)}h` : `${rounded}h`;
-  }
-  const d = Math.ceil(ms / (24 * 3600000));
-  return `${d}d`;
 }
 
 function pendingPriorityBorderColor(priority: WoPriority): string {
@@ -700,69 +596,6 @@ async function resolveInternalAttachmentUrl(url: string): Promise<string> {
     throw new Error(typeof data?.error === "string" ? data.error : "No se pudo resolver la URL firmada.");
   }
   return data.url;
-}
-
-function ensureFileScheme(uri: string): string {
-  if (uri.startsWith("file://")) return uri;
-  if (uri.startsWith("/")) return `file://${uri}`;
-  return uri;
-}
-
-function inlinePdfWebViewUri(uri: string): string {
-  if (Platform.OS === "android" && (uri.startsWith("http://") || uri.startsWith("https://"))) {
-    return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(uri)}`;
-  }
-  return uri;
-}
-
-function looksLikePdf(filename: string | null | undefined, urlOrPath: string): boolean {
-  const name = (filename ?? "").trim().toLowerCase();
-  if (name.endsWith(".pdf")) return true;
-  const pathOnly = urlOrPath.split("?")[0]?.split("#")[0]?.toLowerCase() ?? "";
-  return pathOnly.endsWith(".pdf");
-}
-
-function looksLikeImageFilename(filename: string): boolean {
-  return /\.(jpe?g|png|gif|webp|bmp)$/i.test(filename.trim());
-}
-
-function isLikelyInternalDownloadUrl(urlOrPath: string): boolean {
-  if (urlOrPath.startsWith("/api/work-orders/") || urlOrPath.startsWith("/api/asset-files/")) {
-    return true;
-  }
-  if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
-    try {
-      const parsed = new URL(urlOrPath);
-      return (
-        parsed.pathname.startsWith("/api/work-orders/") ||
-        parsed.pathname.startsWith("/api/asset-files/")
-      );
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
-
-function isLikelyInternalApiUrl(urlOrPath: string): boolean {
-  if (urlOrPath.startsWith("/api/")) return true;
-  if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
-    try {
-      const parsed = new URL(urlOrPath);
-      return parsed.pathname.startsWith("/api/");
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
-
-type KnowledgeFileKind = "pdf" | "image" | "other";
-
-function knowledgeFileKind(filename: string, fileUrl: string): KnowledgeFileKind {
-  if (looksLikePdf(filename, fileUrl)) return "pdf";
-  if (looksLikeImageFilename(filename)) return "image";
-  return "other";
 }
 
 function kbFileIonIcon(kind: KnowledgeFileKind): ComponentProps<typeof Ionicons>["name"] {
@@ -2220,7 +2053,7 @@ function AppContent() {
   }
 
   const startAndroidAppUpdate = useCallback(async (remote: AndroidAppUpdateManifest) => {
-    const apkUrl = resolveRemoteUrl(remote.apkUrl);
+    const apkUrl = resolveRemoteUrl(remote.apkUrl, API_HOST);
     if (!apkUrl) {
       Alert.alert("Actualizacion", "No se encontro una URL valida para descargar la actualizacion.");
       return;
@@ -2251,7 +2084,7 @@ function AppContent() {
 
   const checkAndroidAppUpdate = useCallback(async () => {
     if (Platform.OS !== "android") return;
-    const manifestUrl = resolveRemoteUrl(APP_UPDATE_MANIFEST_PATH);
+    const manifestUrl = resolveRemoteUrl(APP_UPDATE_MANIFEST_PATH, API_HOST);
     if (!manifestUrl) return;
     try {
       const response = await fetch(manifestUrl);
@@ -4287,12 +4120,12 @@ function AppContent() {
           {inlinePdf ? (
             <WebView
               source={
-                isLikelyInternalDownloadUrl(inlinePdfWebViewUri(inlinePdf.uri)) && sessionCookieHeader
+                isLikelyInternalDownloadUrl(inlinePdfWebViewUri(inlinePdf.uri, Platform.OS)) && sessionCookieHeader
                   ? {
-                      uri: inlinePdfWebViewUri(inlinePdf.uri),
+                      uri: inlinePdfWebViewUri(inlinePdf.uri, Platform.OS),
                       headers: { Cookie: sessionCookieHeader },
                     }
-                  : { uri: inlinePdfWebViewUri(inlinePdf.uri) }
+                  : { uri: inlinePdfWebViewUri(inlinePdf.uri, Platform.OS) }
               }
               style={styles.pdfModalWeb}
               startInLoadingState
