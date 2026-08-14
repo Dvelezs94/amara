@@ -254,7 +254,7 @@ export function WorkOrderForm({
           className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
         <p className="mt-1 text-xs text-zinc-500">
-          En la app móvil la tarea solo se muestra a partir de esta fecha.
+          En la app móvil la tarea solo se muestra a partir de esta fecha. Si se deja vacía, se usa la fecha de vencimiento.
         </p>
       </div>
       <div>

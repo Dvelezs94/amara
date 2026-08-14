@@ -11,26 +11,39 @@ export function ymdInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): str
   }).format(date);
 }
 
-function startDateToYmd(startDate: string | Date): string | null {
-  if (typeof startDate === "string") {
-    const slice = startDate.trim().slice(0, 10);
+function dateToYmd(value: string | Date): string | null {
+  if (typeof value === "string") {
+    const slice = value.trim().slice(0, 10);
     if (YMD_RE.test(slice)) return slice;
-    const d = new Date(startDate);
+    const d = new Date(value);
     if (Number.isNaN(d.getTime())) return null;
     return ymdInTimeZone(d);
   }
-  if (Number.isNaN(startDate.getTime())) return null;
-  return ymdInTimeZone(startDate);
+  if (Number.isNaN(value.getTime())) return null;
+  return ymdInTimeZone(value);
 }
 
-/** Mobile: hide tasks until their optional planned start date (fecha de inicio). */
+export type WorkOrderMobileVisibilityDates = {
+  startDate?: string | Date | null;
+  dueDate?: string | Date | null;
+};
+
+/**
+ * Mobile: hide tasks scheduled after today (America/Monterrey).
+ * Uses fecha de inicio when set; otherwise fecha de vencimiento.
+ * Tasks with neither date stay visible.
+ */
 export function isWorkOrderVisibleOnMobile(
-  startDate: string | Date | null | undefined,
+  dates: WorkOrderMobileVisibilityDates | null | undefined,
   now: Date = new Date(),
   timeZone: string = APP_TIME_ZONE
 ): boolean {
-  if (startDate == null || startDate === "") return true;
-  const startYmd = startDateToYmd(startDate);
-  if (!startYmd) return true;
-  return startYmd <= ymdInTimeZone(now, timeZone);
+  const startDate = dates?.startDate;
+  const dueDate = dates?.dueDate;
+  const visibilityDate =
+    startDate != null && startDate !== "" ? startDate : dueDate;
+  if (visibilityDate == null || visibilityDate === "") return true;
+  const visibilityYmd = dateToYmd(visibilityDate);
+  if (!visibilityYmd) return true;
+  return visibilityYmd <= ymdInTimeZone(now, timeZone);
 }

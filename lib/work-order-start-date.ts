@@ -4,7 +4,8 @@ import { dueDateFromYmd, parseScheduleYmd } from "@/lib/maintenance-schedule-wor
 /**
  * Planned start / visibility date for a work order (fecha de inicio).
  * Distinct from `startedAt` (when work actually began).
- * When set, the mobile app only shows the task from this calendar day onward.
+ * The mobile app only shows the task from this calendar day onward
+ * (falls back to due date when start date is empty).
  */
 
 export function ymdInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
@@ -38,30 +39,39 @@ export function parseOptionalWorkOrderDateInput(
   return { ok: true, date: d };
 }
 
-function startDateToYmd(startDate: string | Date): string | null {
-  if (typeof startDate === "string") {
-    const ymd = parseScheduleYmd(startDate.trim().slice(0, 10));
+function dateToYmd(value: string | Date): string | null {
+  if (typeof value === "string") {
+    const ymd = parseScheduleYmd(value.trim().slice(0, 10));
     if (ymd) return ymd;
-    const d = new Date(startDate);
+    const d = new Date(value);
     if (Number.isNaN(d.getTime())) return null;
     return ymdInTimeZone(d);
   }
-  if (Number.isNaN(startDate.getTime())) return null;
-  return ymdInTimeZone(startDate);
+  if (Number.isNaN(value.getTime())) return null;
+  return ymdInTimeZone(value);
 }
 
+export type WorkOrderMobileVisibilityDates = {
+  startDate?: string | Date | null;
+  dueDate?: string | Date | null;
+};
+
 /**
- * Mobile visibility: no start date → always visible; otherwise visible when
- * today's calendar day (app TZ) is on or after the start date.
+ * Mobile visibility: hide tasks scheduled after today (app TZ).
+ * Uses fecha de inicio when set; otherwise fecha de vencimiento.
+ * Tasks with neither date stay visible.
  */
 export function isWorkOrderVisibleOnMobile(
-  startDate: string | Date | null | undefined,
+  dates: WorkOrderMobileVisibilityDates | null | undefined,
   now: Date = new Date(),
   timeZone: string = APP_TIME_ZONE
 ): boolean {
-  if (startDate == null || startDate === "") return true;
-  const startYmd = startDateToYmd(startDate);
-  if (!startYmd) return true;
-  const todayYmd = ymdInTimeZone(now, timeZone);
-  return startYmd <= todayYmd;
+  const startDate = dates?.startDate;
+  const dueDate = dates?.dueDate;
+  const visibilityDate =
+    startDate != null && startDate !== "" ? startDate : dueDate;
+  if (visibilityDate == null || visibilityDate === "") return true;
+  const visibilityYmd = dateToYmd(visibilityDate);
+  if (!visibilityYmd) return true;
+  return visibilityYmd <= ymdInTimeZone(now, timeZone);
 }

@@ -1656,7 +1656,7 @@ export function CalendarMonthView({
                     if (panelEventHasWorkOrder) return;
                     setCreateWorkOrderError(null);
                     setSelectedAssigneeIds([...panelEvent.assigneeIds]);
-                    setCreateStartDate("");
+                    setCreateStartDate(panelEvent.dateYmd);
                     setAssigneePromptOpen(true);
                   }}
                   className="rounded-lg bg-primary-600 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-white hover:bg-primary-700 disabled:opacity-50"
@@ -1709,7 +1709,7 @@ export function CalendarMonthView({
                     className="w-full rounded-sm border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900"
                   />
                   <p className="mt-1 text-[10px] leading-snug text-zinc-500">
-                    En la app móvil la tarea solo se muestra a partir de esta fecha.
+                    En la app móvil la tarea solo se muestra a partir de esta fecha (por defecto, el día del evento).
                   </p>
                 </div>
                 <div className="mt-2 flex justify-end gap-2">

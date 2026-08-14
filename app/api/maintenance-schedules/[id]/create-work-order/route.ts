@@ -45,7 +45,9 @@ export async function POST(
     (dateYmd ? dueDateFromYmd(dateYmd) : null) ?? schedule.nextRunAt ?? null;
 
   const startParsed = parseOptionalWorkOrderDateInput(
-    body?.startDate !== undefined ? body.startDate : null
+    body?.startDate !== undefined && body?.startDate !== null && body?.startDate !== ""
+      ? body.startDate
+      : dateYmd
   );
   if (!startParsed.ok) {
     return NextResponse.json({ error: startParsed.error }, { status: 400 });

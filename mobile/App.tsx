@@ -132,7 +132,7 @@ type WorkOrderListItem = {
   /** routine = programada; on_demand = bajo demanda (same as web `lib/work-order-kind`) */
   kind?: string | null;
   dueDate: string | null;
-  /** Planned start; mobile hides the task until this calendar day. */
+  /** Planned start; mobile hides until this day, else until dueDate. */
   startDate?: string | null;
   assetName: string | null;
   assetAssetId: string | null;
@@ -1267,7 +1267,9 @@ function AppContent() {
   }, [knowledge, kbQuery]);
 
   const workOrdersFiltered = useMemo(() => {
-    let list = workOrders.filter((w) => isWorkOrderVisibleOnMobile(w.startDate));
+    let list = workOrders.filter((w) =>
+      isWorkOrderVisibleOnMobile({ startDate: w.startDate, dueDate: w.dueDate })
+    );
     if (filterAssigneeId != null) {
       list = list.filter((w) => workOrderInvolvesUser(w, filterAssigneeId));
     }

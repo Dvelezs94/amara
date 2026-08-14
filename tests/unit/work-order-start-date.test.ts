@@ -30,16 +30,32 @@ describe("parseOptionalWorkOrderDateInput", () => {
 });
 
 describe("isWorkOrderVisibleOnMobile", () => {
-  it("shows when startDate is missing", () => {
+  const now = new Date("2026-07-29T18:00:00.000Z"); // afternoon UTC → still Jul 29 in Monterrey
+
+  it("shows when startDate and dueDate are missing", () => {
     expect(isWorkOrderVisibleOnMobile(null)).toBe(true);
     expect(isWorkOrderVisibleOnMobile(undefined)).toBe(true);
+    expect(isWorkOrderVisibleOnMobile({})).toBe(true);
   });
 
   it("hides before start day and shows on/after (Monterrey calendar)", () => {
-    const now = new Date("2026-07-29T18:00:00.000Z"); // afternoon UTC → still Jul 29 in Monterrey
-    expect(isWorkOrderVisibleOnMobile("2026-07-30", now)).toBe(false);
-    expect(isWorkOrderVisibleOnMobile("2026-07-29", now)).toBe(true);
-    expect(isWorkOrderVisibleOnMobile("2026-07-28", now)).toBe(true);
+    expect(isWorkOrderVisibleOnMobile({ startDate: "2026-07-30" }, now)).toBe(false);
+    expect(isWorkOrderVisibleOnMobile({ startDate: "2026-07-29" }, now)).toBe(true);
+    expect(isWorkOrderVisibleOnMobile({ startDate: "2026-07-28" }, now)).toBe(true);
+  });
+
+  it("hides future dueDate when startDate is missing", () => {
+    expect(isWorkOrderVisibleOnMobile({ dueDate: "2026-07-30" }, now)).toBe(false);
+    expect(isWorkOrderVisibleOnMobile({ dueDate: "2026-07-29" }, now)).toBe(true);
+  });
+
+  it("prefers startDate over a later dueDate", () => {
+    expect(
+      isWorkOrderVisibleOnMobile(
+        { startDate: "2026-07-29", dueDate: "2026-08-05" },
+        now
+      )
+    ).toBe(true);
   });
 });
 
