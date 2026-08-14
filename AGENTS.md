@@ -85,7 +85,7 @@ Root `package.json` is for the **Next.js** app only. The mobile app has its **ow
   - Calendars (filtro por calendario): `lib/calendar-helpers.ts`
   - Dashboard presets / public solicitud note URLs / file paths: `lib/dashboard-quick-presets.ts`, `lib/solicitud-public-note-urls.ts`, `lib/file-storage.ts`
   - Work-order completion notifications: `lib/work-order-completion-notifications.ts`
-  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `work-order-status-colors.ts`, `work-order-start-date.ts`, `checklist-field-save.ts` (checklist PATCH payloads / draft flush), `due-format.ts`, `file-kind.ts`, `update-download.ts` / `apk-update-storage.ts` (APK update progress + cache cleanup), plus mirrored checklist helpers under `mobile/lib/`
+  - Mobile: `mobile/lib/app-update.ts`, `build-version.ts`, `wo-status.ts`, `work-order-status-colors.ts`, `work-order-start-date.ts`, `assignee-filter-users.ts` (tareas people chips: me first, then A–Z), `checklist-field-save.ts` (checklist PATCH payloads / draft flush), `due-format.ts`, `file-kind.ts`, `update-download.ts` / `apk-update-storage.ts` (APK update progress + cache cleanup), plus mirrored checklist helpers under `mobile/lib/`
   - Checklist PATCH body parse/normalize: `lib/work-order-checklist-patch.ts`
 - **CI / pre-merge:** Run **`npm test`** (web) and **`cd mobile && npm test`** when mobile changes (same bar as `npm run lint`).
 

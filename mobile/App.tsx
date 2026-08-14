@@ -93,6 +93,7 @@ import {
   resolveUpdateApkLocalUri,
 } from "./lib/apk-update-storage";
 import { normalizeWoStatus, statusLabel, type WoStatus } from "./lib/wo-status";
+import { sortAssigneeFilterUsers } from "./lib/assignee-filter-users";
 import { isWorkOrderVisibleOnMobile } from "./lib/work-order-start-date";
 import {
   DEFAULT_WORK_ORDER_STATUS_COLORS,
@@ -1265,6 +1266,11 @@ function AppContent() {
         .includes(q)
     );
   }, [knowledge, kbQuery]);
+
+  const usersForFilter = useMemo(
+    () => sortAssigneeFilterUsers(users, me?.id),
+    [users, me?.id]
+  );
 
   const workOrdersFiltered = useMemo(() => {
     let list = workOrders.filter((w) =>
@@ -4003,7 +4009,7 @@ function AppContent() {
                       Todos
                     </Text>
                   </Pressable>
-                  {users.map((user) => (
+                  {usersForFilter.map((user) => (
                     <Pressable
                       key={user.id}
                       style={[
