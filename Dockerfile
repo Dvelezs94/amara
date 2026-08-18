@@ -1,6 +1,6 @@
 # MSA — Next.js 14 (App Router) production image using `output: "standalone"`.
 # Build: `docker build -t msa .`
-# Compose: see `docker-compose.yml` (build args + runtime `DATABASE_URL`).
+# Compose: `docker-compose.yml` (prod) or `docker-compose.local.yml` (build args + runtime `DATABASE_URL`).
 
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app

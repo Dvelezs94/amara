@@ -6,7 +6,7 @@ Maintenance Management System (CMMS) for Amissa.
 
 - **Next.js 14** (App Router) — frontend + API
 - **PostgreSQL** + **Drizzle ORM** — database (`pg` driver)
-- **Docker / Compose** — optional local stack (`postgres` + `web` in `docker-compose.yml`)
+- **Docker / Compose** — production stack in `docker-compose.yml`; local Postgres in `docker-compose.local.yml`
 - **Tailwind CSS** — styling
 - **Session auth** — cookie-based (JWT-style payload)
 
@@ -89,53 +89,29 @@ Overall, the palette conveys clarity and contrast, with a professional dark inte
 
 Docker provides PostgreSQL so you do not need a system-wide Postgres install for development.
 
+**Local** (Postgres only; run Next on the host):
 
 ```bash
-docker compose up --build -d
-```
-
-This starts:
-
-- **`postgres`** — PostgreSQL 16 on port **5432** (`msa` / `msa`, database `msa`)
-- **`web`** — msa Next.js app on port **3000**, built from the repo **`Dockerfile`**, with `DATABASE_URL` pointing at the `postgres` service
-
-The stack sets **`INSECURE_SESSION_COOKIES=1`** so session cookies work over **HTTP** on localhost. For a public HTTPS deployment, remove that variable and terminate TLS in front of the app.
-
-Override the session signing secret (recommended outside local dev):
-
-```bash
-SESSION_SECRET="your-long-random-secret-at-least-32-chars" docker compose up --build -d
-```
-
-Or create a `.env` file next to `docker-compose.yml` with `SESSION_SECRET=...` (Compose loads it automatically for variable substitution).
-
-### 3. Apply schema and seed (first run)
-
-Postgres is exposed on `localhost:5432`, so run Drizzle from the host (Node + repo checkout):
-
-```bash
+docker compose -f docker-compose.local.yml up -d
 cp .env.example .env
 # .env DATABASE_URL should match: postgresql://msa:msa@localhost:5432/msa
-npm install
-npm run db:push
-npm run db:seed
-```
-
-Then open **http://localhost:3000** (the containerized app).
-
-### 4. Postgres only (run Next on the host)
-
-If you only want the database in Docker:
-
-```bash
-docker compose up -d postgres
 npm install
 npm run db:push
 npm run db:seed
 npm run dev
 ```
 
-### 5. Reset the database (Docker volume still exists)
+Open [http://localhost:3000](http://localhost:3000).
+
+**Production** (default file; Postgres is only on the Docker network; session cookies require HTTPS):
+
+```bash
+docker compose up --build -d
+```
+
+The local stack starts **`postgres`** — PostgreSQL 16 on port **5432** (`msa` / `msa`, database `msa`). Production also runs **`web`** on port **3000**. In production, apply schema inside the web container (`docker compose run --rm web npm run db:push`). Set `SESSION_SECRET` in `.env` next to `docker-compose.yml` (required; Compose loads it for variable substitution).
+
+### Reset the database (Docker volume still exists)
 
 To wipe all tables and recreate from scratch:
 
@@ -148,8 +124,8 @@ npm run db:seed
 To remove the Postgres **data volume** entirely:
 
 ```bash
-docker compose down -v
-docker compose up --build -d
+docker compose -f docker-compose.local.yml down -v
+docker compose -f docker-compose.local.yml up -d
 npm run db:push
 npm run db:seed
 ```
@@ -195,5 +171,6 @@ On Linux, add `--add-host=host.docker.internal:host-gateway` if `host.docker.int
 - `components/` — AppShell (nav)
 - `lib/` — db (schema, client), auth, id, work-orders helper
 - `scripts/seed.ts` — Demo seed
-- `docker-compose.yml` — PostgreSQL + msa `web` service
+- `docker-compose.yml` — Production PostgreSQL + msa `web` service
+- `docker-compose.local.yml` — Local PostgreSQL only (use `npm run dev` for the app)
 - `Dockerfile` — Production Next.js (`standalone`) image

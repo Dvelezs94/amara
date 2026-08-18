@@ -1,4 +1,6 @@
-# PostgreSQL + MSA web app (Ubuntu 24 / Docker Engine + Compose plugin).
+# Production stack (Ubuntu / Docker Engine + Compose plugin).
+# Usage: docker compose up --build -d
+# Local development (Postgres only): docker compose -f docker-compose.local.yml up -d
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,8 +9,6 @@ services:
       POSTGRES_USER: msa
       POSTGRES_PASSWORD: msa
       POSTGRES_DB: msa
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +24,7 @@ services:
       args:
         # Build-time only (no DB connection required for `next build`). Must be a valid URL string.
         DATABASE_URL: postgresql://msa:msa@postgres:5432/msa
-    image: msa-web:local
+    image: msa-web:prod
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -32,11 +32,9 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://msa:msa@postgres:5432/msa
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-docker-compose-min-32chars}
+      SESSION_SECRET: ${SESSION_SECRET}
       NODE_ENV: production
       TZ: America/Monterrey
-      # Allow http://localhost:3000 login without TLS (remove behind HTTPS in real prod).
-      INSECURE_SESSION_COOKIES: "1"
     depends_on:
       postgres:
         condition: service_healthy
