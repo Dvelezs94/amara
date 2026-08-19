@@ -38,6 +38,11 @@ export type GlobalSearchGroup = {
   items: GlobalSearchHit[];
 };
 
+export function globalSearchResultCountLabel(count: number): string {
+  const n = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  return n === 1 ? "1 resultado" : `${n} resultados`;
+}
+
 export function normalizeSearchQuery(raw: unknown): string {
   if (typeof raw !== "string") return "";
   return raw.trim().replace(/\s+/g, " ").slice(0, GLOBAL_SEARCH_MAX_QUERY_LENGTH);

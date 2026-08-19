@@ -4,6 +4,7 @@ import {
   globalSearchHref,
   globalSearchKindsForRole,
   groupGlobalSearchResults,
+  globalSearchResultCountLabel,
   isSearchQueryReady,
   normalizeSearchQuery,
   parseSearchFolio,
@@ -105,6 +106,14 @@ describe("groupGlobalSearchResults", () => {
       "work_order",
       "person",
     ]);
+  });
+});
+
+describe("globalSearchResultCountLabel", () => {
+  it("uses singular and plural Spanish", () => {
+    expect(globalSearchResultCountLabel(0)).toBe("0 resultados");
+    expect(globalSearchResultCountLabel(1)).toBe("1 resultado");
+    expect(globalSearchResultCountLabel(4)).toBe("4 resultados");
   });
 });
 
