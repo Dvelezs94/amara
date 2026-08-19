@@ -175,6 +175,7 @@ export function WorkOrderDetail({
     }[];
     countsMachineDowntime?: boolean | null;
     manualDowntimeMinutes?: number | null;
+    calendarSource?: { name: string; href: string } | null;
   };
   canEditAssignee?: boolean;
   canEditCompletedAt?: boolean;
@@ -932,7 +933,18 @@ export function WorkOrderDetail({
               <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400 transition group-open:rotate-180" />
             </summary>
             <div className="border-t border-zinc-100 px-4 py-4 text-sm leading-relaxed text-zinc-800">
-              {initial.description ? (
+              {initial.calendarSource ? (
+                <p>
+                  Generada desde calendario de mantenimiento:{" "}
+                  <Link
+                    href={initial.calendarSource.href}
+                    className="font-medium text-primary-600 hover:underline"
+                  >
+                    {initial.calendarSource.name}
+                  </Link>
+                  .
+                </p>
+              ) : initial.description ? (
                 <p className="whitespace-pre-wrap">{initial.description}</p>
               ) : (
                 <p className="text-zinc-400">Sin descripción.</p>

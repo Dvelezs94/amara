@@ -24,6 +24,8 @@ import { validateWorkOrderCompletedAt } from "@/lib/datetime-local";
 import { canDeleteWorkOrder } from "@/lib/auth-shared";
 import { workOrderAssignedToUserIds } from "@/lib/work-order-assignee";
 import { parseOptionalWorkOrderDateInput } from "@/lib/work-order-start-date";
+import { emitWorkflowEvent } from "@/lib/workflow-engine";
+import { buildWorkflowEvent } from "@/lib/workflows";
 
 async function assetAllowsDowntimeTracking(assetId: string | null): Promise<boolean> {
   if (!assetId) return false;
@@ -607,6 +609,60 @@ export async function PATCH(
       },
     },
   });
+
+  const finalAssigneeIds = assigneesAfter.map((a) => a.id);
+  const finalTitle = woFinal?.title ?? wo.title;
+  const finalStatus = String(body.status ?? wo.status);
+  const finalPriority = String(body.priority ?? wo.priority);
+  const basePayload = {
+    title: finalTitle,
+    folio: wo.folio,
+    status: finalStatus,
+    previousStatus: wo.status,
+    priority: finalPriority,
+    href: `/tareas/${id}`,
+    requesterId: wo.requesterId,
+    assigneeIds: finalAssigneeIds.join(","),
+  };
+  if (body.status !== undefined && body.status !== wo.status) {
+    await emitWorkflowEvent(
+      buildWorkflowEvent({
+        type: "work_order.status_changed",
+        entityType: "work_order",
+        entityId: id,
+        actorUserId: session.id,
+        actorName: session.name,
+        payload: basePayload,
+      })
+    );
+  }
+  if (isTransitioningToCompleted) {
+    await emitWorkflowEvent(
+      buildWorkflowEvent({
+        type: "work_order.completed",
+        entityType: "work_order",
+        entityId: id,
+        actorUserId: session.id,
+        actorName: session.name,
+        payload: basePayload,
+      })
+    );
+  }
+  if (
+    nextAssigneeList !== null &&
+    nextAssigneeList.some((uid) => !prevIdSet.has(uid))
+  ) {
+    await emitWorkflowEvent(
+      buildWorkflowEvent({
+        type: "work_order.assigned",
+        entityType: "work_order",
+        entityId: id,
+        actorUserId: session.id,
+        actorName: session.name,
+        payload: basePayload,
+      })
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }

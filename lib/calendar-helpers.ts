@@ -80,3 +80,14 @@ export function countSchedulesByCalendarNav<T extends ScheduleWithCalendarId>(
   }
   return { all: schedules.length, none, byId };
 }
+
+/** How often `/calendario` reloads server data while the page is open. */
+export const CALENDAR_AUTO_REFRESH_MS = 60_000;
+
+/** Skip ticks while the tab is hidden or a calendar dialog/form is open. */
+export function calendarAutoRefreshAllowed(input: {
+  pageVisible: boolean;
+  blockingUiOpen: boolean;
+}): boolean {
+  return input.pageVisible && !input.blockingUiOpen;
+}

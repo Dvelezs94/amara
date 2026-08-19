@@ -11,6 +11,8 @@ import {
   extractInlineFilesFromRewrittenNote,
   rewriteNoteBodyToPublicDownloadUrls,
 } from "@/lib/solicitud-public-note-urls";
+import { emitWorkflowEvent } from "@/lib/workflow-engine";
+import { buildWorkflowEvent } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +185,38 @@ export async function POST(req: Request) {
       assetId,
     },
   });
+
+  const woPayload = {
+    title: titulo,
+    folio,
+    status: "pending",
+    priority: prioridad,
+    href: `/tareas/${id}`,
+    contactEmail: emailContacto || null,
+    contactName: nombreContacto,
+    assetName: assetLabel,
+    note: descripcion.slice(0, 500),
+  };
+  await emitWorkflowEvent(
+    buildWorkflowEvent({
+      type: "work_order.created",
+      entityType: "work_order",
+      entityId: id,
+      actorUserId: null,
+      actorName: nombreContacto,
+      payload: woPayload,
+    })
+  );
+  await emitWorkflowEvent(
+    buildWorkflowEvent({
+      type: "solicitud.created",
+      entityType: "work_order",
+      entityId: id,
+      actorUserId: null,
+      actorName: nombreContacto,
+      payload: woPayload,
+    })
+  );
 
   return NextResponse.json({ ok: true, workOrderId: id, folio });
 }

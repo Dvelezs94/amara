@@ -1,0 +1,22 @@
+# Local development: Postgres only. Run the app on the host with `npm run dev`.
+# Usage: docker compose -f docker-compose.local.yml up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: msa
+      POSTGRES_PASSWORD: msa
+      POSTGRES_DB: msa
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U msa -d msa"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data_local:

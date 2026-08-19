@@ -14,6 +14,8 @@ import {
   parseChecklistTemplateItemsFromClientJson,
 } from "@/lib/checklist-items-from-payload";
 import { canDeleteChecklistRevision } from "@/lib/checklist-revision-delete";
+import { emitWorkflowEvent } from "@/lib/workflow-engine";
+import { buildWorkflowEvent } from "@/lib/workflows";
 
 export async function PATCH(
   req: Request,
@@ -99,6 +101,26 @@ export async function PATCH(
       comment: body.comment ? String(body.comment).trim() : null,
     },
   });
+
+  await emitWorkflowEvent(
+    buildWorkflowEvent({
+      type:
+        decision === "approve"
+          ? "checklist_revision.approved"
+          : "checklist_revision.rejected",
+      entityType: "checklist_template",
+      entityId: templateId,
+      actorUserId: session.id,
+      actorName: session.name,
+      payload: {
+        title: revision.name,
+        href: `/checklists/${templateId}/revisions/${revisionId}`,
+        requesterId: revision.proposedByUserId,
+        revisionName: revision.name,
+        note: body.comment ? String(body.comment).trim().slice(0, 500) : null,
+      },
+    })
+  );
 
   return NextResponse.json({ ok: true });
 }

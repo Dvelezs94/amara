@@ -26,7 +26,17 @@ function generateUsername(name, fallbackIndex) {
   return `${base}${fallbackIndex + 1}`;
 }
 
+function loadLocalEnvFile() {
+  if (process.env.DATABASE_URL) return;
+  try {
+    process.loadEnvFile(".env");
+  } catch {
+    // Missing `.env` is fine; DATABASE_URL is still required below.
+  }
+}
+
 async function main() {
+  loadLocalEnvFile();
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     console.error("DATABASE_URL is required.");

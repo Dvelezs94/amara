@@ -69,7 +69,11 @@ Overall, the palette conveys clarity and contrast, with a professional dark inte
    Test logins:
 
    - `admin` / `1234aA` (email `admin@admin.com`)
-   - `operador` / `operador1234`
+   - `operador` / `operador1234` (turno A)
+   - `operador.b` / `operador1234` (turno B)
+   - `calidad` / `calidad1234`
+
+   The seed is idempotent and fills calendars, maintenance events, checklists (folders + templates), work orders, notes, requests, and a proposed checklist revision for Calidad.
 
    Or create an admin interactively:
 

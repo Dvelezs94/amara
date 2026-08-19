@@ -6,6 +6,7 @@ import {
   isDefaultCalendarId,
   resolveDefaultCalendarId,
   sortCalendars,
+  calendarAutoRefreshAllowed,
 } from "@/lib/calendar-helpers";
 
 describe("sortCalendars", () => {
@@ -103,5 +104,19 @@ describe("countSchedulesByCalendarNav", () => {
     expect(counts.none).toBe(2);
     expect(counts.byId.get("c1")).toBe(2);
     expect(counts.byId.get("c2")).toBe(1);
+  });
+});
+
+describe("calendarAutoRefreshAllowed", () => {
+  it("runs only when the page is visible and no blocking UI is open", () => {
+    expect(
+      calendarAutoRefreshAllowed({ pageVisible: true, blockingUiOpen: false })
+    ).toBe(true);
+    expect(
+      calendarAutoRefreshAllowed({ pageVisible: false, blockingUiOpen: false })
+    ).toBe(false);
+    expect(
+      calendarAutoRefreshAllowed({ pageVisible: true, blockingUiOpen: true })
+    ).toBe(false);
   });
 });

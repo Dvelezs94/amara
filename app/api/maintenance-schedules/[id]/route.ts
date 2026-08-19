@@ -13,6 +13,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { recordAuditLog } from "@/lib/audit";
 import { parseRecurrencePayloadFromMaintenanceBody } from "@/lib/maintenance-schedule-recurrence-from-request";
 import { ensureDefaultCalendar } from "@/lib/ensure-default-calendar";
+import { preserveHourPlanInRecurrence } from "@/lib/hour-maintenance";
+import { deleteHourPlansForScheduleId } from "@/lib/hour-maintenance-plans-db";
 import {
   buildRecurrenceJson,
   expandOccurrencesInRange,
@@ -40,6 +42,7 @@ async function softDeleteScheduleById(
     .update(maintenanceSchedules)
     .set({ deletedAt: new Date() })
     .where(eq(maintenanceSchedules.id, id));
+  await deleteHourPlansForScheduleId(id);
   await recordAuditLog({
     entityType: "maintenance_schedule",
     entityId: id,
@@ -121,7 +124,10 @@ export async function PATCH(
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
     parsedRecurrence = {
-      recurrence: parsed.recurrence,
+      recurrence: preserveHourPlanInRecurrence(
+        row.recurrence,
+        parsed.recurrence
+      ),
       nextRunAt: parsed.nextRunAt,
     };
   }

@@ -1,6 +1,9 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { loadLocalEnvFile } from "../load-local-env";
 import * as schema from "./schema";
+
+loadLocalEnvFile();
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {

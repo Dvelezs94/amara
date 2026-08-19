@@ -1,9 +1,63 @@
-export function maintenanceScheduleWorkOrderDescription(scheduleId: string): string {
+export function maintenanceScheduleWorkOrderDescription(
+  scheduleId: string,
+  scheduleName?: string | null
+): string {
+  const name = scheduleName?.trim();
+  if (name) {
+    return `Generada desde calendario de mantenimiento: ${name} (${scheduleId}).`;
+  }
   return `Generada desde calendario de mantenimiento (${scheduleId}).`;
 }
 
-export function maintenanceScheduleWorkOrderDescriptionPattern(scheduleId: string): string {
-  return `%calendario de mantenimiento (${scheduleId})%`;
+export function maintenanceScheduleWorkOrderDescriptionPattern(
+  scheduleId: string
+): string {
+  return `%calendario de mantenimiento%(${scheduleId})%`;
+}
+
+/** Parses calendar-generated work order copy (name optional for older rows). */
+export function parseMaintenanceScheduleWorkOrderDescription(
+  raw: string | null | undefined
+): { scheduleId: string; name: string | null } | null {
+  if (!raw) return null;
+  const text = raw.trim();
+  const withName = text.match(
+    /^Generada desde calendario de mantenimiento:\s*(.+)\s+\(([^)]+)\)\.\s*$/
+  );
+  if (withName?.[1] && withName[2]) {
+    return { name: withName[1].trim(), scheduleId: withName[2].trim() };
+  }
+  const legacy = text.match(
+    /^Generada desde calendario de mantenimiento \(([^)]+)\)\.\s*$/
+  );
+  if (legacy?.[1]) {
+    return { name: null, scheduleId: legacy[1].trim() };
+  }
+  return null;
+}
+
+export function calendarEventHref(
+  scheduleId: string,
+  dateYmd?: string | null
+): string {
+  const params = new URLSearchParams({ evento: scheduleId });
+  if (dateYmd && /^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
+    params.set("fecha", dateYmd);
+  }
+  return `/calendario?${params.toString()}`;
+}
+
+export function parseCalendarEventSearchParams(input: {
+  evento?: string | null;
+  fecha?: string | null;
+}): { scheduleId: string; dateYmd: string | null } | null {
+  const scheduleId = typeof input.evento === "string" ? input.evento.trim() : "";
+  if (!scheduleId) return null;
+  const fecha = typeof input.fecha === "string" ? input.fecha.trim() : "";
+  return {
+    scheduleId,
+    dateYmd: /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? fecha : null,
+  };
 }
 
 export function parseScheduleYmd(value: unknown): string | null {

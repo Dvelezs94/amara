@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { db } from "@/lib/db";
 import {
   maintenanceSchedules,
@@ -102,17 +103,19 @@ export default async function CalendarioPage() {
 
   return (
     <div className="space-y-5">
-      <CalendarWorkspace
-        calendars={calendarList}
-        schedules={calendarSchedules}
-        assets={assetOptions.map((a) => ({
-          id: a.id,
-          name: a.name,
-          sublabel: a.assetId,
-        }))}
-        users={userList}
-        checklistTemplates={templateOptions}
-      />
+      <Suspense fallback={null}>
+        <CalendarWorkspace
+          calendars={calendarList}
+          schedules={calendarSchedules}
+          assets={assetOptions.map((a) => ({
+            id: a.id,
+            name: a.name,
+            sublabel: a.assetId,
+          }))}
+          users={userList}
+          checklistTemplates={templateOptions}
+        />
+      </Suspense>
 
       <DeletedSchedulesSection
         initial={deletedInitial.map((d) => ({

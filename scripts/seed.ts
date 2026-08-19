@@ -1,12 +1,44 @@
 /**
  * Demo seed for PostgreSQL. Run: `npm run db:seed`
  * Requires DATABASE_URL and an existing schema (`npm run db:push`).
+ * Idempotent: existing rows (by username, assetId, title, etc.) are skipped or upserted.
  */
 import { execSync } from "node:child_process";
 import bcrypt from "bcryptjs";
-import { eq, asc, count } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
+import {
+  buildChecklistRevisionReviewRequestBody,
+  CHECKLIST_REVISION_REVIEW_TITLE,
+} from "../lib/checklist-notification-parse";
 import { db, pool } from "../lib/db";
 import * as schema from "../lib/db/schema";
+import {
+  buildRecurrenceJson,
+  nextScheduledOccurrenceOnOrAfter,
+} from "../lib/maintenance-recurrence";
+import { maintenanceScheduleWorkOrderDescription } from "../lib/maintenance-schedule-work-order";
+import {
+  addCalendarDaysYmd,
+  assignSeedChecklistItemIds,
+  dateFromYmdAtHour,
+  seedChecklistItemCompleted,
+} from "../lib/seed-helpers";
+import { computeNextWorkOrderFolio } from "../lib/work-order-folio-helpers";
+import { ymdInTimeZone } from "../lib/work-order-start-date";
+import {
+  assetGroupSeed,
+  assetSeed,
+  calendarSeed,
+  checklistFolderSeed,
+  checklistSeed,
+  dashboardWidgetSeed,
+  proposedRevisionSeed,
+  requestSeed,
+  scheduleSeed,
+  SEED_PASSWORDS,
+  userSeed,
+  workOrderSeed,
+} from "./seed-data";
 
 function rid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -19,122 +51,42 @@ async function usersTableExists(): Promise<boolean> {
   return r.rows[0]?.reg != null;
 }
 
-const assetSeed = [
-  {
-    name: "Horno de tratamiento termico HT-01",
-    assetId: "HORNO-HT-01",
-    metadata: { area: "Tratamiento termico", fabricante: "Nabertherm", criticidad: "alta" },
-  },
-  {
-    name: "Extractor de humos EX-03",
-    assetId: "EXTR-03",
-    metadata: { area: "Soldadura", fabricante: "Soler", criticidad: "alta" },
-  },
-  {
-    name: "Prensa hidraulica 200T PH-02",
-    assetId: "PRENSA-200T-02",
-    metadata: { area: "Conformado", fabricante: "Hidromec", criticidad: "media" },
-  },
-  {
-    name: "Compresor de aire CA-01",
-    assetId: "COMP-CA-01",
-    metadata: { area: "Servicios", fabricante: "Atlas Copco", criticidad: "alta" },
-  },
-  {
-    name: "Cortadora laser CL-05",
-    assetId: "LASER-CL-05",
-    metadata: { area: "Corte", fabricante: "Bystronic", criticidad: "alta" },
-  },
-  {
-    name: "Puente grua PG-02",
-    assetId: "GRUA-PG-02",
-    metadata: { area: "Logistica interna", fabricante: "Demag", criticidad: "media" },
-  },
-];
-
-const checklistSeed = [
-  {
-    name: "Checklist semanal de horno industrial",
-    description: "Revision preventiva de seguridad, combustion y limpieza del horno.",
-    items: [
-      { type: "step" as const, label: "Verificar estado general de aislamiento termico" },
-      { type: "step" as const, label: "Comprobar funcionamiento de valvulas y linea de gas" },
-      { type: "step" as const, label: "Revisar sensores de temperatura y termocuplas" },
-      {
-        type: "custom_field" as const,
-        label: "Temperatura maxima registrada (C)",
-        fieldType: "number" as const,
-      },
-      {
-        type: "custom_field" as const,
-        label: "Estado del quemador",
-        fieldType: "dropdown" as const,
-        options: ["Operativo", "Con ajuste", "Fuera de servicio"],
-      },
-      { type: "custom_field" as const, label: "Observaciones del tecnico", fieldType: "text" as const },
-    ],
-  },
-  {
-    name: "Checklist diario de extractor de humos",
-    description: "Control diario de flujo, filtros y seguridad del extractor.",
-    items: [
-      { type: "step" as const, label: "Verificar arranque y vibraciones del motor" },
-      { type: "step" as const, label: "Inspeccion visual de filtros y sellos" },
-      { type: "step" as const, label: "Comprobar alarmas y presostatos" },
-      { type: "custom_field" as const, label: "Caudal medido (m3/h)", fieldType: "number" as const },
-      { type: "custom_field" as const, label: "Evidencia fotografica", fieldType: "photo" as const },
-    ],
-  },
-  {
-    name: "Checklist mensual de compresor",
-    description: "Mantenimiento mensual de compresor en planta metalmecanica.",
-    items: [
-      { type: "step" as const, label: "Revisar fugas en lineas y conexiones" },
-      { type: "step" as const, label: "Comprobar nivel y estado de aceite" },
-      { type: "step" as const, label: "Limpiar o reemplazar filtro de admision" },
-      { type: "custom_field" as const, label: "Presion de trabajo (bar)", fieldType: "number" as const },
-      { type: "custom_field" as const, label: "Horas acumuladas de operacion", fieldType: "number" as const },
-      { type: "custom_field" as const, label: "Evidencia fotografica", fieldType: "photo" as const },
-    ],
-  },
-];
-
 async function main() {
   if (!(await usersTableExists())) {
     console.log("No users table. Running: npx drizzle-kit push --force");
     execSync("npx drizzle-kit push --force", { stdio: "inherit", cwd: process.cwd() });
   }
 
-  const hashAdmin = await bcrypt.hash("1234aA", 10);
-  const hashTecnico = await bcrypt.hash("operador1234", 10);
+  const todayYmd = ymdInTimeZone(new Date());
+  const passwordHashes = new Map<string, string>();
+  for (const password of Object.values(SEED_PASSWORDS)) {
+    passwordHashes.set(password, await bcrypt.hash(password, 10));
+  }
 
-  let usersInserted = 0;
-  let usersUpdated = 0;
-  let assetsInserted = 0;
-  let templatesInserted = 0;
-  let itemsInserted = 0;
-  let workOrdersInserted = 0;
-  let checklistInstancesInserted = 0;
+  const stats = {
+    usersInserted: 0,
+    usersUpdated: 0,
+    groupsInserted: 0,
+    assetsInserted: 0,
+    foldersInserted: 0,
+    templatesInserted: 0,
+    itemsInserted: 0,
+    calendarsInserted: 0,
+    schedulesInserted: 0,
+    workOrdersInserted: 0,
+    checklistInstancesInserted: 0,
+    notesInserted: 0,
+    notificationsInserted: 0,
+    requestsInserted: 0,
+    revisionsInserted: 0,
+    widgetsInserted: 0,
+  };
 
   await db.transaction(async (tx) => {
-    const usersToSeed = [
-      {
-        username: "admin",
-        email: "admin@admin.com",
-        name: "Administrador Planta",
-        role: "admin" as const,
-        passwordHash: hashAdmin,
-      },
-      {
-        username: "operador",
-        email: "operador@metalnova.local",
-        name: "Técnico Turno A",
-        role: "tecnico" as const,
-        passwordHash: hashTecnico,
-      },
-    ];
-
-    for (const u of usersToSeed) {
+    const userIdByUsername = new Map<string, string>();
+    for (const u of userSeed) {
+      const passwordHash = passwordHashes.get(u.password);
+      if (!passwordHash) throw new Error(`Missing hash for ${u.username}`);
       const existing = await tx
         .select({ id: schema.users.id })
         .from(schema.users)
@@ -146,126 +98,248 @@ async function main() {
           .set({
             email: u.email,
             name: u.name,
-            passwordHash: u.passwordHash,
+            passwordHash,
             role: u.role,
+            avatarBackgroundColor: u.avatarBackgroundColor,
           })
           .where(eq(schema.users.id, existing[0].id));
-        usersUpdated += 1;
+        userIdByUsername.set(u.username, existing[0].id);
+        stats.usersUpdated += 1;
       } else {
+        const id = rid("usr");
         await tx.insert(schema.users).values({
-          id: rid("usr"),
+          id,
           username: u.username,
           email: u.email,
           name: u.name,
-          passwordHash: u.passwordHash,
+          passwordHash,
           role: u.role,
+          avatarBackgroundColor: u.avatarBackgroundColor,
         });
-        usersInserted += 1;
+        userIdByUsername.set(u.username, id);
+        stats.usersInserted += 1;
       }
     }
 
+    const groupIdByName = new Map<string, string>();
+    for (const group of assetGroupSeed) {
+      const existing = await tx
+        .select({ id: schema.assetGroups.id })
+        .from(schema.assetGroups)
+        .where(eq(schema.assetGroups.name, group.name))
+        .limit(1);
+      if (existing[0]) {
+        groupIdByName.set(group.name, existing[0].id);
+        continue;
+      }
+      const id = rid("agr");
+      await tx.insert(schema.assetGroups).values({
+        id,
+        name: group.name,
+        sortOrder: group.sortOrder,
+      });
+      groupIdByName.set(group.name, id);
+      stats.groupsInserted += 1;
+    }
+
+    const assetIdByCode = new Map<string, string>();
     for (const asset of assetSeed) {
+      const groupId = groupIdByName.get(asset.groupName) ?? null;
       const existing = await tx
         .select({ id: schema.assets.id })
         .from(schema.assets)
         .where(eq(schema.assets.assetId, asset.assetId))
         .limit(1);
-      if (existing.length) continue;
+      if (existing[0]) {
+        await tx
+          .update(schema.assets)
+          .set({
+            groupId,
+            metadata: asset.metadata,
+            tracksMachineDowntime: asset.tracksMachineDowntime ?? true,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.assets.id, existing[0].id));
+        assetIdByCode.set(asset.assetId, existing[0].id);
+        continue;
+      }
+      const id = rid("ast");
       await tx.insert(schema.assets).values({
-        id: rid("ast"),
+        id,
         name: asset.name,
         assetId: asset.assetId,
+        groupId,
         metadata: asset.metadata,
+        tracksMachineDowntime: asset.tracksMachineDowntime ?? true,
       });
-      assetsInserted += 1;
+      assetIdByCode.set(asset.assetId, id);
+      stats.assetsInserted += 1;
     }
 
+    const folderIdByName = new Map<string, string>();
+    for (const folder of checklistFolderSeed) {
+      const existing = await tx
+        .select({ id: schema.checklistFolders.id })
+        .from(schema.checklistFolders)
+        .where(eq(schema.checklistFolders.name, folder.name))
+        .limit(1);
+      if (existing[0]) {
+        folderIdByName.set(folder.name, existing[0].id);
+        continue;
+      }
+      const id = rid("fld");
+      await tx.insert(schema.checklistFolders).values({
+        id,
+        name: folder.name,
+        sortOrder: folder.sortOrder,
+      });
+      folderIdByName.set(folder.name, id);
+      stats.foldersInserted += 1;
+    }
+
+    const templateIdByName = new Map<string, string>();
     for (const template of checklistSeed) {
-      let templateId: string | null = null;
+      const folderId = folderIdByName.get(template.folderName) ?? null;
       const existingTpl = await tx
         .select({ id: schema.checklistTemplates.id })
         .from(schema.checklistTemplates)
         .where(eq(schema.checklistTemplates.name, template.name))
         .limit(1);
+
+      let templateId: string;
       if (existingTpl[0]) {
         templateId = existingTpl[0].id;
+        await tx
+          .update(schema.checklistTemplates)
+          .set({ description: template.description, folderId })
+          .where(eq(schema.checklistTemplates.id, templateId));
       } else {
         templateId = rid("tpl");
         await tx.insert(schema.checklistTemplates).values({
           id: templateId,
           name: template.name,
           description: template.description,
+          folderId,
         });
-        templatesInserted += 1;
+        stats.templatesInserted += 1;
       }
+      templateIdByName.set(template.name, templateId);
 
-      const [row] = await tx
-        .select({ c: count() })
+      const existingItems = await tx
+        .select({
+          id: schema.checklistTemplateItems.id,
+          type: schema.checklistTemplateItems.type,
+        })
         .from(schema.checklistTemplateItems)
         .where(eq(schema.checklistTemplateItems.checklistTemplateId, templateId));
-      if (Number(row?.c ?? 0) > 0) continue;
+      const seedHasSection = template.items.some((item) => item.type === "section");
+      const existingHasSection = existingItems.some((item) => item.type === "section");
+      if (existingItems.length > 0 && !(seedHasSection && !existingHasSection)) {
+        continue;
+      }
+      if (existingItems.length > 0) {
+        await tx
+          .delete(schema.checklistTemplateItems)
+          .where(eq(schema.checklistTemplateItems.checklistTemplateId, templateId));
+      }
 
-      for (let index = 0; index < template.items.length; index += 1) {
-        const item = template.items[index]!;
+      const rows = assignSeedChecklistItemIds(template.items, () => rid("it"));
+      for (let index = 0; index < rows.length; index += 1) {
+        const item = rows[index]!;
         await tx.insert(schema.checklistTemplateItems).values({
-          id: rid("it"),
+          id: item.id,
           checklistTemplateId: templateId,
-          parentItemId: null,
+          parentItemId: item.parentItemId,
           type: item.type,
           label: item.label,
           sortOrder: index,
-          fieldType: "fieldType" in item ? item.fieldType : undefined,
-          options: "options" in item ? item.options : undefined,
+          fieldType: item.fieldType,
+          options: item.options,
+          isOptional: item.isOptional ?? false,
         });
-        itemsInserted += 1;
+        stats.itemsInserted += 1;
       }
     }
 
-    const [adminRow] = await tx
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(eq(schema.users.username, "admin"))
-      .limit(1);
-    const [operadorRow] = await tx
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(eq(schema.users.username, "operador"))
-      .limit(1);
-    const adminId = adminRow?.id ?? null;
-    const operadorId = operadorRow?.id ?? null;
-    if (!adminId || !operadorId) {
-      throw new Error("No se encontraron usuarios admin/operador tras el upsert.");
+    for (const calendar of calendarSeed) {
+      const existing = await tx
+        .select({ id: schema.calendars.id })
+        .from(schema.calendars)
+        .where(eq(schema.calendars.id, calendar.id))
+        .limit(1);
+      if (existing[0]) {
+        await tx
+          .update(schema.calendars)
+          .set({
+            name: calendar.name,
+            color: calendar.color,
+            sortOrder: calendar.sortOrder,
+          })
+          .where(eq(schema.calendars.id, calendar.id));
+        continue;
+      }
+      await tx.insert(schema.calendars).values(calendar);
+      stats.calendarsInserted += 1;
     }
 
-    const workOrderSeed = [
-      {
-        title: "Falla de calentamiento en horno HT-01",
-        description:
-          "El horno no supera los 600C durante el turno nocturno. Revisar quemador y termocupla.",
-        status: "pending" as const,
-        priority: "urgent" as const,
-        assetCode: "HORNO-HT-01",
-        templateName: "Checklist semanal de horno industrial",
-      },
-      {
-        title: "Mantenimiento preventivo extractor EX-03",
-        description:
-          "Inspeccion programada de flujo y estado de filtros en cabina de soldadura.",
-        status: "in_progress" as const,
-        priority: "high" as const,
-        assetCode: "EXTR-03",
-        templateName: "Checklist diario de extractor de humos",
-      },
-      {
-        title: "Revision mensual compresor CA-01",
-        description:
-          "Ejecucion de rutina mensual para validar presion, aceite y fugas de linea.",
-        status: "completed" as const,
-        priority: "medium" as const,
-        assetCode: "COMP-CA-01",
-        templateName: "Checklist mensual de compresor",
-      },
-    ];
+    const scheduleIdByName = new Map<string, string>();
+    for (const schedule of scheduleSeed) {
+      const existing = await tx
+        .select({ id: schema.maintenanceSchedules.id })
+        .from(schema.maintenanceSchedules)
+        .where(eq(schema.maintenanceSchedules.name, schedule.name))
+        .limit(1);
+      const assigneeIds = schedule.assigneeUsernames
+        .map((name) => userIdByUsername.get(name))
+        .filter((id): id is string => Boolean(id));
+      if (existing[0]) {
+        scheduleIdByName.set(schedule.name, existing[0].id);
+        continue;
+      }
+
+      const anchorDate = addCalendarDaysYmd(todayYmd, schedule.anchorOffsetDays);
+      const rule = {
+        frequency: schedule.frequency,
+        interval: schedule.interval,
+        anchorDate,
+        weekdays: schedule.weekdays,
+      };
+      const recurrence = buildRecurrenceJson(rule);
+      const nextRunAt =
+        nextScheduledOccurrenceOnOrAfter(rule, dateFromYmdAtHour(todayYmd, 6)) ??
+        dateFromYmdAtHour(addCalendarDaysYmd(todayYmd, 1), 8);
+      const id = rid("ms");
+      await tx.insert(schema.maintenanceSchedules).values({
+        id,
+        name: schedule.name,
+        assetId: schedule.assetCode
+          ? assetIdByCode.get(schedule.assetCode) ?? null
+          : null,
+        assigneeId: assigneeIds[0] ?? null,
+        color: schedule.color,
+        recurrence,
+        checklistTemplateId: templateIdByName.get(schedule.templateName) ?? null,
+        calendarId: schedule.calendarId,
+        nextRunAt,
+      });
+      if (assigneeIds.length > 0) {
+        await tx.insert(schema.maintenanceScheduleAssignees).values(
+          assigneeIds.map((userId) => ({
+            maintenanceScheduleId: id,
+            userId,
+          }))
+        );
+      }
+      scheduleIdByName.set(schedule.name, id);
+      stats.schedulesInserted += 1;
+    }
+
+    const [folioRow] = await tx
+      .select({ max: sql<number>`max(${schema.workOrders.folio})` })
+      .from(schema.workOrders);
+    let nextFolio = computeNextWorkOrderFolio(folioRow?.max ?? 0);
+    const workOrderIdByTitle = new Map<string, string>();
+    let boardSort = 0;
 
     for (const workOrder of workOrderSeed) {
       const existingWo = await tx
@@ -273,86 +347,332 @@ async function main() {
         .from(schema.workOrders)
         .where(eq(schema.workOrders.title, workOrder.title))
         .limit(1);
-      if (existingWo.length) continue;
+      if (existingWo[0]) {
+        workOrderIdByTitle.set(workOrder.title, existingWo[0].id);
+        continue;
+      }
 
-      const [asset] = await tx
-        .select({ id: schema.assets.id })
-        .from(schema.assets)
-        .where(eq(schema.assets.assetId, workOrder.assetCode))
-        .limit(1);
-      const [tpl] = await tx
-        .select({ id: schema.checklistTemplates.id })
-        .from(schema.checklistTemplates)
-        .where(eq(schema.checklistTemplates.name, workOrder.templateName))
-        .limit(1);
+      const assigneeIds = workOrder.assigneeUsernames
+        .map((name) => userIdByUsername.get(name))
+        .filter((id): id is string => Boolean(id));
+      const requesterId = userIdByUsername.get(workOrder.requesterUsername);
+      if (!requesterId || assigneeIds.length === 0) {
+        throw new Error(`Usuarios faltantes para tarea: ${workOrder.title}`);
+      }
+
+      const startDate =
+        workOrder.startOffsetDays == null
+          ? null
+          : dateFromYmdAtHour(addCalendarDaysYmd(todayYmd, workOrder.startOffsetDays), 8);
+      const dueDate =
+        workOrder.dueOffsetDays == null
+          ? null
+          : dateFromYmdAtHour(addCalendarDaysYmd(todayYmd, workOrder.dueOffsetDays), 17);
+      const createdAt = startDate ?? dateFromYmdAtHour(todayYmd, 8);
+      const startedAt =
+        workOrder.status === "in_progress" || workOrder.status === "completed"
+          ? dateFromYmdAtHour(
+              addCalendarDaysYmd(todayYmd, workOrder.startOffsetDays ?? 0),
+              9
+            )
+          : null;
+      const completedAt =
+        workOrder.status === "completed"
+          ? dateFromYmdAtHour(
+              addCalendarDaysYmd(todayYmd, workOrder.dueOffsetDays ?? 0),
+              16
+            )
+          : null;
+
+      const scheduleId = workOrder.scheduleName
+        ? scheduleIdByName.get(workOrder.scheduleName)
+        : undefined;
+      const description = scheduleId
+        ? maintenanceScheduleWorkOrderDescription(
+            scheduleId,
+            workOrder.scheduleName
+          )
+        : workOrder.description;
 
       const workOrderId = rid("wo");
-      const createdAt = new Date();
-      const completedAt =
-        workOrder.status === "completed" ? new Date() : null;
-
       await tx.insert(schema.workOrders).values({
         id: workOrderId,
+        folio: nextFolio,
         title: workOrder.title,
-        description: workOrder.description,
+        description,
         status: workOrder.status,
         priority: workOrder.priority,
-        assetId: asset?.id ?? null,
-        assigneeId: operadorId,
-        requesterId: adminId,
-        dueDate: null,
+        kind: workOrder.kind,
+        assetId: workOrder.assetCode
+          ? assetIdByCode.get(workOrder.assetCode) ?? null
+          : null,
+        assigneeId: assigneeIds[0]!,
+        requesterId,
+        startDate,
+        dueDate,
+        startedAt,
         completedAt,
         createdAt,
-        updatedAt: createdAt,
+        updatedAt: completedAt ?? startedAt ?? createdAt,
+        boardSortOrder: boardSort,
+        countsMachineDowntime: workOrder.countsMachineDowntime ?? false,
+        manualDowntimeMinutes: workOrder.manualDowntimeMinutes ?? 0,
       });
-      workOrdersInserted += 1;
+      nextFolio += 1;
+      boardSort += 1;
+      workOrderIdByTitle.set(workOrder.title, workOrderId);
+      stats.workOrdersInserted += 1;
 
-      if (!tpl?.id) continue;
+      await tx.insert(schema.workOrderAssignees).values(
+        assigneeIds.map((userId) => ({ workOrderId, userId }))
+      );
 
-      const templateItems = await tx
-        .select()
-        .from(schema.checklistTemplateItems)
-        .where(eq(schema.checklistTemplateItems.checklistTemplateId, tpl.id))
-        .orderBy(asc(schema.checklistTemplateItems.sortOrder));
-
-      const idMap = new Map<string, string>();
-      for (const item of templateItems) {
-        idMap.set(item.id, rid("woi"));
+      const templateId = workOrder.templateName
+        ? templateIdByName.get(workOrder.templateName)
+        : undefined;
+      if (templateId) {
+        const templateItems = await tx
+          .select()
+          .from(schema.checklistTemplateItems)
+          .where(eq(schema.checklistTemplateItems.checklistTemplateId, templateId));
+        const idMap = new Map<string, string>();
+        for (const item of templateItems) {
+          idMap.set(item.id, rid("woi"));
+        }
+        const ordered = [...templateItems].sort((a, b) => a.sortOrder - b.sortOrder);
+        for (const item of ordered) {
+          await tx.insert(schema.workOrderChecklist).values({
+            id: idMap.get(item.id)!,
+            workOrderId,
+            checklistTemplateId: templateId,
+            parentItemId: item.parentItemId
+              ? idMap.get(item.parentItemId) ?? null
+              : null,
+            type: item.type,
+            label: item.label,
+            sortOrder: item.sortOrder,
+            completed: seedChecklistItemCompleted({
+              type: item.type,
+              status: workOrder.status,
+              sortOrder: item.sortOrder,
+            }),
+            value:
+              workOrder.fieldValues && item.label in workOrder.fieldValues
+                ? workOrder.fieldValues[item.label]
+                : null,
+            fieldType: item.fieldType ?? undefined,
+            options: item.options ?? undefined,
+            isOptional: item.isOptional ?? false,
+          });
+          stats.checklistInstancesInserted += 1;
+        }
       }
-      for (const item of templateItems) {
-        await tx.insert(schema.workOrderChecklist).values({
-          id: idMap.get(item.id)!,
+
+      for (const body of workOrder.notes ?? []) {
+        await tx.insert(schema.notes).values({
+          id: rid("nte"),
           workOrderId,
-          checklistTemplateId: tpl.id,
-          parentItemId: item.parentItemId ? idMap.get(item.parentItemId) ?? null : null,
-          type: item.type,
-          label: item.label,
-          sortOrder: item.sortOrder,
-          completed:
-            workOrder.status === "completed" && item.type === "step",
-          value: null,
-          fieldType: item.fieldType ?? undefined,
-          options: item.options ?? undefined,
+          userId: assigneeIds[0]!,
+          body,
+          createdAt,
         });
-        checklistInstancesInserted += 1;
+        stats.notesInserted += 1;
       }
+    }
+
+    for (const req of requestSeed) {
+      const existing = await tx
+        .select({ id: schema.requests.id })
+        .from(schema.requests)
+        .where(eq(schema.requests.description, req.description))
+        .limit(1);
+      if (existing[0]) continue;
+      const requesterId = userIdByUsername.get(req.requesterUsername);
+      if (!requesterId) continue;
+      await tx.insert(schema.requests).values({
+        id: rid("req"),
+        description: req.description,
+        priority: req.priority,
+        assetId: req.assetCode ? assetIdByCode.get(req.assetCode) ?? null : null,
+        requesterId,
+        status: req.status,
+        workOrderId: req.convertedWorkOrderTitle
+          ? workOrderIdByTitle.get(req.convertedWorkOrderTitle) ?? null
+          : null,
+      });
+      stats.requestsInserted += 1;
+    }
+
+    const hornoTemplateId = templateIdByName.get(proposedRevisionSeed.templateName);
+    const operadorId = userIdByUsername.get("operador");
+    const calidadId = userIdByUsername.get("calidad");
+    if (hornoTemplateId && operadorId) {
+      const existingRev = await tx
+        .select({ id: schema.checklistTemplateRevisions.id })
+        .from(schema.checklistTemplateRevisions)
+        .where(eq(schema.checklistTemplateRevisions.name, proposedRevisionSeed.revisionName))
+        .limit(1);
+      if (!existingRev[0]) {
+        const tpl = await tx.query.checklistTemplates.findFirst({
+          where: eq(schema.checklistTemplates.id, hornoTemplateId),
+        });
+        const items = await tx
+          .select()
+          .from(schema.checklistTemplateItems)
+          .where(eq(schema.checklistTemplateItems.checklistTemplateId, hornoTemplateId));
+        const snapshotItems = items
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((item) => ({
+            type: item.type,
+            label: item.label,
+            fieldType: item.fieldType,
+            options: item.options,
+            id: item.id,
+            parentItemId: item.parentItemId,
+            isOptional: item.isOptional,
+          }));
+        const revisionId = rid("rev");
+        await tx.insert(schema.checklistTemplateRevisions).values({
+          id: revisionId,
+          checklistTemplateId: hornoTemplateId,
+          revisionNumber: 1,
+          name: proposedRevisionSeed.revisionName,
+          status: "proposed",
+          proposedByUserId: operadorId,
+          snapshot: {
+            before: {
+              name: tpl?.name ?? proposedRevisionSeed.templateName,
+              description: tpl?.description ?? null,
+              items: snapshotItems,
+            },
+            after: {
+              name: tpl?.name ?? proposedRevisionSeed.templateName,
+              description: tpl?.description ?? null,
+              items: [
+                ...snapshotItems,
+                {
+                  type: proposedRevisionSeed.extraAfterItem.type,
+                  label: proposedRevisionSeed.extraAfterItem.label,
+                  fieldType: proposedRevisionSeed.extraAfterItem.fieldType ?? null,
+                  options: proposedRevisionSeed.extraAfterItem.options ?? null,
+                  isOptional: proposedRevisionSeed.extraAfterItem.isOptional ?? false,
+                },
+              ],
+            },
+          },
+        });
+        stats.revisionsInserted += 1;
+
+        if (calidadId) {
+          await tx.insert(schema.notifications).values({
+            id: rid("ntf"),
+            userId: calidadId,
+            type: "work_order_update",
+            title: CHECKLIST_REVISION_REVIEW_TITLE,
+            body: buildChecklistRevisionReviewRequestBody({
+              templateId: hornoTemplateId,
+              revisionId,
+              templateName: proposedRevisionSeed.templateName,
+              revisionName: proposedRevisionSeed.revisionName,
+              proposedByName: "Técnico Turno A",
+            }),
+          });
+          stats.notificationsInserted += 1;
+        }
+      }
+    }
+
+    const fallaId = workOrderIdByTitle.get("Falla de calentamiento en horno HT-01");
+    const operadorUserId = userIdByUsername.get("operador");
+    if (fallaId && operadorUserId) {
+      const existingN = await tx
+        .select({ id: schema.notifications.id })
+        .from(schema.notifications)
+        .where(eq(schema.notifications.title, "Nueva tarea asignada"))
+        .limit(1);
+      if (!existingN[0]) {
+        await tx.insert(schema.notifications).values({
+          id: rid("ntf"),
+          userId: operadorUserId,
+          type: "assignment",
+          title: "Nueva tarea asignada",
+          body: "Falla de calentamiento en horno HT-01",
+          workOrderId: fallaId,
+        });
+        stats.notificationsInserted += 1;
+      }
+    }
+
+    const fugaId = workOrderIdByTitle.get("Fuga de aceite dobladora DB-01");
+    const adminId = userIdByUsername.get("admin");
+    if (fugaId && adminId) {
+      const existingN = await tx
+        .select({ id: schema.notifications.id })
+        .from(schema.notifications)
+        .where(eq(schema.notifications.title, "Tarea completada"))
+        .limit(1);
+      if (!existingN[0]) {
+        await tx.insert(schema.notifications).values({
+          id: rid("ntf"),
+          userId: adminId,
+          type: "work_order_update",
+          title: "Tarea completada",
+          body: "Fuga de aceite dobladora DB-01",
+          workOrderId: fugaId,
+        });
+        stats.notificationsInserted += 1;
+      }
+    }
+
+    for (const widget of dashboardWidgetSeed) {
+      const userId = userIdByUsername.get(widget.username);
+      const templateId = templateIdByName.get(widget.templateName);
+      if (!userId || !templateId) continue;
+      const existing = await tx
+        .select({ id: schema.dashboardWidgets.id })
+        .from(schema.dashboardWidgets)
+        .where(eq(schema.dashboardWidgets.chartTitle, widget.chartTitle))
+        .limit(1);
+      if (existing[0]) continue;
+      await tx.insert(schema.dashboardWidgets).values({
+        id: rid("wdg"),
+        userId,
+        templateId,
+        templateName: widget.templateName,
+        fieldLabel: widget.fieldLabel,
+        fieldLabels: [widget.fieldLabel],
+        chartType: widget.chartType,
+        chartTitle: widget.chartTitle,
+        dateFrom: addCalendarDaysYmd(todayYmd, -40),
+        dateTo: todayYmd,
+        sortOrder: stats.widgetsInserted,
+      });
+      stats.widgetsInserted += 1;
     }
   });
 
-  console.log("Seed completado para entorno metalmecanico (espanol).");
-  console.log(`Usuarios insertados: ${usersInserted}`);
-  console.log(`Usuarios actualizados: ${usersUpdated}`);
-  console.log(`Activos insertados: ${assetsInserted}`);
-  console.log(`Plantillas insertadas: ${templatesInserted}`);
-  console.log(`Items de checklist insertados: ${itemsInserted}`);
-  console.log(`Ordenes de trabajo insertadas: ${workOrdersInserted}`);
-  console.log(
-    `Items de checklist en ordenes insertados: ${checklistInstancesInserted}`
-  );
+  console.log("Seed completado para entorno metalmecánico (español).");
+  console.log(`Usuarios insertados: ${stats.usersInserted} (actualizados: ${stats.usersUpdated})`);
+  console.log(`Áreas insertadas: ${stats.groupsInserted}`);
+  console.log(`Activos insertados: ${stats.assetsInserted}`);
+  console.log(`Carpetas de checklist: ${stats.foldersInserted}`);
+  console.log(`Plantillas insertadas: ${stats.templatesInserted}`);
+  console.log(`Ítems de plantilla insertados: ${stats.itemsInserted}`);
+  console.log(`Calendarios insertados: ${stats.calendarsInserted}`);
+  console.log(`Eventos de calendario: ${stats.schedulesInserted}`);
+  console.log(`Órdenes de trabajo insertadas: ${stats.workOrdersInserted}`);
+  console.log(`Ítems de checklist en órdenes: ${stats.checklistInstancesInserted}`);
+  console.log(`Notas: ${stats.notesInserted}`);
+  console.log(`Notificaciones: ${stats.notificationsInserted}`);
+  console.log(`Solicitudes: ${stats.requestsInserted}`);
+  console.log(`Revisiones de checklist: ${stats.revisionsInserted}`);
+  console.log(`Widgets de dashboard: ${stats.widgetsInserted}`);
   console.log("");
   console.log("Credenciales de prueba:");
-  console.log("- admin (admin@admin.com) / 1234aA");
-  console.log("- operador / operador1234");
+  console.log(`- admin (admin@admin.com) / ${SEED_PASSWORDS.admin}`);
+  console.log(`- operador / ${SEED_PASSWORDS.tecnico}`);
+  console.log(`- operador.b / ${SEED_PASSWORDS.tecnico}`);
+  console.log(`- calidad / ${SEED_PASSWORDS.calidad}`);
 }
 
 main()

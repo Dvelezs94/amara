@@ -10,6 +10,7 @@ import {
   index,
   foreignKey,
   primaryKey,
+  real,
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -469,4 +470,85 @@ export const maintenanceScheduleAssignees = pgTable(
     primaryKey({ columns: [t.maintenanceScheduleId, t.userId] }),
     index("maintenance_schedule_assignees_user_idx").on(t.userId),
   ]
+);
+
+/** Hour-based auto schedules: machine work hours/day + interval hours → calendar events. */
+export const assetHourMaintenancePlans = pgTable(
+  "asset_hour_maintenance_plans",
+  {
+    id: text("id").primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    hoursPerDay: real("hours_per_day").notNull(),
+    everyHours: real("every_hours").notNull(),
+    startDate: text("start_date").notNull(),
+    calendarId: text("calendar_id").references(() => calendars.id, {
+      onDelete: "set null",
+    }),
+    checklistTemplateId: text("checklist_template_id"),
+    color: text("color"),
+    scheduleId: text("schedule_id")
+      .notNull()
+      .references(() => maintenanceSchedules.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("asset_hour_maintenance_plans_schedule_uidx").on(t.scheduleId),
+    index("asset_hour_maintenance_plans_asset_idx").on(t.assetId),
+  ]
+);
+
+/** Admin-defined automations: event trigger + actions (notify / email). */
+export const workflowDefinitions = pgTable(
+  "workflow_definitions",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description"),
+    enabled: boolean("enabled").notNull().default(true),
+    triggerType: text("trigger_type").notNull(),
+    triggerConfig: jsonb("trigger_config")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    actions: jsonb("actions")
+      .$type<unknown[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("workflow_definitions_trigger_idx").on(t.triggerType, t.enabled),
+  ]
+);
+
+export const workflowRuns = pgTable(
+  "workflow_runs",
+  {
+    id: text("id").primaryKey(),
+    workflowId: text("workflow_id").references(() => workflowDefinitions.id, {
+      onDelete: "set null",
+    }),
+    triggerType: text("trigger_type").notNull(),
+    entityType: text("entity_type"),
+    entityId: text("entity_id"),
+    status: text("status").notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("workflow_runs_created_idx").on(t.createdAt)]
 );

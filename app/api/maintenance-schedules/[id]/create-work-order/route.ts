@@ -16,6 +16,8 @@ import {
 import { workOrderExistsForScheduleDay } from "@/lib/maintenance-schedule-work-order-db";
 import { toYmdLocal } from "@/lib/maintenance-recurrence";
 import { parseOptionalWorkOrderDateInput } from "@/lib/work-order-start-date";
+import { emitWorkflowEvent } from "@/lib/workflow-engine";
+import { buildWorkflowEvent } from "@/lib/workflows";
 
 export async function POST(
   req: Request,
@@ -99,7 +101,10 @@ export async function POST(
     id: workOrderId,
     folio,
     title: schedule.name,
-    description: maintenanceScheduleWorkOrderDescription(schedule.id),
+    description: maintenanceScheduleWorkOrderDescription(
+      schedule.id,
+      schedule.name
+    ),
     status: "pending",
     priority: "medium",
     kind: "routine",
@@ -145,6 +150,43 @@ export async function POST(
       folio,
     },
   });
+
+  await emitWorkflowEvent(
+    buildWorkflowEvent({
+      type: "work_order.created",
+      entityType: "work_order",
+      entityId: workOrderId,
+      actorUserId: session.id,
+      actorName: session.name,
+      payload: {
+        title: schedule.name,
+        folio,
+        status: "pending",
+        priority: "medium",
+        href: `/tareas/${workOrderId}`,
+        requesterId: session.id,
+        assigneeIds: assigneeIds.join(","),
+      },
+    })
+  );
+  await emitWorkflowEvent(
+    buildWorkflowEvent({
+      type: "work_order.assigned",
+      entityType: "work_order",
+      entityId: workOrderId,
+      actorUserId: session.id,
+      actorName: session.name,
+      payload: {
+        title: schedule.name,
+        folio,
+        status: "pending",
+        priority: "medium",
+        href: `/tareas/${workOrderId}`,
+        requesterId: session.id,
+        assigneeIds: assigneeIds.join(","),
+      },
+    })
+  );
 
   return NextResponse.json({ id: workOrderId, folio });
 }

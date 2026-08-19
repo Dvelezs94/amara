@@ -13,6 +13,8 @@ import { getNextWorkOrderFolio } from "@/lib/work-order-folio";
 import { createNotification } from "@/lib/notifications";
 import { clampManualDowntimeMinutes } from "@/lib/machine-downtime";
 import { parseOptionalWorkOrderDateInput } from "@/lib/work-order-start-date";
+import { emitWorkflowEvent } from "@/lib/workflow-engine";
+import { buildWorkflowEvent } from "@/lib/workflows";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -225,5 +227,43 @@ export async function POST(req: Request) {
       startDate: startParsed.date ? startParsed.date.toISOString() : null,
     },
   });
+  await emitWorkflowEvent(
+    buildWorkflowEvent({
+      type: "work_order.created",
+      entityType: "work_order",
+      entityId: id,
+      actorUserId: session.id,
+      actorName: session.name,
+      payload: {
+        title,
+        folio,
+        status: "pending",
+        priority: body.priority ?? "medium",
+        href: `/tareas/${id}`,
+        requesterId: session.id,
+        assigneeIds: assigneeIds.join(","),
+      },
+    })
+  );
+  if (assigneeIds.length > 0) {
+    await emitWorkflowEvent(
+      buildWorkflowEvent({
+        type: "work_order.assigned",
+        entityType: "work_order",
+        entityId: id,
+        actorUserId: session.id,
+        actorName: session.name,
+        payload: {
+          title,
+          folio,
+          status: "pending",
+          priority: body.priority ?? "medium",
+          href: `/tareas/${id}`,
+          requesterId: session.id,
+          assigneeIds: assigneeIds.join(","),
+        },
+      })
+    );
+  }
   return NextResponse.json({ id });
 }

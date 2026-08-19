@@ -7,7 +7,17 @@
 
 import { Client } from "pg";
 
+function loadLocalEnvFile() {
+  if (process.env.DATABASE_URL) return;
+  try {
+    process.loadEnvFile(".env");
+  } catch {
+    // Missing `.env` is fine; requirePostgresUrl still validates.
+  }
+}
+
 function requirePostgresUrl() {
+  loadLocalEnvFile();
   const url = process.env.DATABASE_URL;
   if (!url) {
     console.error("DATABASE_URL is required.");

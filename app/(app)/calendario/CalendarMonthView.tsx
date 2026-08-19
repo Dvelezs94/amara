@@ -272,6 +272,9 @@ export function CalendarMonthView({
   checklistTemplates,
   calendars = [],
   defaultCalendarId = null,
+  onBusyChange,
+  focusSchedule = null,
+  focusDateYmd = null,
 }: {
   schedules: CalendarSchedulePayload[];
   assets: { id: string; name: string; sublabel?: string }[];
@@ -279,6 +282,9 @@ export function CalendarMonthView({
   checklistTemplates: { id: string; name: string }[];
   calendars?: { id: string; name: string }[];
   defaultCalendarId?: string | null;
+  onBusyChange?: (busy: boolean) => void;
+  focusSchedule?: CalendarSchedulePayload | null;
+  focusDateYmd?: string | null;
 }) {
   const router = useRouter();
   const { colors: statusColors } = useWorkOrderStatusColors();
@@ -289,6 +295,7 @@ export function CalendarMonthView({
   const month = currentDate.getMonth();
   const monthStart = startOfCalendarMonth(year, month);
   const [selectedEvent, setSelectedEvent] = useState<SelectedMaintenanceEvent | null>(null);
+  const appliedFocusRef = useRef(false);
   const [panelEvent, setPanelEvent] = useState<SelectedMaintenanceEvent | null>(null);
   const { mounted: detailModalMounted, show: detailModalShow, onPanelTransitionEnd: onDetailPanelTransitionEnd } =
     useSheetModalPresence(selectedEvent != null);
@@ -296,6 +303,36 @@ export function CalendarMonthView({
   useLayoutEffect(() => {
     if (selectedEvent) setPanelEvent(selectedEvent);
   }, [selectedEvent]);
+
+  useEffect(() => {
+    if (appliedFocusRef.current || !focusSchedule) return;
+    const dateYmd =
+      focusDateYmd && /^\d{4}-\d{2}-\d{2}$/.test(focusDateYmd)
+        ? focusDateYmd
+        : toYmdLocal(new Date());
+    const [y, m, day] = dateYmd.split("-").map(Number);
+    const date = new Date(y!, m! - 1, day!);
+    if (Number.isNaN(date.getTime())) return;
+    appliedFocusRef.current = true;
+    setCurrentDate(date);
+    setSelectedEvent({
+      id: focusSchedule.id,
+      name: focusSchedule.name,
+      recurrence: focusSchedule.recurrence,
+      color: focusSchedule.color,
+      assigneeIds: focusSchedule.assigneeIds ?? [],
+      checklistTemplateId: focusSchedule.checklistTemplateId ?? null,
+      assetId: focusSchedule.assetId ?? null,
+      calendarId: focusSchedule.calendarId ?? null,
+      dateLabel: date.toLocaleDateString("es-MX", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        timeZone: APP_TIME_ZONE,
+      }),
+      dateYmd,
+    });
+  }, [focusSchedule, focusDateYmd]);
 
   useEffect(() => {
     if (!detailModalMounted && !selectedEvent) setPanelEvent(null);
@@ -306,7 +343,6 @@ export function CalendarMonthView({
   const [userOptions, setUserOptions] = useState<{ id: string; name: string }[]>([]);
   const [loadingUserOptions, setLoadingUserOptions] = useState(false);
   const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
-  const [createStartDate, setCreateStartDate] = useState("");
   const [assigneePromptOpen, setAssigneePromptOpen] = useState(false);
   const [undoBanner, setUndoBanner] = useState<
     | { kind: "recurrence"; scheduleId: string }
@@ -393,6 +429,16 @@ export function CalendarMonthView({
   const [workOrderMarkerStatusByKey, setWorkOrderMarkerStatusByKey] = useState<
     Map<string, string>
   >(new Map());
+
+  const blockingUiOpen =
+    createModalOpen ||
+    deleteModalOpen ||
+    assigneePromptOpen ||
+    editingScheduleName;
+  useEffect(() => {
+    onBusyChange?.(blockingUiOpen);
+    return () => onBusyChange?.(false);
+  }, [blockingUiOpen, onBusyChange]);
 
   useEffect(() => {
     if (!selectedEvent) setDeleteModalOpen(false);
@@ -1656,7 +1702,6 @@ export function CalendarMonthView({
                     if (panelEventHasWorkOrder) return;
                     setCreateWorkOrderError(null);
                     setSelectedAssigneeIds([...panelEvent.assigneeIds]);
-                    setCreateStartDate(panelEvent.dateYmd);
                     setAssigneePromptOpen(true);
                   }}
                   className="rounded-lg bg-primary-600 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-white hover:bg-primary-700 disabled:opacity-50"
@@ -1693,25 +1738,6 @@ export function CalendarMonthView({
                     emptyHint="Selecciona al menos una persona"
                   />
                 )}
-                <div className="mt-2">
-                  <label
-                    htmlFor="calendar-create-start-date"
-                    className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600"
-                  >
-                    Fecha de inicio (opcional)
-                  </label>
-                  <input
-                    id="calendar-create-start-date"
-                    type="date"
-                    value={createStartDate}
-                    onChange={(e) => setCreateStartDate(e.target.value)}
-                    disabled={creatingWorkOrder}
-                    className="w-full rounded-sm border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900"
-                  />
-                  <p className="mt-1 text-[10px] leading-snug text-zinc-500">
-                    En la app móvil la tarea solo se muestra a partir de esta fecha (por defecto, el día del evento).
-                  </p>
-                </div>
                 <div className="mt-2 flex justify-end gap-2">
                   <button
                     type="button"
@@ -1740,7 +1766,7 @@ export function CalendarMonthView({
                             body: JSON.stringify({
                               dateYmd: panelEvent.dateYmd,
                               assigneeIds: selectedAssigneeIds,
-                              startDate: createStartDate || null,
+                              startDate: panelEvent.dateYmd,
                             }),
                           }
                         );

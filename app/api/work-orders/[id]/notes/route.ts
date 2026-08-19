@@ -8,6 +8,9 @@ import { recordAuditLog } from "@/lib/audit";
 import { createNotification, extractMentionedUserIds } from "@/lib/notifications";
 import { createId } from "@/lib/id";
 import { uploadFileToS3 } from "@/lib/s3-storage";
+import { loadWorkOrderAssignees } from "@/lib/assignees";
+import { emitWorkflowEvent } from "@/lib/workflow-engine";
+import { buildWorkflowEvent } from "@/lib/workflows";
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
@@ -114,7 +117,15 @@ export async function POST(
   const { id } = await params;
   const wo = await db.query.workOrders.findFirst({
     where: eq(workOrders.id, id),
-    columns: { id: true, status: true, title: true },
+    columns: {
+      id: true,
+      status: true,
+      title: true,
+      folio: true,
+      requesterId: true,
+      assigneeId: true,
+      priority: true,
+    },
   });
   if (!wo) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -218,6 +229,27 @@ export async function POST(
       attachmentCount: uploaded.length,
     },
   });
+
+  const assignees = await loadWorkOrderAssignees(id, wo.assigneeId);
+  await emitWorkflowEvent(
+    buildWorkflowEvent({
+      type: "work_order.note_added",
+      entityType: "work_order",
+      entityId: id,
+      actorUserId: session.id,
+      actorName: session.name,
+      payload: {
+        title: wo.title,
+        folio: wo.folio,
+        status: wo.status,
+        priority: wo.priority,
+        href: `/tareas/${id}`,
+        requesterId: wo.requesterId,
+        assigneeIds: assignees.map((a) => a.id).join(","),
+        note: commentBody.slice(0, 500),
+      },
+    })
+  );
 
   return NextResponse.json({
     id: idNote,

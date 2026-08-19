@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarPlus, Pencil, Trash2 } from "lucide-react";
 import {
+  CALENDAR_AUTO_REFRESH_MS,
+  calendarAutoRefreshAllowed,
   countSchedulesByCalendarNav,
   filterSchedulesByCalendarNav,
   sortCalendars,
@@ -13,6 +15,7 @@ import {
   resolveDefaultCalendarId,
   type CalendarNavId,
 } from "@/lib/calendar-helpers";
+import { parseCalendarEventSearchParams } from "@/lib/maintenance-schedule-work-order";
 import { useSetPageHeader } from "@/components/PageHeaderContext";
 import { CalendarCreateEventModal } from "./CalendarCreateEventModal";
 import {
@@ -40,7 +43,18 @@ export function CalendarWorkspace({
   checklistTemplates: { id: string; name: string }[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [calendars, setCalendars] = useState(initialCalendars);
+  const focusEvent = useMemo(() => {
+    const parsed = parseCalendarEventSearchParams({
+      evento: searchParams.get("evento"),
+      fecha: searchParams.get("fecha"),
+    });
+    if (!parsed) return null;
+    const schedule = schedules.find((s) => s.id === parsed.scheduleId);
+    if (!schedule) return null;
+    return { schedule, dateYmd: parsed.dateYmd };
+  }, [searchParams, schedules]);
   const [selectedNavId, setSelectedNavId] = useState<CalendarNavId>(
     DEFAULT_CALENDAR_ID
   );
@@ -50,10 +64,52 @@ export function CalendarWorkspace({
     id: string;
     name: string;
   } | null>(null);
+  const [createEventOpen, setCreateEventOpen] = useState(false);
+  const [monthViewBusy, setMonthViewBusy] = useState(false);
+  const appliedFocusNavRef = useRef(false);
 
   useEffect(() => {
     setCalendars(initialCalendars);
   }, [initialCalendars]);
+
+  useEffect(() => {
+    if (!focusEvent || appliedFocusNavRef.current) return;
+    appliedFocusNavRef.current = true;
+    const calendarId = focusEvent.schedule.calendarId;
+    if (calendarId && calendars.some((c) => c.id === calendarId)) {
+      setSelectedNavId(calendarId);
+    } else {
+      setSelectedNavId("all");
+    }
+  }, [focusEvent, calendars]);
+
+  const blockingUiOpen =
+    createDialogOpen ||
+    editCalendar != null ||
+    createEventOpen ||
+    monthViewBusy;
+  const blockingUiOpenRef = useRef(blockingUiOpen);
+  blockingUiOpenRef.current = blockingUiOpen;
+
+  useEffect(() => {
+    function refreshIfAllowed() {
+      if (
+        !calendarAutoRefreshAllowed({
+          pageVisible: document.visibilityState === "visible",
+          blockingUiOpen: blockingUiOpenRef.current,
+        })
+      ) {
+        return;
+      }
+      router.refresh();
+    }
+    const id = window.setInterval(refreshIfAllowed, CALENDAR_AUTO_REFRESH_MS);
+    document.addEventListener("visibilitychange", refreshIfAllowed);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", refreshIfAllowed);
+    };
+  }, [router]);
 
   const sortedCalendars = useMemo(() => sortCalendars(calendars), [calendars]);
 
@@ -302,6 +358,7 @@ export function CalendarWorkspace({
             name: c.name,
           }))}
           defaultCalendarId={defaultCalendarId}
+          onOpenChange={setCreateEventOpen}
         />
       </>
     ),
@@ -356,6 +413,9 @@ export function CalendarWorkspace({
               name: c.name,
             }))}
             defaultCalendarId={defaultCalendarId}
+            onBusyChange={setMonthViewBusy}
+            focusSchedule={focusEvent?.schedule ?? null}
+            focusDateYmd={focusEvent?.dateYmd ?? null}
           />
         </div>
       </div>

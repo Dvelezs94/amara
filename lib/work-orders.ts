@@ -1,13 +1,21 @@
 import { loadWorkOrderAssignees } from "@/lib/assignees";
 import { db } from "@/lib/db";
-import { workOrders } from "@/lib/db/schema";
-import { workOrderChecklist } from "@/lib/db/schema";
-import { assets } from "@/lib/db/schema";
-import { users } from "@/lib/db/schema";
-import { attachments } from "@/lib/db/schema";
-import { checklistTemplates } from "@/lib/db/schema";
-import { checklistTemplateRevisions } from "@/lib/db/schema";
-import { and, eq, desc } from "drizzle-orm";
+import {
+  assets,
+  attachments,
+  checklistTemplateRevisions,
+  checklistTemplates,
+  maintenanceSchedules,
+  users,
+  workOrderChecklist,
+  workOrders,
+} from "@/lib/db/schema";
+import { and, desc, eq } from "drizzle-orm";
+import {
+  calendarEventHref,
+  parseMaintenanceScheduleWorkOrderDescription,
+} from "@/lib/maintenance-schedule-work-order";
+import { toYmdLocal } from "@/lib/maintenance-recurrence";
 
 function normalizeChecklistPhotoValue(
   value: unknown,
@@ -84,7 +92,10 @@ export async function getWorkOrderById(id: string) {
   const assignees = await loadWorkOrderAssignees(id, wo.assigneeId);
   const assignee = assignees[0] ?? null;
 
-  const [asset, requester] = await Promise.all([
+  const parsedCalendar = parseMaintenanceScheduleWorkOrderDescription(
+    wo.description
+  );
+  const [asset, requester, calendarSchedule] = await Promise.all([
     wo.assetId
       ? db.query.assets.findFirst({ where: eq(assets.id, wo.assetId) })
       : null,
@@ -97,6 +108,12 @@ export async function getWorkOrderById(id: string) {
             avatarUrl: true,
             avatarBackgroundColor: true,
           },
+        })
+      : null,
+    parsedCalendar
+      ? db.query.maintenanceSchedules.findFirst({
+          where: eq(maintenanceSchedules.id, parsedCalendar.scheduleId),
+          columns: { id: true, name: true },
         })
       : null,
   ]);
@@ -178,5 +195,21 @@ export async function getWorkOrderById(id: string) {
       ...row,
       fileUrl: `/api/work-orders/${id}/attachments/${row.id}/download`,
     })),
+    calendarSource: parsedCalendar
+      ? {
+          name:
+            calendarSchedule?.name ||
+            parsedCalendar.name ||
+            "evento de calendario",
+          href: calendarEventHref(
+            parsedCalendar.scheduleId,
+            wo.dueDate
+              ? toYmdLocal(wo.dueDate)
+              : wo.startDate
+                ? toYmdLocal(wo.startDate)
+                : null
+          ),
+        }
+      : null,
   };
 }

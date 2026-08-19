@@ -13,6 +13,8 @@ import { createId } from "@/lib/id";
 import { recordAuditLog } from "@/lib/audit";
 import { notifyCalidadUsersChecklistRevisionProposed } from "@/lib/notifications";
 import { parseChecklistTemplateItemsFromClientJson } from "@/lib/checklist-items-from-payload";
+import { emitWorkflowEvent } from "@/lib/workflow-engine";
+import { buildWorkflowEvent } from "@/lib/workflows";
 
 async function getCurrentTemplateSnapshot(templateId: string) {
   const template = await db.query.checklistTemplates.findFirst({
@@ -238,6 +240,21 @@ export async function POST(
       proposedByUserId: session.id,
       proposedByName: session.name ?? null,
     });
+    await emitWorkflowEvent(
+      buildWorkflowEvent({
+        type: "checklist_revision.proposed",
+        entityType: "checklist_template",
+        entityId: templateId,
+        actorUserId: session.id,
+        actorName: session.name,
+        payload: {
+          title: template.name,
+          href: `/checklists/${templateId}/revisions/${revisionId}`,
+          requesterId: session.id,
+          revisionName,
+        },
+      })
+    );
   }
 
   return NextResponse.json({ ok: true, status, revisionNumber, revisionId });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
  ClipboardList,
  ListChecks,
@@ -19,7 +19,7 @@ import {
  ChevronRight,
  Wrench,
  Bell,
- Search,
+ GitBranch,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import type { SessionUser } from "@/lib/auth-shared";
@@ -30,6 +30,7 @@ import {
 } from "@/lib/checklist-notification-parse";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WorkOrderStatusColorsProvider } from "@/components/WorkOrderStatusColorsProvider";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import {
   PageHeaderProvider,
   resolveAppShellTitle,
@@ -158,8 +159,6 @@ export function AppShell({
  children: React.ReactNode;
 }) {
  const pathname = usePathname();
- const router = useRouter();
- const searchParams = useSearchParams();
  const userRole = roleLabel(user.role);
  const navSections = [
   ...(user.role === "admin"
@@ -210,6 +209,11 @@ export function AppShell({
       type: "Plataforma",
       items: [
        {
+        href: "/flujos",
+        label: "Flujos",
+        icon: GitBranch,
+       } satisfies NavItem,
+       {
         href: "/users",
         label: "Usuarios",
         icon: User,
@@ -237,7 +241,6 @@ export function AppShell({
   }>
  >([]);
  const [unreadCount, setUnreadCount] = useState(0);
- const [searchQuery, setSearchQuery] = useState("");
  const canUseTaskFeatures =
   user.role === "admin" || user.role === "tecnico" || user.role === "calidad";
  const showBackButton =
@@ -258,10 +261,6 @@ export function AppShell({
    /* ignore */
   }
  }, []);
-
- useEffect(() => {
-  setSearchQuery(searchParams.get("q") ?? "");
- }, [searchParams]);
 
  function toggleSidebarCollapsed() {
   setSidebarCollapsed((prev) => {
@@ -315,18 +314,6 @@ export function AppShell({
    clearInterval(timer);
   };
  }, [canUseTaskFeatures]);
-
- function submitSearch() {
-  const q = searchQuery.trim();
-  const targetBase = pathname.startsWith("/knowledge-base")
-   ? "/knowledge-base"
-   : "/tareas";
-  if (!q) {
-   router.push(targetBase);
-   return;
-  }
-  router.push(`${targetBase}?q=${encodeURIComponent(q)}`);
- }
 
  async function markAllNotificationsRead() {
   await fetch("/api/notifications", { method: "PATCH" });
@@ -651,38 +638,7 @@ export function AppShell({
         </div>
        )}
       </div>
-      {canUseTaskFeatures && (
-      <div className="hidden min-w-[260px] items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 md:flex">
-       <Search className="h-4 w-4 text-neutral-400" />
-       <input
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        onKeyDown={(e) => {
-         if (e.key === "Enter") {
-          e.preventDefault();
-          submitSearch();
-         }
-        }}
-        aria-label="Buscar"
-        className="w-full border-0 bg-transparent p-0 text-xs text-zinc-800 placeholder:text-neutral-400 focus:outline-none"
-        placeholder={
-         pathname.startsWith("/knowledge-base")
-          ? "Buscar en base de conocimiento..."
-          : "Buscar por folio, título, activo..."
-        }
-       />
-      </div>
-      )}
-      {canUseTaskFeatures && (
-      <button
-       type="button"
-       onClick={submitSearch}
-       className="hidden items-center justify-center rounded-md border border-zinc-200 bg-white p-2 text-zinc-600 hover:bg-zinc-100 md:inline-flex"
-       aria-label="Buscar"
-      >
-       <Search className="h-4 w-4" />
-      </button>
-      )}
+      {canUseTaskFeatures && <GlobalSearch />}
       {canUseTaskFeatures && (
       <div className="relative hidden md:block" ref={notificationsRef}>
        <button

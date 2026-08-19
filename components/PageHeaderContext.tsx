@@ -114,6 +114,7 @@ export function resolveAppShellTitle(pathname: string): string | null {
   if (pathname.endsWith("/edit")) {
     if (pathname.startsWith("/tareas/")) return "Editar tarea";
     if (pathname.startsWith("/assets/")) return "Editar máquina";
+    if (pathname.startsWith("/flujos/")) return "Editar flujo";
     if (pathname.includes("/revisions/")) return "Editar revisión";
   }
   if (pathname.endsWith("/revisions/new")) return "Nueva revisión";
@@ -131,10 +132,13 @@ export function resolveAppShellTitle(pathname: string): string | null {
     { prefix: "/knowledge-base", title: "Base de conocimiento" },
     { prefix: "/analytics", title: "Analíticas" },
     { prefix: "/users", title: "Usuarios" },
+    { prefix: "/flujos/new", title: "Nuevo flujo" },
+    { prefix: "/flujos", title: "Flujos" },
     { prefix: "/profile", title: "Perfil" },
     { prefix: "/ask", title: "Asistente" },
     { prefix: "/requests", title: "Solicitudes" },
     { prefix: "/equipo", title: "Equipo" },
+    { prefix: "/buscar", title: "Búsqueda" },
     { prefix: "/logs", title: "Logs de plataforma" },
   ];
   let best: { prefix: string; title: string } | null = null;

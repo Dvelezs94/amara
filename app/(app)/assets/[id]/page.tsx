@@ -6,14 +6,19 @@ import { db } from "@/lib/db";
 import {
   assets,
   assetFiles,
+  assetHourMaintenancePlans,
   calendars,
+  checklistTemplates,
   maintenanceSchedules,
   users,
   workOrders,
 } from "@/lib/db/schema";
+import { loadManyMaintenanceScheduleAssigneeIds } from "@/lib/assignees";
+import { hourMaintenancePlanView } from "@/lib/hour-maintenance";
 import { AssetFilesSection } from "./AssetFilesSection";
 import { AssetWorkOrdersList } from "./AssetWorkOrdersList";
 import { AssetCalendarEventsList } from "./AssetCalendarEventsList";
+import { AssetHourMaintenanceSection } from "./AssetHourMaintenanceSection";
 import { AssetActions } from "./AssetActions";
 import { formatDowntimeMinutesSpanish } from "@/lib/machine-downtime";
 import { SetPageHeader } from "@/components/SetPageHeader";
@@ -24,7 +29,16 @@ async function getAsset(id: string) {
     where: eq(assets.id, id),
   });
   if (!asset) return null;
-  const [workOrdersList, scheduleList, files, downtimeRow] = await Promise.all([
+  const [
+    workOrdersList,
+    scheduleList,
+    files,
+    downtimeRow,
+    hourPlanRows,
+    calendarOptions,
+    templateOptions,
+    userOptions,
+  ] = await Promise.all([
     db
       .select({
         id: workOrders.id,
@@ -82,14 +96,91 @@ async function getAsset(id: string) {
       })
       .from(workOrders)
       .where(eq(workOrders.assetId, id)),
+    db
+      .select({
+        id: assetHourMaintenancePlans.id,
+        name: assetHourMaintenancePlans.name,
+        hoursPerDay: assetHourMaintenancePlans.hoursPerDay,
+        everyHours: assetHourMaintenancePlans.everyHours,
+        startDate: assetHourMaintenancePlans.startDate,
+        planCalendarId: assetHourMaintenancePlans.calendarId,
+        planChecklistTemplateId: assetHourMaintenancePlans.checklistTemplateId,
+        planColor: assetHourMaintenancePlans.color,
+        scheduleId: assetHourMaintenancePlans.scheduleId,
+        scheduleName: maintenanceSchedules.name,
+        scheduleCalendarId: maintenanceSchedules.calendarId,
+        scheduleChecklistTemplateId: maintenanceSchedules.checklistTemplateId,
+        scheduleColor: maintenanceSchedules.color,
+        nextRunAt: maintenanceSchedules.nextRunAt,
+        recurrence: maintenanceSchedules.recurrence,
+        calendarName: calendars.name,
+      })
+      .from(assetHourMaintenancePlans)
+      .innerJoin(
+        maintenanceSchedules,
+        eq(assetHourMaintenancePlans.scheduleId, maintenanceSchedules.id)
+      )
+      .leftJoin(calendars, eq(maintenanceSchedules.calendarId, calendars.id))
+      .where(
+        and(
+          eq(assetHourMaintenancePlans.assetId, id),
+          isNull(maintenanceSchedules.deletedAt)
+        )
+      )
+      .orderBy(asc(assetHourMaintenancePlans.createdAt)),
+    db
+      .select({
+        id: calendars.id,
+        name: calendars.name,
+      })
+      .from(calendars)
+      .orderBy(asc(calendars.sortOrder), asc(calendars.name)),
+    db
+      .select({
+        id: checklistTemplates.id,
+        name: checklistTemplates.name,
+      })
+      .from(checklistTemplates)
+      .orderBy(asc(checklistTemplates.name)),
+    db
+      .select({
+        id: users.id,
+        name: users.name,
+      })
+      .from(users)
+      .orderBy(asc(users.name)),
   ]);
   const downtimeTotalMinutes = downtimeRow[0]?.totalMinutes ?? 0;
+  const hourPlanAssignees = await loadManyMaintenanceScheduleAssigneeIds(
+    hourPlanRows.map((r) => r.scheduleId)
+  );
   return {
     ...asset,
     workOrders: workOrdersList,
     schedules: scheduleList,
     files,
     downtimeTotalMinutes,
+    hourPlans: hourPlanRows.map((r) =>
+      hourMaintenancePlanView({
+        id: r.id,
+        name: r.scheduleName || r.name,
+        hoursPerDay: r.hoursPerDay,
+        everyHours: r.everyHours,
+        startDate: r.startDate,
+        calendarId: r.scheduleCalendarId ?? r.planCalendarId,
+        calendarName: r.calendarName,
+        checklistTemplateId:
+          r.scheduleChecklistTemplateId ?? r.planChecklistTemplateId,
+        color: r.scheduleColor ?? r.planColor,
+        scheduleId: r.scheduleId,
+        nextRunAt: r.nextRunAt,
+        recurrence: r.recurrence,
+        assigneeIds: hourPlanAssignees.get(r.scheduleId) ?? [],
+      })
+    ),
+    calendarOptions,
+    templateOptions,
+    userOptions,
   };
 }
 
@@ -115,7 +206,19 @@ export default async function AssetDetailPage({
             Máquinas
           </Link>
         }
-        actions={<AssetActions id={asset.id} name={asset.name} />}
+        actions={
+          <>
+            <AssetHourMaintenanceSection
+              assetId={id}
+              assetName={asset.name}
+              calendars={asset.calendarOptions}
+              checklistTemplates={asset.templateOptions}
+              users={asset.userOptions}
+              initialPlans={asset.hourPlans}
+            />
+            <AssetActions id={asset.id} name={asset.name} />
+          </>
+        }
       />
       <section className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <AssetPhotoThumb

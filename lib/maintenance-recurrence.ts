@@ -27,7 +27,26 @@ export type MaintenanceRecurrenceRule = {
   excludedDates?: string[];
   /** YYYY-MM-DD — primera fecha elegida por el usuario */
   anchorDate: string;
+  /** When set, this series was generated from machine operating hours. */
+  hourPlan?: MaintenanceHourPlan;
 };
+
+export type MaintenanceHourPlan = {
+  hoursPerDay: number;
+  everyHours: number;
+};
+
+function parseHourPlan(raw: unknown): MaintenanceHourPlan | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as { hoursPerDay?: unknown; everyHours?: unknown };
+  const hoursPerDay = Number(o.hoursPerDay);
+  const everyHours = Number(o.everyHours);
+  if (!Number.isFinite(hoursPerDay) || hoursPerDay <= 0 || hoursPerDay > 24) {
+    return undefined;
+  }
+  if (!Number.isFinite(everyHours) || everyHours <= 0) return undefined;
+  return { hoursPerDay, everyHours };
+}
 
 export function parseRecurrence(raw: string): MaintenanceRecurrenceRule | null {
   try {
@@ -48,6 +67,7 @@ export function parseRecurrence(raw: string): MaintenanceRecurrenceRule | null {
           ? o.excludedDates.filter((v): v is string => typeof v === "string")
           : undefined,
         anchorDate: o.anchorDate,
+        hourPlan: parseHourPlan(o.hourPlan),
       };
     }
   } catch {
@@ -328,7 +348,8 @@ export function formatRecurrenceLabel(raw: string): string {
 
   switch (rule.frequency) {
     case "none":
-      return "No se repite";
+      parts.push("No se repite");
+      break;
     case "daily":
       parts.push(iv === 1 ? "Cada día" : `Cada ${iv} días`);
       break;
@@ -358,11 +379,22 @@ export function formatRecurrenceLabel(raw: string): string {
       break;
   }
 
+  if (rule.hourPlan) {
+    const h = formatHourNumber(rule.hourPlan.everyHours);
+    const d = formatHourNumber(rule.hourPlan.hoursPerDay);
+    parts.unshift(`Cada ${h} h de uso (${d} h/día)`);
+  }
+
   if (rule.until) {
     parts.push(`hasta el ${rule.until}`);
   }
 
-  return parts.join(" · ");
+  return parts.join(" · ") || "No se repite";
+}
+
+function formatHourNumber(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return String(Math.round(n * 100) / 100);
 }
 
 export function buildRecurrenceJson(rule: MaintenanceRecurrenceRule): string {
@@ -383,6 +415,12 @@ export function buildRecurrenceJson(rule: MaintenanceRecurrenceRule): string {
   }
   if (rule.excludedDates && rule.excludedDates.length > 0) {
     normalized.excludedDates = Array.from(new Set(rule.excludedDates)).sort();
+  }
+  if (rule.hourPlan) {
+    normalized.hourPlan = {
+      hoursPerDay: rule.hourPlan.hoursPerDay,
+      everyHours: rule.hourPlan.everyHours,
+    };
   }
   return JSON.stringify(normalized);
 }

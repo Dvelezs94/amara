@@ -65,6 +65,9 @@ describe("isTecnicoApiPathAllowed", () => {
     expect(isTecnicoApiPathAllowed("/api/work-orders")).toBe(true);
     expect(isTecnicoApiPathAllowed("/api/work-orders/wo-1")).toBe(true);
     expect(isTecnicoApiPathAllowed("/api/assets")).toBe(true);
+    expect(
+      isTecnicoApiPathAllowed("/api/assets/a1/hour-maintenance-plans")
+    ).toBe(true);
     expect(isTecnicoApiPathAllowed("/api/asset-groups")).toBe(true);
     expect(
       isTecnicoApiPathAllowed("/api/app-settings/work-order-status-colors")
@@ -72,6 +75,7 @@ describe("isTecnicoApiPathAllowed", () => {
   });
   it("blocks non-whitelisted APIs", () => {
     expect(isTecnicoApiPathAllowed("/api/admin/users")).toBe(false);
+    expect(isTecnicoApiPathAllowed("/api/workflows")).toBe(false);
     expect(isTecnicoApiPathAllowed("/api/dashboard/overview")).toBe(false);
     expect(isTecnicoApiPathAllowed("/api/app-settings")).toBe(false);
   });
@@ -83,10 +87,13 @@ describe("isTecnicoAppPathAllowed", () => {
     expect(isTecnicoAppPathAllowed("/tareas/x")).toBe(true);
     expect(isTecnicoAppPathAllowed("/knowledge-base")).toBe(true);
     expect(isTecnicoAppPathAllowed("/equipo/user1")).toBe(true);
+    expect(isTecnicoAppPathAllowed("/buscar")).toBe(true);
+    expect(isTecnicoApiPathAllowed("/api/search")).toBe(true);
   });
   it("blocks admin-only sections", () => {
     expect(isTecnicoAppPathAllowed("/calendario")).toBe(false);
     expect(isTecnicoAppPathAllowed("/assets")).toBe(false);
+    expect(isTecnicoAppPathAllowed("/flujos")).toBe(false);
   });
 });
 
@@ -97,6 +104,8 @@ describe("isCalidad*PathAllowed", () => {
     expect(isCalidadAppPathAllowed("/tareas")).toBe(true);
     expect(isCalidadAppPathAllowed("/tareas/abc")).toBe(true);
     expect(isCalidadAppPathAllowed("/equipo/user1")).toBe(true);
+    expect(isCalidadAppPathAllowed("/buscar")).toBe(true);
+    expect(isCalidadApiPathAllowed("/api/search")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/checklist-templates")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/checklist-folders")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/asset-groups")).toBe(true);
@@ -112,7 +121,9 @@ describe("isCalidad*PathAllowed", () => {
   it("blocks non-whitelisted calidad paths", () => {
     expect(isCalidadAppPathAllowed("/calendario")).toBe(false);
     expect(isCalidadAppPathAllowed("/assets")).toBe(false);
+    expect(isCalidadAppPathAllowed("/flujos")).toBe(false);
     expect(isCalidadApiPathAllowed("/api/admin/users")).toBe(false);
+    expect(isCalidadApiPathAllowed("/api/workflows")).toBe(false);
     expect(isCalidadApiPathAllowed("/api/dashboard/overview")).toBe(false);
   });
 });
