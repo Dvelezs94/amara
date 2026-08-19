@@ -86,7 +86,7 @@ async function runMatchingWorkflows(event: WorkflowEvent): Promise<void> {
 export async function runWorkflowAction(
   action: WorkflowActionConfig,
   event: WorkflowEvent
-): Promise<{ ok: boolean; skipped?: boolean; error: string }> {
+): Promise<{ ok: true } | { ok: false; skipped?: boolean; error: string }> {
   const vars = workflowTemplateVarsFromEvent(event);
   const title = interpolateWorkflowTemplate(action.title, vars).trim();
   const body = interpolateWorkflowTemplate(action.body, vars).trim();
@@ -109,7 +109,7 @@ export async function runWorkflowAction(
         })
       )
     );
-    return { ok: true, error: "" };
+    return { ok: true };
   }
 
   const to = Array.from(new Set([...emails]));

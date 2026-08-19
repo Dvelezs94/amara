@@ -18,7 +18,7 @@ describe("layoutWorkflowCanvas", () => {
     const action = layout.nodes.find((n) => n.id === workflowCanvasActionId(0));
     expect(trigger).toBeTruthy();
     expect(action).toBeTruthy();
-    expect(layout.nodes.every((n) => n.kind !== "add")).toBe(true);
+    expect(layout.nodes.map((n) => n.kind).sort()).toEqual(["action", "trigger"]);
     expect(action!.x).toBe(
       WORKFLOW_CANVAS.padding +
         WORKFLOW_CANVAS.nodeWidth +
