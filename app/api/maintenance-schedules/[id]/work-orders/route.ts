@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { loadManyWorkOrderAssignees } from "@/lib/assignees";
 import { db } from "@/lib/db";
 import { users, workOrders } from "@/lib/db/schema";
+import { maintenanceScheduleWorkOrderDescriptionPattern } from "@/lib/maintenance-schedule-work-order";
 
 const DEFAULT_PAGE_SIZE = 15;
 const MAX_PAGE_SIZE = 50;
@@ -46,6 +47,7 @@ export async function GET(
     );
   }
 
+  const descriptionLike = maintenanceScheduleWorkOrderDescriptionPattern(id);
   const rows = await db
     .select({
       id: workOrders.id,
@@ -63,11 +65,8 @@ export async function GET(
     .leftJoin(users, eq(workOrders.assigneeId, users.id))
     .where(
       dueDateFilter
-        ? and(
-            like(workOrders.description, `%calendario de mantenimiento (${id})%`),
-            dueDateFilter
-          )
-        : like(workOrders.description, `%calendario de mantenimiento (${id})%`)
+        ? and(like(workOrders.description, descriptionLike), dueDateFilter)
+        : like(workOrders.description, descriptionLike)
     )
     .orderBy(desc(workOrders.createdAt), desc(workOrders.id))
     .limit(fetchLimit)

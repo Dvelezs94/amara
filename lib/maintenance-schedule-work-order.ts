@@ -9,6 +9,10 @@ export function maintenanceScheduleWorkOrderDescription(
   return `Generada desde calendario de mantenimiento (${scheduleId}).`;
 }
 
+/** SQL LIKE: any calendar-generated work order (legacy or named). */
+export const CALENDAR_GENERATED_WORK_ORDER_DESCRIPTION_LIKE =
+  "%calendario de mantenimiento%(%";
+
 export function maintenanceScheduleWorkOrderDescriptionPattern(
   scheduleId: string
 ): string {
@@ -80,6 +84,58 @@ export function dayBoundsFromYmd(dateYmd: string): { start: Date; end: Date } | 
 
 export function scheduleWorkOrderMarkerKey(scheduleId: string, dateYmd: string): string {
   return `${scheduleId}|${dateYmd}`;
+}
+
+export type CalendarWorkOrderMarkerRow = {
+  description: string | null;
+  dueDate: Date | string | null;
+  status: string;
+};
+
+/**
+ * Builds `scheduleId|YYYY-MM-DD` → status from calendar-created work orders.
+ * Used by GET /api/maintenance-schedules/work-order-markers.
+ */
+export function buildCalendarWorkOrderMarkers(
+  rows: CalendarWorkOrderMarkerRow[],
+  dueDateToYmd: (dueDate: Date) => string
+): Record<string, string> {
+  const markers: Record<string, string> = {};
+  for (const row of rows) {
+    if (!row.description || row.dueDate == null || row.dueDate === "") continue;
+    const parsed = parseMaintenanceScheduleWorkOrderDescription(row.description);
+    if (!parsed) continue;
+    const due =
+      row.dueDate instanceof Date ? row.dueDate : new Date(row.dueDate);
+    if (Number.isNaN(due.getTime())) continue;
+    markers[scheduleWorkOrderMarkerKey(parsed.scheduleId, dueDateToYmd(due))] =
+      row.status;
+  }
+  return markers;
+}
+
+/**
+ * Whether a calendar-created work order for this schedule falls on dateYmd
+ * (same day filter the event panel and create-work-order uniqueness use).
+ */
+export function workOrderMatchesScheduleDay(input: {
+  description: string | null | undefined;
+  dueDate: Date | string | null | undefined;
+  scheduleId: string;
+  dateYmd: string;
+  dueDateToYmd: (dueDate: Date) => string;
+}): boolean {
+  if (!input.description || input.dueDate == null || input.dueDate === "") {
+    return false;
+  }
+  const parsed = parseMaintenanceScheduleWorkOrderDescription(input.description);
+  if (!parsed || parsed.scheduleId !== input.scheduleId) return false;
+  const due =
+    input.dueDate instanceof Date
+      ? input.dueDate
+      : new Date(input.dueDate);
+  if (Number.isNaN(due.getTime())) return false;
+  return input.dueDateToYmd(due) === input.dateYmd;
 }
 
 export {
