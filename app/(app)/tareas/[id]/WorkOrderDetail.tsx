@@ -23,6 +23,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useSetPageHeader } from "@/components/PageHeaderContext";
 import { APP_TIME_ZONE } from "@/lib/timezone";
+import { checklistDropdownValueIsNoOk } from "@/lib/dashboard-checklists";
 import {
   parseWorkOrderKind,
   workOrderKindBadgeClass,
@@ -1108,6 +1109,13 @@ export function WorkOrderDetail({
                               </button>
                             ))}
                           </div>
+                        ) : item.fieldType === "dropdown" &&
+                          isCompleted &&
+                          item.value != null &&
+                          checklistDropdownValueIsNoOk(item.value) ? (
+                          <span className="inline-flex max-w-full rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-sm font-semibold text-red-700">
+                            {String(item.value)}
+                          </span>
                         ) : item.value != null ? (
                           String(item.value)
                         ) : (
