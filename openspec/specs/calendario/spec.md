@@ -1,0 +1,47 @@
+# Calendario y Mantenimiento
+
+## Purpose
+Calendarios de mantenimiento, recurrencia de eventos, creación de tareas desde eventos, y planes por horas de uso.
+
+## Requirements
+
+### Requirement: Calendarios nombrados
+El sistema SHALL soportar calendarios nombrados con un default «Mantenimiento».
+
+#### Scenario: Nuevo schedule sin calendario asignado
+- **GIVEN** un schedule creado sin calendar_id
+- **WHEN** se guarda
+- **THEN** se asigna al calendario default «Mantenimiento»
+
+### Requirement: Recurrencia de mantenimiento
+Los eventos SHALL soportar recurrencia configurable (diaria, semanal, mensual, etc.).
+
+#### Scenario: Evento recurrente diario
+- **GIVEN** un evento con intervalo de 7 días
+- **WHEN** se visualiza en el calendario
+- **THEN** aparece cada 7 días
+
+### Requirement: Crear tarea desde evento
+Al crear una tarea desde un evento, la descripción SHALL incluir enlace al schedule.
+
+#### Scenario: Tarea creada desde evento aparece como marcador
+- **GIVEN** un evento de mantenimiento
+- **WHEN** se crea una tarea desde ese evento
+- **THEN** el calendario muestra el marcador de tarea vinculada
+
+### Requirement: Auto-refresh del calendario
+El calendario SHALL auto-refrescarse cada 60s mientras la pestaña esté visible.
+
+#### Scenario: Calendario se refresca
+- **GIVEN** el calendario abierto sin diálogos
+- **WHEN** pasan 60 segundos
+- **THEN** los datos se actualizan automáticamente
+
+### Requirement: Mantenimiento por horas de uso
+Un modal «Mto. por horas» SHALL permitir configurar planes basados en horas de uso de máquina.
+
+#### Scenario: Crear plan por horas
+- **GIVEN** un admin en la página de un activo
+- **WHEN** configura 8 h/día y cada 250 h y crea el plan
+- **THEN** se crea un schedule con intervalo de 31 días
+- **AND** se redirige al calendario mostrando el primer evento

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   GripVertical,
@@ -8,12 +8,20 @@ import {
   Plus,
   CircleHelp,
   CalendarDays,
+  CalendarClock,
   ChevronDown,
   ChevronUp,
   ChevronsUp,
   Equal,
   Minus,
   Pencil,
+  Timer,
+  Repeat,
+  Factory,
+  PieChart,
+  Gauge,
+  ListTodo,
+  BarChart3,
 } from "lucide-react";
 import { AnalyticsChartCard } from "@/components/AnalyticsChartCard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -27,11 +35,27 @@ import {
   workOrderKindLabel,
 } from "@/lib/work-order-kind";
 import type { DashboardKpis } from "@/lib/dashboard-kpis";
-import { defaultLast30DaysRange, isDefaultLast30DaysRange } from "@/lib/dashboard-date-range";
+import {
+  defaultLast30DaysRange,
+  inclusiveLocalDayCount,
+  isDefaultLast30DaysRange,
+} from "@/lib/dashboard-date-range";
+import {
+  DASHBOARD_KPI_CARDS,
+  dashboardEmptyCopy,
+  formatDashboardContextBanner,
+  moveDashboardBlock,
+  parseDashboardBlockOrder,
+  type DashboardBlockId,
+  type DashboardEmptySection,
+  type DashboardKpiId,
+  type DashboardKpiTone,
+} from "@/lib/dashboard-presentation";
 import { useWorkOrderStatusColors } from "@/components/WorkOrderStatusColorsProvider";
 import { workOrderStatusBadgeStyle } from "@/lib/work-order-status-colors";
 import { APP_TIME_ZONE } from "@/lib/timezone";
 import { useSetPageHeader } from "@/components/PageHeaderContext";
+import { DashboardChecklistsSection } from "./DashboardChecklistsSection";
 
 type Widget = {
   id: string;
@@ -78,6 +102,106 @@ const CHART_AUTO_REFRESH_KEY = "dashboard-chart-auto-refresh";
 const CHART_REFRESH_LEGACY_MS_KEY = "dashboard-chart-refresh-ms";
 const CHART_REFRESH_INTERVAL_MS = 30_000;
 const LIST_PAGE_SIZE = 5;
+const BLOCK_ORDER_KEY = "dashboard-block-order-v1";
+const BLOCK_DRAG_PREFIX = "block:";
+
+const kpiIconByKey = {
+  timer: Timer,
+  cycle: Repeat,
+  factory: Factory,
+  split: PieChart,
+  gauge: Gauge,
+} as const;
+
+function kpiToneClasses(tone: DashboardKpiTone): {
+  card: string;
+  iconWrap: string;
+  bar: string;
+} {
+  if (tone === "accent") {
+    return {
+      card: "border-accent-200 bg-white shadow-sm",
+      iconWrap: "bg-accent-50 text-accent-600",
+      bar: "bg-accent-500",
+    };
+  }
+  if (tone === "primary") {
+    return {
+      card: "border-primary-200 bg-white shadow-sm",
+      iconWrap: "bg-primary-50 text-primary-700",
+      bar: "bg-primary-600",
+    };
+  }
+  return {
+    card: "border-zinc-200 bg-white shadow-sm",
+    iconWrap: "bg-zinc-100 text-zinc-600",
+    bar: "bg-zinc-400",
+  };
+}
+
+function DashboardEmptyState({ section }: { section: DashboardEmptySection }) {
+  const copy = dashboardEmptyCopy[section];
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50/80 px-4 py-8 text-center">
+      <p className="text-sm text-zinc-600">{copy.message}</p>
+      <Link
+        href={copy.href}
+        className="mt-2 text-sm font-medium text-primary-600 hover:underline"
+      >
+        {copy.cta}
+      </Link>
+    </div>
+  );
+}
+
+function DashboardSortableBlock({
+  id,
+  orderIndex,
+  dragged,
+  dropTarget,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  children,
+}: {
+  id: DashboardBlockId;
+  orderIndex: number;
+  dragged: boolean;
+  dropTarget: boolean;
+  onDragStart: (e: DragEvent, id: DashboardBlockId) => void;
+  onDragOver: (e: DragEvent, index: number) => void;
+  onDrop: (e: DragEvent, index: number) => void;
+  onDragEnd: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      style={{ order: orderIndex }}
+      onDragOver={(e) => onDragOver(e, orderIndex)}
+      onDrop={(e) => onDrop(e, orderIndex)}
+      onDragEnd={onDragEnd}
+      className={`min-w-0 ${dragged ? "opacity-60" : ""} ${
+        dropTarget ? "rounded-xl ring-2 ring-primary-400 ring-offset-2 ring-offset-zinc-200" : ""
+      }`}
+    >
+      <div className="mb-2 flex items-center">
+        <button
+          type="button"
+          draggable
+          onDragStart={(e) => onDragStart(e, id)}
+          className="inline-flex cursor-grab items-center gap-1 rounded-md px-1 py-0.5 text-zinc-400 hover:bg-white hover:text-zinc-600 active:cursor-grabbing"
+          aria-label="Reordenar sección"
+          title="Arrastrar para reordenar esta sección"
+        >
+          <GripVertical className="h-4 w-4" aria-hidden />
+          <span className="text-[11px] font-medium uppercase tracking-wide">Mover</span>
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 const priorityVisual: Record<
   PendingOrder["priority"],
@@ -111,6 +235,11 @@ export default function DashboardPage() {
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [widgetSizes, setWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
   const WIDGET_SIZE_KEY = "dashboard-widget-sizes-v1";
+  const [blockOrder, setBlockOrder] = useState<DashboardBlockId[]>(() =>
+    parseDashboardBlockOrder(null)
+  );
+  const [draggedBlockId, setDraggedBlockId] = useState<DashboardBlockId | null>(null);
+  const [blockDropIndex, setBlockDropIndex] = useState<number | null>(null);
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
   const [chartAutoRefresh, setChartAutoRefresh] = useState(true);
   const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null);
@@ -173,6 +302,10 @@ export default function DashboardPage() {
         if (legacy && legacy !== "" && !Number.isNaN(Number(legacy))) {
           setChartAutoRefresh(Number(legacy) >= 5000);
         }
+      }
+      const blockRaw = localStorage.getItem(BLOCK_ORDER_KEY);
+      if (blockRaw) {
+        setBlockOrder(parseDashboardBlockOrder(JSON.parse(blockRaw)));
       }
     } catch {
       setWidgetSizes({});
@@ -276,6 +409,33 @@ export default function DashboardPage() {
     return `${value}${suffix}`;
   }
 
+  function kpiDisplayValue(id: DashboardKpiId): string {
+    if (id === "mttr") return formatKpiValue(kpis?.mttrHours, " h");
+    if (id === "inactividad") return formatKpiValue(kpis?.downtimeHours, " h");
+    if (id === "paro") return formatKpiValue(kpis?.machineDowntimeHours, " h");
+    if (id === "planificado") return formatKpiValue(kpis?.plannedPct, "%");
+    return formatKpiValue(kpis?.oee, "%");
+  }
+
+  function kpiSubtitle(id: DashboardKpiId): string {
+    const days = kpis?.windowDays ?? 30;
+    if (id === "mttr") return `Tiempo medio de reparación (${days} días)`;
+    if (id === "inactividad") return `Horas ciclo creación–cierre (${days} días)`;
+    if (id === "paro") return `En ventana de ${days} días (por fecha de creación)`;
+    if (id === "planificado") {
+      return `Planificado ${kpis?.plannedCount ?? 0} · No planificado ${kpis?.unplannedCount ?? 0}`;
+    }
+    return `Estimado por disponibilidad en ventana de ${days} días`;
+  }
+
+  const windowDaysForBanner =
+    kpis?.windowDays ?? inclusiveLocalDayCount(range.from, range.to);
+  const contextBanner = formatDashboardContextBanner({
+    from: range.from,
+    to: range.to,
+    windowDays: windowDaysForBanner,
+  });
+
   async function confirmRemoveWidget() {
     const id = widgetDeleteConfirmId;
     if (!id) return;
@@ -308,6 +468,7 @@ export default function DashboardPage() {
 
   async function handleDrop(e: React.DragEvent, toIndex: number) {
     e.preventDefault();
+    e.stopPropagation();
     setDropIndex(null);
     const id = e.dataTransfer.getData("text/plain");
     if (!id || !draggedId || draggedId !== id) {
@@ -333,21 +494,59 @@ export default function DashboardPage() {
     setDropIndex(null);
   }
 
-  if (loading) {
-    return (
-      <>
-        <DashboardDateRangeModal
-          open={rangeModalOpen}
-          onOpenChange={setRangeModalOpen}
-          value={range}
-          onApply={setRange}
-        />
-        <div className="space-y-4">
-          <p className="text-zinc-500">Cargando…</p>
-        </div>
-      </>
-    );
+  function persistBlockOrder(next: DashboardBlockId[]) {
+    setBlockOrder(next);
+    try {
+      localStorage.setItem(BLOCK_ORDER_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
   }
+
+  function handleBlockDragStart(e: React.DragEvent, id: DashboardBlockId) {
+    setDraggedBlockId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", `${BLOCK_DRAG_PREFIX}${id}`);
+  }
+
+  function handleBlockDragOver(e: React.DragEvent, index: number) {
+    if (!draggedBlockId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setBlockDropIndex(index);
+  }
+
+  function handleBlockDrop(e: React.DragEvent, toIndex: number) {
+    e.preventDefault();
+    setBlockDropIndex(null);
+    const raw = e.dataTransfer.getData("text/plain");
+    if (!raw.startsWith(BLOCK_DRAG_PREFIX)) {
+      setDraggedBlockId(null);
+      return;
+    }
+    const id = raw.slice(BLOCK_DRAG_PREFIX.length) as DashboardBlockId;
+    const fromIndex = blockOrder.indexOf(id);
+    setDraggedBlockId(null);
+    if (fromIndex === -1) return;
+    persistBlockOrder(moveDashboardBlock(blockOrder, fromIndex, toIndex));
+  }
+
+  function handleBlockDragEnd() {
+    setDraggedBlockId(null);
+    setBlockDropIndex(null);
+  }
+
+  const sortableBlockProps = (id: DashboardBlockId) => ({
+    id,
+    orderIndex: blockOrder.indexOf(id),
+    dragged: draggedBlockId === id,
+    dropTarget:
+      blockDropIndex === blockOrder.indexOf(id) && draggedBlockId != null && draggedBlockId !== id,
+    onDragStart: handleBlockDragStart,
+    onDragOver: handleBlockDragOver,
+    onDrop: handleBlockDrop,
+    onDragEnd: handleBlockDragEnd,
+  });
 
   return (
     <div className="space-y-5">
@@ -358,80 +557,89 @@ export default function DashboardPage() {
         onApply={setRange}
       />
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <section className="rounded-lg border border-zinc-200 bg-white p-4">
-          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            MTTR
-            <span title="Tiempo medio de reparación: promedio de horas desde creación hasta finalización de órdenes completadas.">
-              <CircleHelp className="h-3.5 w-3.5" />
-            </span>
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-zinc-900">
-            {formatKpiValue(kpis?.mttrHours, " h")}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">Tiempo medio de reparación ({kpis?.windowDays ?? 30} días)</p>
-        </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4">
-          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Inactividad
-            <span title="Suma de horas (creación → cierre) de órdenes completadas en la ventana; no es el paro de máquina medido en tareas.">
-              <CircleHelp className="h-3.5 w-3.5" />
-            </span>
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-zinc-900">
-            {formatKpiValue(kpis?.downtimeHours, " h")}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">Horas ciclo creación–cierre ({kpis?.windowDays ?? 30} días)</p>
-        </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4">
-          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Paro de máquina
-            <span title="Suma del tiempo en curso hasta terminada más paro manual, solo en tareas marcadas con paro y en máquinas con seguimiento activado.">
-              <CircleHelp className="h-3.5 w-3.5" />
-            </span>
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-zinc-900">
-            {formatKpiValue(kpis?.machineDowntimeHours, " h")}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">En ventana de {kpis?.windowDays ?? 30} días (por fecha de creación)</p>
-        </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4">
-          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Planificado vs no planificado
-            <span title="Planificado = tareas rutinarias (calendario). No planificado = órdenes bajo demanda. Sobre tareas creadas en la ventana.">
-              <CircleHelp className="h-3.5 w-3.5" />
-            </span>
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-zinc-900">
-            {formatKpiValue(kpis?.plannedPct, "%")}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">
-            Planificado {kpis?.plannedCount ?? 0} · No planificado {kpis?.unplannedCount ?? 0}
-          </p>
-        </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 md:col-span-2 xl:col-span-1">
-          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            OEE
-            <span title="Eficiencia global del equipo estimada con base en disponibilidad (1 - inactividad / horas disponibles).">
-              <CircleHelp className="h-3.5 w-3.5" />
-            </span>
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-zinc-900">
-            {formatKpiValue(kpis?.oee, "%")}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">Estimado por disponibilidad en ventana de {kpis?.windowDays ?? 30} días</p>
-        </section>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary-100 bg-primary-50 px-4 py-3">
+        <p className="text-sm font-medium text-primary-900">
+          {formatDashboardRangeTrigger(range)}
+        </p>
+        <p className="text-xs text-primary-800 sm:text-sm">{contextBanner}</p>
       </div>
 
+      <p className="text-xs text-zinc-500">
+        Arrastra <span className="font-medium text-zinc-600">Mover</span> para reordenar las secciones.
+        Los gráficos se reordenan desde el asa de cada tarjeta.
+      </p>
+
+      <div className="flex flex-col gap-5">
+      <DashboardSortableBlock {...sortableBlockProps("kpis")}>
+      {loading ? (
+        <div
+          className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5"
+          aria-busy="true"
+          aria-label="Cargando indicadores"
+        >
+          {DASHBOARD_KPI_CARDS.map((card) => (
+            <div
+              key={card.id}
+              className="h-[8.5rem] animate-pulse rounded-xl bg-zinc-200"
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {DASHBOARD_KPI_CARDS.map((card) => {
+            const Icon = kpiIconByKey[card.icon];
+            const tone = kpiToneClasses(card.tone);
+            return (
+              <section
+                key={card.id}
+                className={`relative overflow-hidden rounded-xl border p-4 ${tone.card} ${
+                  card.id === "oee" ? "md:col-span-2 xl:col-span-1" : ""
+                }`}
+              >
+                <span
+                  className={`absolute inset-y-0 left-0 w-1 ${tone.bar}`}
+                  aria-hidden
+                />
+                <div className="flex items-start justify-between gap-2 pl-1">
+                  <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                    {card.title}
+                    <span title={card.hint}>
+                      <CircleHelp className="h-3.5 w-3.5" />
+                    </span>
+                  </p>
+                  <span
+                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone.iconWrap}`}
+                    aria-hidden
+                  >
+                    <Icon className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className="mt-2 pl-1 text-2xl font-semibold tracking-tight text-zinc-900">
+                  {kpiDisplayValue(card.id)}
+                </p>
+                <p className="mt-1 pl-1 text-xs text-zinc-500">{kpiSubtitle(card.id)}</p>
+              </section>
+            );
+          })}
+        </div>
+      )}
+      </DashboardSortableBlock>
+
       {showLists && (
+        <DashboardSortableBlock {...sortableBlockProps("lists")}>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <section className="flex min-h-[16rem] flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold text-zinc-900">Tareas</h2>
-                <p className="mt-0.5 text-xs text-zinc-500">
-                  Pendientes y en progreso
-                </p>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
+                  <ListTodo className="h-4 w-4" aria-hidden />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-900">Tareas</h2>
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    Pendientes y en progreso
+                  </p>
+                </div>
               </div>
               <Link
                 href="/tareas"
@@ -440,13 +648,21 @@ export default function DashboardPage() {
                 Ver todas
               </Link>
             </div>
-            {pendingOrders.length === 0 ? (
-              <p className="text-sm text-zinc-500">No hay tareas pendientes.</p>
+            {loading ? (
+              <div className="space-y-2" aria-busy="true" aria-label="Cargando tareas">
+                <div className="h-20 animate-pulse rounded-lg bg-zinc-200" />
+                <div className="h-20 animate-pulse rounded-lg bg-zinc-200" />
+              </div>
+            ) : pendingOrders.length === 0 ? (
+              <DashboardEmptyState section="tareas" />
             ) : (
               <div className="flex min-h-0 flex-1 flex-col space-y-2">
                 <ul className="space-y-2">
                   {pendingOrders.slice(0, pendingVisibleCount).map((order) => (
-                    <li key={order.id} className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+                    <li
+                      key={order.id}
+                      className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3 transition-colors hover:border-primary-200 hover:bg-primary-50/40"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <Link href={`/tareas/${order.id}`} className="font-medium text-zinc-900 hover:text-primary-600">
@@ -500,13 +716,18 @@ export default function DashboardPage() {
 
           <section className="flex min-h-[16rem] flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold text-zinc-900">
-                  Eventos del calendario
-                </h2>
-                <p className="mt-0.5 text-xs text-zinc-500">
-                  Próximas programaciones
-                </p>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
+                  <CalendarClock className="h-4 w-4" aria-hidden />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-900">
+                    Eventos del calendario
+                  </h2>
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    Próximas programaciones
+                  </p>
+                </div>
               </div>
               <Link
                 href="/calendario"
@@ -515,13 +736,21 @@ export default function DashboardPage() {
                 Ver calendario
               </Link>
             </div>
-            {upcomingEvents.length === 0 ? (
-              <p className="text-sm text-zinc-500">No hay eventos próximos.</p>
+            {loading ? (
+              <div className="space-y-2" aria-busy="true" aria-label="Cargando eventos">
+                <div className="h-20 animate-pulse rounded-lg bg-zinc-200" />
+                <div className="h-20 animate-pulse rounded-lg bg-zinc-200" />
+              </div>
+            ) : upcomingEvents.length === 0 ? (
+              <DashboardEmptyState section="eventos" />
             ) : (
               <div className="flex min-h-0 flex-1 flex-col space-y-2">
                 <ul className="space-y-2">
                   {upcomingEvents.slice(0, eventsVisibleCount).map((event) => (
-                    <li key={event.id} className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+                    <li
+                      key={event.id}
+                      className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3 transition-colors hover:border-primary-200 hover:bg-primary-50/40"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <p className="min-w-0 flex-1 font-medium text-zinc-900">
                           {event.name}
@@ -555,9 +784,16 @@ export default function DashboardPage() {
             )}
           </section>
         </div>
+        </DashboardSortableBlock>
       )}
 
-      <p className="text-sm text-zinc-500">
+      <DashboardSortableBlock {...sortableBlockProps("checklists")}>
+      <DashboardChecklistsSection />
+      </DashboardSortableBlock>
+
+      <DashboardSortableBlock {...sortableBlockProps("charts")}>
+      <p className="flex items-center gap-2 text-sm text-zinc-500">
+        <BarChart3 className="h-4 w-4 shrink-0 text-primary-600" aria-hidden />
         Arrastra las tarjetas para reordenar. Los gráficos se guardan aquí desde la página de analíticas.
       </p>
 
@@ -718,6 +954,8 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+      </DashboardSortableBlock>
+      </div>
 
       <ConfirmDialog
         open={widgetDeleteConfirmId != null}

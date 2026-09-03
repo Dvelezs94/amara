@@ -1,0 +1,66 @@
+schema: spec-driven
+
+context: |
+  Language: es
+  All artifacts must be written in es.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  ## Proyecto: MSA (Maintenance Software / Support Assistant)
+
+  CMMS industrial para AMISSA. UI en español mexicano.
+  Zona horaria de operación: America/Monterrey.
+
+  ### Stack
+
+  - **Web:** Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, Drizzle ORM + PostgreSQL
+  - **Móvil:** Expo (React Native, Android), misma API y sesión cookie
+  - **Tests:** Vitest (web: `npm test`, mobile: `cd mobile && npm test`)
+  - **CI/CD:** GitHub Actions → Docker Compose en producción
+  - **Auth:** cookie de sesión + JWT payload. Roles: admin, tecnico, calidad
+
+  ### Colores de marca
+
+  - Primary (azul AMISSA): #02257D
+  - Accent (naranja AMISSA): #F14C03
+  - Neutral: #9E9F9F
+
+  ### Rutas principales web
+
+  /dashboard, /calendario, /tareas, /checklists, /assets, /knowledge-base,
+  /analytics, /flujos, /users, /documentacion, /orden (público), /buscar
+
+  ### Convenciones de código
+
+  - Tailwind + componentes en web; theme + StyleSheet en mobile
+  - Middleware (middleware.ts) recorta rutas y APIs por rol
+  - Cada feature requiere tests unitarios en tests/unit/ o mobile/tests/unit/
+  - Helpers puros en lib/ para ser testeables sin API ni DB
+  - AGENTS.md como contexto operativo para agentes (actualizar al cambiar features)
+
+rules:
+  proposal:
+    - Incluir sección «Roles afectados» indicando admin / técnico / calidad
+    - Indicar si el cambio requiere migración de base de datos
+    - Indicar si afecta la app móvil además de la web
+  specs:
+    - Escenarios en formato Given/When/Then
+    - Incluir escenarios de acceso denegado cuando aplique por rol
+    - Referenciar archivos clave del proyecto (lib/, app/, etc.)
+  design:
+    - Listar archivos nuevos y modificados
+    - Describir cambios de schema si aplican (tabla, columnas, migración)
+    - Indicar impacto en middleware si se agregan rutas o APIs
+  tasks:
+    - Cada tarea incluye checkbox de tests unitarios cuando aplique
+    - Incluir tarea de actualizar AGENTS.md si el cambio es de comportamiento
+    - Incluir tarea de actualizar middleware-rules si se agregan rutas
+
+operations:
+  apply:
+    guidance:
+      - Ejecutar npm test después de implementar y reportar resultados
+      - No hacer commit; dejar el commit al usuario
+  archive:
+    guidance:
+      - Verificar que npm test pasa antes de archivar
+      - Resumir los archivos cambiados y tests agregados

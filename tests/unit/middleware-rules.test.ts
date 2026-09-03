@@ -72,6 +72,7 @@ describe("isTecnicoApiPathAllowed", () => {
     expect(
       isTecnicoApiPathAllowed("/api/app-settings/work-order-status-colors")
     ).toBe(true);
+    expect(isTecnicoApiPathAllowed("/api/dashboard/checklists")).toBe(true);
   });
   it("blocks non-whitelisted APIs", () => {
     expect(isTecnicoApiPathAllowed("/api/admin/users")).toBe(false);
@@ -88,6 +89,8 @@ describe("isTecnicoAppPathAllowed", () => {
     expect(isTecnicoAppPathAllowed("/knowledge-base")).toBe(true);
     expect(isTecnicoAppPathAllowed("/equipo/user1")).toBe(true);
     expect(isTecnicoAppPathAllowed("/buscar")).toBe(true);
+    expect(isTecnicoAppPathAllowed("/documentacion")).toBe(true);
+    expect(isTecnicoAppPathAllowed("/documentacion/tareas")).toBe(true);
     expect(isTecnicoApiPathAllowed("/api/search")).toBe(true);
   });
   it("blocks admin-only sections", () => {
@@ -105,6 +108,7 @@ describe("isCalidad*PathAllowed", () => {
     expect(isCalidadAppPathAllowed("/tareas/abc")).toBe(true);
     expect(isCalidadAppPathAllowed("/equipo/user1")).toBe(true);
     expect(isCalidadAppPathAllowed("/buscar")).toBe(true);
+    expect(isCalidadAppPathAllowed("/documentacion")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/search")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/checklist-templates")).toBe(true);
     expect(isCalidadApiPathAllowed("/api/checklist-folders")).toBe(true);
@@ -116,6 +120,7 @@ describe("isCalidad*PathAllowed", () => {
     expect(
       isCalidadApiPathAllowed("/api/app-settings/work-order-status-colors")
     ).toBe(true);
+    expect(isCalidadApiPathAllowed("/api/dashboard/checklists")).toBe(true);
   });
 
   it("blocks non-whitelisted calidad paths", () => {

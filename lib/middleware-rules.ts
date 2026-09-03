@@ -19,6 +19,7 @@ export const TECNICO_ALLOWED_APP_PREFIXES = [
   "/profile",
   "/equipo",
   "/buscar",
+  "/documentacion",
 ] as const;
 
 export const CALIDAD_ALLOWED_APP_PREFIXES = [
@@ -26,6 +27,7 @@ export const CALIDAD_ALLOWED_APP_PREFIXES = [
   "/tareas",
   "/equipo",
   "/buscar",
+  "/documentacion",
 ] as const;
 
 export const TECNICO_ALLOWED_API_PREFIXES = [
@@ -41,6 +43,7 @@ export const TECNICO_ALLOWED_API_PREFIXES = [
   "/api/notifications",
   "/api/app-settings/work-order-status-colors",
   "/api/search",
+  "/api/dashboard/checklists",
 ] as const;
 
 export const CALIDAD_ALLOWED_API_PREFIXES = [
@@ -54,6 +57,7 @@ export const CALIDAD_ALLOWED_API_PREFIXES = [
   "/api/users/me/avatar",
   "/api/app-settings/work-order-status-colors",
   "/api/search",
+  "/api/dashboard/checklists",
 ] as const;
 
 /** Decode `role` from the JWT-style session cookie payload (middle segment). */

@@ -167,14 +167,18 @@ On Linux, add `--add-host=host.docker.internal:host-gateway` if `host.docker.int
 - **Requests** — Submit request (description + optional asset), list, detail, convert to work order
 - **Profile** — View profile, log out
 - **Layout** — Mobile: bottom nav + top bar; Desktop: sidebar + main content
+- **Product docs** — In-app Spanish guide at `/documentacion` (web + mobile workflows, role matrix, visual mocks)
 
 ## Project layout
 
 - `app/` — Routes (auth, app shell, work-orders, assets, requests, profile)
+- `app/(app)/documentacion/` — Product documentation (Spanish) with mock UI
 - `app/api/` — API routes (auth, work-orders, assets, requests, users)
 - `components/` — AppShell (nav)
 - `lib/` — db (schema, client), auth, id, work-orders helper
+- `public/docs/` — Illustrations for the product guide
 - `scripts/seed.ts` — Demo seed
 - `docker-compose.yml` — Production PostgreSQL + msa `web` service
 - `docker-compose.local.yml` — Local PostgreSQL only (use `npm run dev` for the app)
 - `Dockerfile` — Production Next.js (`standalone`) image
+- `mobile/` — Expo Android client (same API)

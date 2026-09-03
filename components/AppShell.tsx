@@ -20,6 +20,7 @@ import {
  Wrench,
  Bell,
  GitBranch,
+ CircleHelp,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import type { SessionUser } from "@/lib/auth-shared";
@@ -222,6 +223,16 @@ export function AppShell({
      },
     ]
    : []),
+  {
+   type: "Ayuda",
+   items: [
+    {
+     href: "/documentacion",
+     label: "Documentación",
+     icon: CircleHelp,
+    } satisfies NavItem,
+   ],
+  },
  ];
  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
  const [sidebarOpen, setSidebarOpen] = useState(false);
